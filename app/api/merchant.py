@@ -1,9 +1,10 @@
-"""秤端（摊主）端点组，第一批：契约 §3.2 会话、§3.3/§3.4 价目表、§3.5 商品。
+"""秤端（摊主）端点组：契约 §3.2 会话、§3.3/§3.4 价目表、§3.5 商品、§3.6 创建交易并计价。
 
-关联：`REQ-002`、`REQ-003`、`REQ-004`、`REQ-032`；`NFR-007`；`AC-006`/`AC-014`/`AC-015`/`AC-021`。
-对应任务：`tasks.md` `T-015`（由 `T-008` 契约测试 `tests/contract/test_merchant_catalog.py` 驱动）。
+关联：`REQ-002`、`REQ-003`、`REQ-004`、`REQ-005`、`REQ-006`、`REQ-027`、`REQ-032`；
+`NFR-007`；`AC-001`/`AC-006`/`AC-014`/`AC-015`/`AC-016`/`AC-017`/`AC-021`。
+对应任务：`tasks.md` `T-015`（§3.2~§3.5）、`T-016`（§3.6 创建交易并计价）。
 
-本模块**只是 HTTP 皮肤**：解析请求 → 取本请求的连接与摊位会话 → 调用 `app/domain/catalog.py`
+本模块**只是 HTTP 皮肤**：解析请求 → 取本请求的连接与摊位会话 → 调用 `app/domain/` 下的领域函数
 → `jsonify` 结果。**业务规则一条都不在这里重写**（重写一遍就是第二份事实来源，必然与领域层漂移）；
 错误一律由领域层抛 `TradeError`，交给 `app/__init__.py` 的统一错误处理器转成契约 §1.2 响应体与 §4 状态码。
 
@@ -18,8 +19,8 @@
 3. **会话校验先于参数校验**：`X-Stall-Session` 无效一律先回 `MT-1005`(401)，
    避免"未登录也能通过参数报错探出业务规则"。
 
-**本批次范围止于 §3.5**：§3.6 起的端点（计价、收款、退货、离线、运营端、顾客端）不在本文件内，
-按 `tasks.md` §1.3 的归属由后续任务实现。文件后续会随那些任务一起长大，但**现在不预写半成品**。
+**本批次范围止于 §3.6**：§3.9 改价/抹零、§3.10 收款、§3.11 退货、§3.13~§3.15 离线、运营端与顾客端
+端点不在本文件内，按 `tasks.md` §1.3 的归属由后续任务（`T-016` 余下部分 / `T-017`~`T-023`）实现。
 """
 
 from __future__ import annotations
@@ -34,11 +35,14 @@ from ..domain.catalog import (
     require_session,
     set_price_list,
 )
+from ..domain.pricing import create_transaction
 
 bp = Blueprint("merchant", __name__)
 
 #: 秤端会话请求头（契约 §1.6）；字面量只在此处出现一次，避免各处各写一遍。
 SESSION_HEADER = "X-Stall-Session"
+#: 写操作幂等键请求头（契约 §1.3 / §1.7）。
+IDEMPOTENCY_HEADER = "Idempotency-Key"
 
 
 def _bound_stall(conn):
@@ -99,3 +103,29 @@ def write_price_list():
     conn = current_db()
     stall = _bound_stall(conn)
     return jsonify(set_price_list(conn, stall["stall_id"], request.get_json(silent=True))), 200
+
+
+# ---------------------------------------------------------------------------
+# §3.6 创建交易并计价（`AC-001` / `AC-016` / `AC-017`）
+# ---------------------------------------------------------------------------
+
+
+@bp.post("/api/merchant/transactions")
+def create_stall_transaction():
+    """契约 §3.6：选品 + 重量 → 计价落库，返回 201。
+
+    金额与状态**全部由 `app/domain/pricing.create_transaction()` 决定**（整数分、四舍五入到分、
+    `MT-1002`/`MT-1006`/`MT-1012` 都在那里；本层不重算一次，否则就有了第二份计价口径）。
+
+    幂等重放返回 **200 而非 201**：契约 §1.7 要求"返回首次结果"，而首次之外并未新建资源，
+    201（Created）会谎报"又创建了一笔"。T-009 用例对 `200/201` 都接受，但语义上只有 200 是对的。
+    """
+    conn = current_db()
+    stall = _bound_stall(conn)
+    payload, replayed = create_transaction(
+        conn,
+        stall,
+        request.get_json(silent=True),
+        request.headers.get(IDEMPOTENCY_HEADER),
+    )
+    return jsonify(payload), (200 if replayed else 201)
