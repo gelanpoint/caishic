@@ -1,8 +1,10 @@
-"""秤端（摊主）端点组：契约 §3.2 会话、§3.3/§3.4 价目表、§3.5 商品、§3.6 创建交易并计价。
+"""秤端（摊主）端点组：契约 §3.2 会话、§3.3/§3.4 价目表、§3.5 商品、§3.6 创建交易并计价、
+§3.7 交易列表、§3.8 交易详情、§3.12 商户看板。
 
-关联：`REQ-002`、`REQ-003`、`REQ-004`、`REQ-005`、`REQ-006`、`REQ-027`、`REQ-032`；
-`NFR-007`；`AC-001`/`AC-006`/`AC-014`/`AC-015`/`AC-016`/`AC-017`/`AC-021`。
-对应任务：`tasks.md` `T-015`（§3.2~§3.5）、`T-016`（§3.6 创建交易并计价）。
+关联：`REQ-002`、`REQ-003`、`REQ-004`、`REQ-005`、`REQ-006`、`REQ-012`、`REQ-021`、`REQ-027`、
+`REQ-032`；`NFR-007`；`AC-001`/`AC-006`/`AC-014`/`AC-015`/`AC-016`/`AC-017`/`AC-021`。
+对应任务：`tasks.md` `T-015`（§3.2~§3.5、§3.7/§3.8/§3.12 秤端读端点 —— 后三处由 `T-008` 执行时
+发现归属缺口并补进 `tasks.md` §1.3）、`T-016`（§3.6 创建交易并计价）。
 
 本模块**只是 HTTP 皮肤**：解析请求 → 取本请求的连接与摊位会话 → 调用 `app/domain/` 下的领域函数
 → `jsonify` 结果。**业务规则一条都不在这里重写**（重写一遍就是第二份事实来源，必然与领域层漂移）；
@@ -19,7 +21,7 @@
 3. **会话校验先于参数校验**：`X-Stall-Session` 无效一律先回 `MT-1005`(401)，
    避免"未登录也能通过参数报错探出业务规则"。
 
-**本批次范围止于 §3.6**：§3.9 改价/抹零、§3.10 收款、§3.11 退货、§3.13~§3.15 离线、运营端与顾客端
+**本批次范围止于 §3.12**：§3.9 改价/抹零、§3.10 收款、§3.11 退货、§3.13~§3.15 离线、运营端与顾客端
 端点不在本文件内，按 `tasks.md` §1.3 的归属由后续任务（`T-016` 余下部分 / `T-017`~`T-023`）实现。
 """
 
@@ -35,7 +37,8 @@ from ..domain.catalog import (
     require_session,
     set_price_list,
 )
-from ..domain.pricing import create_transaction
+from ..domain.metrics import stall_daily_dashboard
+from ..domain.pricing import create_transaction, list_transactions, transaction_detail
 
 bp = Blueprint("merchant", __name__)
 
@@ -129,3 +132,68 @@ def create_stall_transaction():
         request.headers.get(IDEMPOTENCY_HEADER),
     )
     return jsonify(payload), (200 if replayed else 201)
+
+
+# ---------------------------------------------------------------------------
+# §3.7 本摊位交易列表（看板与对账明细用）
+# ---------------------------------------------------------------------------
+
+
+@bp.get("/api/merchant/transactions")
+def list_stall_transactions():
+    """契约 §3.7：分页对象 `{"total", "items"}`，**只含本摊位数据**（`REQ-032` / `AC-021`）。
+
+    查询参数 `business_date`（可选）、`limit`（可选，默认 50、上限 200）都在领域层解释：
+    "摊位边界 + 分页"是数据边界问题，不是 HTTP 问题。
+    """
+    conn = current_db()
+    stall = _bound_stall(conn)
+    return (
+        jsonify(
+            list_transactions(
+                conn,
+                stall["stall_id"],
+                request.args.get("business_date"),
+                request.args.get("limit"),
+            )
+        ),
+        200,
+    )
+
+
+# ---------------------------------------------------------------------------
+# §3.8 交易详情与凭证数据（屏幕展示，不打印）
+# ---------------------------------------------------------------------------
+
+
+@bp.get("/api/merchant/transactions/<transaction_no>")
+def read_transaction_detail(transaction_no):
+    """契约 §3.8：§2.8 顶层 + `items` + `payments` + 固定 `printable: false`。
+
+    `transaction_no` 由 Flask 从路由注入（**不加 `<int:...>` 转换器**：契约 §3.8 的路径参数是字符串，
+    交易号由系统生成；用类型转换器会把"格式不对的交易号"在路由层判成 404，
+    而那种情况应当由领域层按 `MT-1009` 给出统一错误信封）。
+
+    不存在的交易号 → 404 `MT-1009`；存在但属其他摊位 → 403 `MT-1004`（契约 §4 / `AC-021`）。
+    两个判断都在领域层按"先存在、后归属"的顺序执行。
+    """
+    conn = current_db()
+    stall = _bound_stall(conn)
+    return jsonify(transaction_detail(conn, stall["stall_id"], transaction_no)), 200
+
+
+# ---------------------------------------------------------------------------
+# §3.12 商户端看板（交易、佣金、经营数据）
+# ---------------------------------------------------------------------------
+
+
+@bp.get("/api/merchant/dashboard")
+def read_merchant_dashboard():
+    """契约 §3.12：`business_date` 不传则取当日；聚合口径见 `data-model.md` §2.15 / §2.17。
+
+    响应字段**恰好契约列出的六个**（`T-008` 按字段白名单断言）：这块看板是给摊主看的，
+    多塞一个"看起来有用"的字段就是契约之外的新需求（`RL-1`）。
+    """
+    conn = current_db()
+    stall = _bound_stall(conn)
+    return jsonify(stall_daily_dashboard(conn, stall["stall_id"], request.args.get("business_date"))), 200
