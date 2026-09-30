@@ -4,53 +4,22 @@
 
 - `live_server`：用仓库的 `run.py` 真起一个进程（独立 `MT_DATA_DIR`，**绝不碰演示库**），模块级；
 - `fault_server`：**故障注入**专用服务（故意改库结构，必须与主线隔离）；
-- `browser`：真实 Chromium（Playwright）——缺失时**跳过并说明"这不是通过，是没检查"**；
+- `browser`：真实 Chromium（Playwright）——缺失时**跳过并说明「这不是通过，是没检查」**；
 - `shots`：截图目录（`.pytest-tmp/e2e-shots/`，已 gitignore）。
 
-助手（`start_live_server` / `bind_stall` / `assert_api_error` / `reconciliation` / `half_up_div` …）
-在 `tests/e2e_support.py`；本文件把它们**再导出**一次，故 `from conftest import ...` 依然可用。
+助手的**唯一导入名**是 `tests/e2e_support.py`（不是 `conftest`）：
+本文件与 `tests/contract/conftest.py` **同名**，而两边目录都会进 `sys.path`，
+用例里写 `from conftest import ...` 时解析到哪一个取决于收集顺序 ——
+`python -m pytest -q` 会直接 10 个文件 `ImportError`（`T-035` 收尾时实测，连用例都收不起来）。
+故：用例一律 `from e2e_support import ...`（门禁阈值另见 `tests/gates.py`），
+本文件**不再**做再导出（再导出就等于给「按裸名导入 conftest」留后门）。
 """
 
 from __future__ import annotations
 
 import pytest
 
-from e2e_support import (  # noqa: F401  （再导出，保持既有 `from conftest import ...` 可用）
-    GATE_FILE,
-    LiveServer,
-    REPO_ROOT,
-    SEED_STALL,
-    SHOTS_DIR,
-    active_products,
-    assert_api_error,
-    bind_stall,
-    connect_db,
-    count,
-    create_priced,
-    create_transaction,
-    ensure_commission_rule,
-    error_code,
-    evidence_key,
-    free_port,
-    half_up_div,
-    http_json,
-    item_amount,
-    new_page,
-    parse_latency_thresholds,
-    pay_transaction,
-    pending_count,
-    percentile,
-    ratio_bp,
-    reconciliation,
-    scalar,
-    session_headers,
-    snap,
-    stall_id,
-    start_live_server,
-    today_iso,
-    wait_pending,
-    wait_until_healthy,
-)
+from e2e_support import SHOTS_DIR, LiveServer, start_live_server
 
 
 @pytest.fixture(scope="module")
@@ -94,7 +63,7 @@ def browser():
 
 
 @pytest.fixture(scope="module")
-def shots() -> Path:
+def shots():
     """截图目录（仓库内但被 `.gitignore` 忽略，避免"为了留证据而污染仓库"）。"""
     SHOTS_DIR.mkdir(parents=True, exist_ok=True)
     return SHOTS_DIR

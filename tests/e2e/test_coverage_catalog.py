@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from conftest import (
+from e2e_support import (
     active_products,
     bind_stall,
     create_priced,

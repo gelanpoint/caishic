@@ -14,8 +14,8 @@ from __future__ import annotations
 import pytest
 from flask import Flask
 
-import conftest
-from conftest import (
+import contract_support as conftest
+from contract_support import (
     CONTRACT_ENDPOINTS,
     CONTRACT_ERROR_CODES,
     NON_API_ROUTES,

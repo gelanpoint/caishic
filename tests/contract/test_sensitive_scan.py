@@ -20,7 +20,7 @@ from sensitive_scan import (
     scan_json_for_sensitive,
     scan_text_for_sensitive,
 )
-from conftest import (
+from contract_support import (
     CONTRACT_ENDPOINTS,
     REPO_ROOT,
     today_iso,
@@ -105,7 +105,7 @@ def test_sensitive_scan_covers_every_contract_endpoint(contract):
 @pytest.mark.parametrize("method,path", sorted(CONTRACT_ENDPOINTS))
 def test_response_body_passes_sensitive_scan(client, seeded_app, method, path):
     """逐端点探针：端点必须先**存在**（否则无从扫描），响应体必须零命中。"""
-    from conftest import registered_endpoints
+    from contract_support import registered_endpoints
 
     assert (method, path) in registered_endpoints(seeded_app), (
         f"契约 §2 已登记 {method} {path}，但端点未实现 —— 无法扫描其响应体"

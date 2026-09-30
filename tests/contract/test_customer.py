@@ -41,7 +41,7 @@ import re
 import pytest
 
 from sensitive_scan import scan_json_for_sensitive
-from conftest import (
+from contract_support import (
     REPO_ROOT,
     assert_endpoint_implemented,
     assert_error_response,

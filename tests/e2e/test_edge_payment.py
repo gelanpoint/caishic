@@ -23,7 +23,7 @@ import time
 
 import pytest
 
-from conftest import (
+from e2e_support import (
     active_products,
     bind_stall,
     count,

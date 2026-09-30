@@ -34,17 +34,15 @@ import threading
 import time
 from pathlib import Path
 
-from conftest import (
-    GATE_FILE,
+from e2e_support import (
     REPO_ROOT,
     active_products,
     bind_stall,
     evidence_key,
-    parse_latency_thresholds,
-    percentile,
     session_headers,
     start_live_server,
 )
+from gates import GATE_FILE, parse_latency_thresholds, percentile
 
 
 # ---------------------------------------------------------------------------

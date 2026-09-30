@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import (
+from e2e_support import (
     active_products,
     assert_api_error,
     bind_stall,

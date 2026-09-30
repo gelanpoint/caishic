@@ -1,12 +1,13 @@
-"""`T-034` 并发与响应时间压测（`REQ-031`、`NFR-001`；`AC-020`）。
+"""`T-034` 并发**正确性**压测（`REQ-031`、`NFR-001`；`AC-020`）。
 
-要证明的三件事：
+要证明的两件事：
 
 1. **多摊位并发写入互不覆盖**（`AC-020` / `REQ-031`）：并发提交后逐笔核对
    —— 每笔都落库、**交易号唯一**、每笔归属的摊位与商品明细**就是它自己的那一笔**；
-2. **绝不静默丢弃**（`NFR-014`）在并发下同样成立：并发暂存 → 逐条计数 → 补传 → 零失败；
-3. **接口响应时间**与 `docs/standards/quality-gates.md` 的阈值比对 —— 阈值**从那个文件里机械读出来**，
-   不在本文件复述数字（阈值只有一个权威落点；写第二遍就是下次漂移的种子）。
+2. **绝不静默丢弃**（`NFR-014`）在并发下同样成立：并发暂存 → 逐条计数 → 补传 → 零失败。
+
+响应时间门禁的比对**不在这里**：突发时延的分位数由磁盘 fsync 决定（`T-034` 实测对照实验），
+判门禁要在"摊主点按"的口径下量 —— 见 `tests/perf/test_latency.py`（阈值也只有那一个入口读）。
 
 并发口径说明（不夸大）：`NFR-001` 的本期范围是**演示级并发**（演示者 1 人 + 评委数人，峰值 <20），
 本文件的线程数就按这个量级取，**不假装它压得出生产结论**。
@@ -15,16 +16,11 @@
 from __future__ import annotations
 
 import concurrent.futures as futures
-import re
 import statistics
 import threading
 import time
-from pathlib import Path
 
-import pytest
-
-from conftest import (
-    REPO_ROOT,
+from e2e_support import (
     active_products,
     bind_stall,
     count,
@@ -33,62 +29,12 @@ from conftest import (
     stall_id,
     today_iso,
 )
+from gates import percentile
 
-GATE_FILE = REPO_ROOT / "docs" / "standards" / "quality-gates.md"
-
-#: 并发量级：`NFR-001` 的演示级范围（**不在本文件复述数值**，这里说的只是线程数，不是指标阈值）
+#: 并发量级：`NFR-001` 的演示级范围（**这是线程数，不是指标阈值**）
 THREADS = 10
 STALLS = ["A-01", "A-02", "A-03", "A-04", "A-05"]
 PER_STALL = 6
-
-
-def parse_latency_thresholds(text: str | None = None) -> dict:
-    """从**权威文件**里机械抽取"接口响应时间"阈值（`quality-gates.md` §1.1）。
-
-    为什么机械抽取而不是在测试里写死：阈值只允许在那一处写一次（该文件开头就写明了这条纪律）。
-    测试把它读出来用 —— 文件改了阈值，测试跟着改，**不可能出现"测试与门禁两套数"**。
-    解析失败即 `assert` 失败：那说明门禁文件的形态变了，检查不该悄悄失效。
-    """
-    source = text if text is not None else GATE_FILE.read_text(encoding="utf-8")
-    row = re.search(r"\|\s*接口响应时间\s*\|([^|]*)\|", source)
-    assert row, f"未能在 {GATE_FILE.name} 里找到「接口响应时间」阈值行（门禁文件形态变了吗？）"
-    cell = row.group(1)
-    p95 = re.search(r"p95\s*<\s*([\d.]+)\s*ms", cell)
-    p99 = re.search(r"p99\s*<\s*([\d.]+)\s*(ms|s)", cell)
-    assert p95 and p99, f"阈值行的写法无法解析：{cell!r}"
-    return {
-        "p95_ms": float(p95.group(1)),
-        "p99_ms": float(p99.group(1)) * (1000 if p99.group(2) == "s" else 1),
-        "source": cell.strip(),
-    }
-
-
-def percentile(samples: list[float], fraction: float) -> float:
-    """最近秩法取分位数（样本少时也不插值造假：宁可偏高一点）。"""
-    ordered = sorted(samples)
-    index = min(len(ordered) - 1, max(0, int(round(fraction * len(ordered) + 0.5)) - 1))
-    return ordered[index]
-
-
-# ---------------------------------------------------------------------------
-# 守卫：阈值必须来自权威文件（防止"测试里写死一个数"）
-# ---------------------------------------------------------------------------
-
-
-def test_latency_thresholds_are_read_from_the_gate_file():
-    """守卫：阈值解析得出、且 p95 ≤ p99（若解析错位，两个数会乱）。"""
-    thresholds = parse_latency_thresholds()
-    assert 0 < thresholds["p95_ms"] <= thresholds["p99_ms"], f"解析出的阈值不合理：{thresholds}"
-    # 灵敏度：换一份**形态不同**的文本必须解析失败（证明本函数不是"永远成功"的摆设）
-    with pytest.raises(AssertionError):
-        parse_latency_thresholds("| 某个不存在的行 | 没有阈值 |\n")
-    print(f"[阈值] 从 {GATE_FILE.name} 读到：{thresholds['source']} → p95<{thresholds['p95_ms']}ms、"
-          f"p99<{thresholds['p99_ms']}ms")
-
-
-# ---------------------------------------------------------------------------
-# 并发写入 + 响应时间采样
-# ---------------------------------------------------------------------------
 
 
 def test_concurrent_multi_stall_writes_do_not_overwrite_ac_020(live_server):

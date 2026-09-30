@@ -353,38 +353,6 @@ def pending_count(page) -> int:
     return int(page.inner_text("#pending").split("/")[0].strip())
 
 
-#: 质量阈值文件的唯一权威落点（阈值数值不允许在测试里复述）
-GATE_FILE = REPO_ROOT / "docs" / "standards" / "quality-gates.md"
-
-
-def percentile(samples: list[float], fraction: float) -> float:
-    """最近秩法取分位数（样本少时也不插值造假：宁可偏高一点）。"""
-    ordered = sorted(samples)
-    index = min(len(ordered) - 1, max(0, int(round(fraction * len(ordered) + 0.5)) - 1))
-    return ordered[index]
-
-
-def parse_latency_thresholds(text: str | None = None) -> dict:
-    """从**权威文件**里机械抽取「接口响应时间」阈值（`quality-gates.md` §1.1）。
-
-    为什么机械抽取而不是在测试里写死：阈值只允许在那一处写一次（该文件开头就写明这条纪律）。
-    测试把它读出来用 —— 文件改了阈值，测试跟着改，**不可能出现"测试与门禁两套数"**。
-    解析失败即断言失败：门禁文件形态变了，检查不该悄悄失效。
-    """
-    source = text if text is not None else GATE_FILE.read_text(encoding="utf-8")
-    row = re.search(r"\|\s*接口响应时间\s*\|([^|]*)\|", source)
-    assert row, f"未能在 {GATE_FILE.name} 里找到「接口响应时间」阈值行（门禁文件形态变了吗？）"
-    cell = row.group(1)
-    p95 = re.search(r"p95\s*<\s*([\d.]+)\s*ms", cell)
-    p99 = re.search(r"p99\s*<\s*([\d.]+)\s*(ms|s)", cell)
-    assert p95 and p99, f"阈值行的写法无法解析：{cell!r}"
-    return {
-        "p95_ms": float(p95.group(1)),
-        "p99_ms": float(p99.group(1)) * (1000 if p99.group(2) == "s" else 1),
-        "source": cell.strip(),
-    }
-
-
 def wait_pending(page, expected: int, where: str) -> int:
     """等 `#pending` **恰好等于** `expected`，并把它作为断言返回。
 

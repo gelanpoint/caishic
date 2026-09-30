@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import (
+from contract_support import (
     assert_endpoint_implemented,
     assert_error_response,
     assert_exact_keys,

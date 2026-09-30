@@ -19,7 +19,7 @@ import re
 import sys
 from pathlib import Path
 
-from conftest import REPO_ROOT, REQUIREMENTS_DEV, REQUIREMENTS_RUNTIME
+from contract_support import REPO_ROOT, REQUIREMENTS_DEV, REQUIREMENTS_RUNTIME
 
 #: 运行期依赖白名单（宪法 §1「允许的技术栈」+ `ADR-0004` §3）
 RUNTIME_ALLOWED_ROOTS: frozenset[str] = frozenset({"flask", "app"})

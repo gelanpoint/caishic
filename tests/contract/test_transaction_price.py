@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import (
+from contract_support import (
     assert_error_response,
     bind_stall_session,
     create_priced_transaction,

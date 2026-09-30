@@ -28,7 +28,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import REPO_ROOT
+from contract_support import REPO_ROOT
 
 STATIC_DIR = REPO_ROOT / "app" / "static"
 
@@ -190,17 +190,26 @@ def test_js_files_parse_as_javascript():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ("sample", "expected_hint"),
-    [
-        ('<script src="https://cdn.example.com/lib.js"></script>', "外链"),
-        ('<link href="//cdn.bootcss.com/x.css" rel="stylesheet">', "外链"),
-        ("<style>body{background:url(https://img.example.com/bg.png)}</style>", "外链"),
-        ('<style>@import url("https://fonts.googleapis.com/css?family=Roboto");</style>', "外部字体"),
-        ('<script src="node_modules/vue/dist/vue.min.js"></script>', "构建产物"),
-        ('<img src="file:///C:/data/logo.png">', "仓库外绝对路径"),
-    ],
+#: 扫描器灵敏度用的**六种外部依赖形态**（`T-036` 的收口入口也引用这一份，不另抄一遍）
+EXTERNAL_SAMPLES: tuple[tuple[str, str], ...] = (
+    ('<script src="https://cdn.example.com/lib.js"></script>', "外链"),
+    ('<link href="//cdn.bootcss.com/x.css" rel="stylesheet">', "外链"),
+    ("<style>body{background:url(https://img.example.com/bg.png)}</style>", "外链"),
+    ('<style>@import url("https://fonts.googleapis.com/css?family=Roboto");</style>', "外部字体"),
+    ('<script src="node_modules/vue/dist/vue.min.js"></script>', "构建产物"),
+    ('<img src="file:///C:/data/logo.png">', "仓库外绝对路径"),
 )
+
+#: 反向负例：站内相对路径**不得误报**
+CLEAN_SAMPLE = (
+    '<link href="../css/app.css" rel="stylesheet">\n'
+    '<script src="../js/scale.js"></script>\n'
+    "<style>body{background:url(./dot.png)}</style>\n"
+    '<a href="/scale/">操作端</a>\n'
+)
+
+
+@pytest.mark.parametrize(("sample", "expected_hint"), EXTERNAL_SAMPLES)
 def test_scanner_flags_external_dependency_samples(sample: str, expected_hint: str):
     """灵敏度负例：每种外部依赖形态**必须**被判红（否则检查是摆设）。"""
     hits = scan_static_text(sample, "合成样例")
@@ -212,10 +221,4 @@ def test_scanner_flags_external_dependency_samples(sample: str, expected_hint: s
 
 def test_scanner_does_not_flag_local_relative_paths():
     """反向负例：**站内相对路径不得误报** —— 否则只能靠"别写检查"来让 CI 变绿。"""
-    clean = (
-        '<link href="../css/app.css" rel="stylesheet">\n'
-        '<script src="../js/scale.js"></script>\n'
-        "<style>body{background:url(./dot.png)}</style>\n"
-        '<a href="/scale/">操作端</a>\n'
-    )
-    assert scan_static_text(clean, "干净样例") == []
+    assert scan_static_text(CLEAN_SAMPLE, "干净样例") == []

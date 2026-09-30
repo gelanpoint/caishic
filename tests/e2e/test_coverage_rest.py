@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import (
+from e2e_support import (
     active_products,
     bind_stall,
     count,
@@ -42,7 +42,7 @@ from conftest import (
 
 
 
-from conftest import (
+from e2e_support import (
     active_products,
     bind_stall,
     count,
