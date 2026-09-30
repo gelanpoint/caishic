@@ -13,14 +13,16 @@ import sqlite3
 
 import pytest
 
-from conftest import (
+from sensitive_scan import (
     BANK_CARD_VALUE_RE,
-    CONTRACT_ENDPOINTS,
     ID_CARD_VALUE_RE,
-    REPO_ROOT,
     scan_db_file,
     scan_json_for_sensitive,
     scan_text_for_sensitive,
+)
+from conftest import (
+    CONTRACT_ENDPOINTS,
+    REPO_ROOT,
     today_iso,
 )
 

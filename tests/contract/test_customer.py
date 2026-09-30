@@ -40,6 +40,7 @@ import re
 
 import pytest
 
+from sensitive_scan import scan_json_for_sensitive
 from conftest import (
     REPO_ROOT,
     assert_endpoint_implemented,
@@ -49,7 +50,6 @@ from conftest import (
     create_priced_transaction,
     json_of,
     load_contract_text,
-    scan_json_for_sensitive,
     session_headers,
 )
 

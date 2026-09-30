@@ -25,6 +25,9 @@ from pathlib import Path
 import pytest
 from flask.testing import FlaskClient
 
+# 敏感字段扫描原语已按语义拆到 `sensitive_scan.py`（`Q-16`）；此处只引入 `SensitiveScanClient` 需要的那一个
+from sensitive_scan import scan_json_for_sensitive  # noqa: E402  (conftest 内的兄弟模块导入)
+
 # 必须在 import app.* 之前设置（app/config.py 在导入时读取 MT_DATA_DIR）
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = REPO_ROOT / "specs" / "market-trade-flow" / "contracts" / "rest-api.md"
@@ -187,80 +190,6 @@ def assert_error_response(response, expected_code: str | None = None) -> dict:
     return payload
 
 # 4. 敏感字段扫描（`REQ-024` / `NFR-012` / `AC-012`）
-
-#: 字段名禁令：与 `data-model.md` §全局约定 逐条对齐（`id_card*` / `id_no*` / `bank_card*` /
-#: `card_no*` / `bank_account*`），并额外国产中文列名两种写法。
-FORBIDDEN_FIELD_RE = re.compile(r"^(?:id_card|id_no|bank_card|card_no|bank_account)|身份证|银行卡", re.IGNORECASE)
-#: 身份证号（18 位，含出生日期段）与银行卡号形态（16~19 位连续数字）。
-#: 注：身份证号若以 `X` 结尾，会同时命中银行卡形态（`\d{16,19}` 后的 `X` 不算数字）——
-#: 两者都属禁令范围，重复命中不影响判定，但不宣称能区分二者。
-ID_CARD_VALUE_RE = re.compile(
-    r"(?<!\d)[1-9]\d{5}(?:18|19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx](?!\d)"
-)
-BANK_CARD_VALUE_RE = re.compile(r"(?<!\d)\d{16,19}(?!\d)")
-
-
-def scan_json_for_sensitive(payload, where: str = "响应体") -> list[str]:
-    """递归扫描 JSON 的字段名与字符串取值；返回可读命中清单（空 = 零命中）。"""
-    hits: list[str] = []
-
-    def walk(node, path: str) -> None:
-        if isinstance(node, dict):
-            for key, value in node.items():
-                child = f"{path}.{key}" if path else str(key)
-                if isinstance(key, str) and FORBIDDEN_FIELD_RE.search(key):
-                    hits.append(f"{where}: 命中禁忌字段名 `{child}`")
-                walk(value, child)
-        elif isinstance(node, list):
-            for index, value in enumerate(node):
-                walk(value, f"{path}[{index}]")
-        elif isinstance(node, str):
-            if ID_CARD_VALUE_RE.search(node):
-                hits.append(f"{where}: 取值疑似身份证号 → `{path}`")
-            if BANK_CARD_VALUE_RE.search(node):
-                hits.append(f"{where}: 取值疑似银行卡号 → `{path}`")
-
-    walk(payload, "")
-    return hits
-
-
-def scan_text_for_sensitive(text: str, where: str = "文本") -> list[str]:
-    """扫描文本（源码 / SQL / 库文件字节）中的禁忌标识符与取值形态。"""
-    hits = [
-        f"{where}: 命中禁忌标识符 `{token}`"
-        for token in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", text)
-        if FORBIDDEN_FIELD_RE.search(token)
-    ]
-    if ID_CARD_VALUE_RE.search(text):
-        hits.append(f"{where}: 命中身份证号形态的取值")
-    if BANK_CARD_VALUE_RE.search(text):
-        hits.append(f"{where}: 命中银行卡号形态的取值")
-    return hits
-
-
-def scan_db_file(db_path: Path | str) -> list[str]:
-    """扫描**库文件**：SQLite 模式（对象名 / 列名）+ 全文件字节（16~19 位连续数字即异常）。"""
-    path = Path(db_path)
-    if not path.is_file():
-        return [f"库文件不存在：{path}"]
-
-    hits: list[str] = []
-    connection = sqlite3.connect(str(path))
-    try:
-        rows = connection.execute("SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL").fetchall()
-    finally:
-        connection.close()
-
-    for obj_type, name, sql in rows:
-        if FORBIDDEN_FIELD_RE.search(name or ""):
-            hits.append(f"{path.name}: 模式对象名禁忌 `{name}`（{obj_type}）")
-        for identifier in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", sql or ""):
-            if FORBIDDEN_FIELD_RE.search(identifier):
-                hits.append(f"{path.name}: DDL（{name}）含禁忌标识符 `{identifier}`")
-
-    # 库文件是二进制，按 latin-1 逐字节解码可无损检索 ASCII 数字串
-    hits.extend(scan_text_for_sensitive(path.read_bytes().decode("latin-1"), f"{path.name} 原始字节"))
-    return hits
 
 
 class SensitiveScanClient(FlaskClient):
