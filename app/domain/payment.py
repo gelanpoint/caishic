@@ -150,25 +150,40 @@ def apply_payment_callback(conn: sqlite3.Connection, body) -> tuple[dict, int]:
     if payment is None:
         raise TradeError("MT-1009", f"支付单号不存在：{payment_no}", {"payment_no": payment_no})
 
-    # 幂等命中：同一 callback_no 已到达过 → 记日志、返回首次语义，**不重复记账**（REQ-029 / AC-010）
+    # 幂等命中：同一 callback_no 已到达过 → 返回首次语义 + 标记，**不重复记账**（REQ-029 / AC-010）
     seen = conn.execute(
         "SELECT * FROM payment_callback_log WHERE callback_no = ?", (callback_no,)
     ).fetchone()
     if seen is not None:
+        # `data-model.md` §2.11：`payment_callback_log` 是「**每次**回调的到达记录与幂等命中标记」——
+        # 故命中这一次**也要落一行**（`is_duplicate = 1`）。只在首次落库的话，
+        # "回调被重复送达了几次"这个事实就丢了，而它正是 AC-010 要留的证据。
+        conn.execute(
+            "INSERT INTO payment_callback_log (callback_no, payment_id, result, is_duplicate) VALUES (?, ?, ?, 1)",
+            (callback_no, payment["id"], result),
+        )
         write_audit(
             conn,
             event_type="payment_callback_duplicate_hit",
-            ref_table="payment",
-            ref_id=payment["id"],
-            payload={"callback_no": callback_no, "payment_no": payment_no, "result": result},
+            # 指向**交易**而不是支付流水：本条留痕要回答的问题是
+            # "这笔交易的资金有没有被重复记账"（AC-010），交易才是那个被保护的对象。
+            ref_table="transaction",
+            ref_id=payment["transaction_id"],
+            payload={
+                "callback_no": callback_no,
+                "payment_no": payment_no,
+                "result": result,
+                "first_result": seen["result"],
+            },
             actor="mock",
         )
         conn.commit()
         return (
+            # 字段**恰好**契约 §3.17 列出的四个（多一个就是契约之外的字段，`RL-1`）：
+            # `callback_no` 是请求入参，不属于响应契约。
             {
-                "callback_no": callback_no,
                 "payment_no": payment_no,
-                "result": seen["result"],
+                "result": seen["result"],  # 契约 §1.3：重复请求返回**首次结果**
                 "is_duplicate": True,
                 "transaction_status": _transaction_status(conn, payment["transaction_id"]),
             },
@@ -200,8 +215,8 @@ def apply_payment_callback(conn: sqlite3.Connection, body) -> tuple[dict, int]:
 
     conn.commit()
     return (
+        # 同上：响应字段恰好契约 §3.17 的四个（`callback_no` 是入参，不进响应体）。
         {
-            "callback_no": callback_no,
             "payment_no": payment_no,
             "result": result,
             "is_duplicate": False,

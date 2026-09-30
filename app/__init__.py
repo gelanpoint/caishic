@@ -139,8 +139,10 @@ def create_app() -> Flask:
     # ---- 蓝图注册（端点实现逐一对应契约 §3） ----------------------------
     from .api.health import bp as health_bp
     from .api.merchant import bp as merchant_bp
+    from .api.mock import bp as mock_bp
 
     app.register_blueprint(health_bp)
     app.register_blueprint(merchant_bp)
+    app.register_blueprint(mock_bp)
 
     return app
