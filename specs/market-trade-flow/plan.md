@@ -64,6 +64,7 @@ market-trade-mvp/
 │   ├── migrations/               # 顺序 SQL 建表与变更脚本（0001_init.sql …），字段以 ./data-model.md 为准
 │   ├── seed.py                   # 种子数据导入（只读本地文件，不依赖外网；REQ-025）
 │   ├── seed_data/                # 种子数据（商户与摊位档案、品类字典与别名映射、商品与价目表；REQ-001、REQ-002、REQ-003）
+│   │   └── seed.json             # **产物**：由 ./scripts/gen_seed.py 生成（可复算，禁止手改后不回改生成规则）
 │   ├── domain/                   # 业务逻辑层（不依赖 HTTP，可被单测直接调用）
 │   │   ├── catalog.py            # 品类字典与「摊位别名 → 标准品类」映射、价目表设置与「复制上一营业日价格」（REQ-002、REQ-003）
 │   │   ├── pricing.py            # 计价、改价留痕、抹零、标价一致率（REQ-005~008、REQ-027）
@@ -89,6 +90,7 @@ market-trade-mvp/
 │   │   └── css/                  # 样式（适配手机宽度；不引外部字体或样式库）
 ├── data/                         # 运行时数据目录（SQLite 文件与离线暂存文件；不入库，见 .gitignore）
 ├── scripts/
+│   ├── gen_seed.py               # 种子数据生成器：按**确定性构造规则**生成 ./app/seed_data/seed.json（**产物可复算**：删掉种子文件后重跑本脚本必须逐字节还原；`--check` 与现有文件比对不写入）。规则、规模依据与自检写在该文件 docstring，**改种子必须同步改它**
 │   └── reset_demo.py             # 重置演示数据：删除数据文件并重跑种子导入（NFR-003/NFR-004 的恢复手段）
 └── tests/
     ├── contract/                 # 契约测试：先于实现编写，对齐 ./contracts/
