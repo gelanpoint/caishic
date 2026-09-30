@@ -16,6 +16,7 @@ from __future__ import annotations
 import pytest
 
 from e2e_support import (  # noqa: F401  （再导出，保持既有 `from conftest import ...` 可用）
+    GATE_FILE,
     LiveServer,
     REPO_ROOT,
     SEED_STALL,
@@ -35,8 +36,10 @@ from e2e_support import (  # noqa: F401  （再导出，保持既有 `from conft
     http_json,
     item_amount,
     new_page,
+    parse_latency_thresholds,
     pay_transaction,
     pending_count,
+    percentile,
     ratio_bp,
     reconciliation,
     scalar,
