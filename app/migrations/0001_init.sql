@@ -222,7 +222,9 @@ CREATE TABLE IF NOT EXISTS offline_queue (
                               CHECK (business_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
     -- 本地副本本体；补传成功后**置为 NULL**（NFR-013）。payload_json 为空 + purged_at 非空 = 副本已清除的可核对证据。
     payload_json              TEXT,
-    -- 状态机见 data-model.md §4.3（staged / syncing / synced / discarded）
+    -- 状态机见 data-model.md §4.3（staged / backfilled / duplicate_discarded）—— 取值以该节为唯一权威。
+    -- 本列**不加 CHECK**：§2.13 的 status 行写的是"状态机枚举，见 §4.3"（而非内联给出取值），
+    -- 按本文件约定 2 处理（状态机字段的取值与非法流转由 §4 状态机 + 应用层负责）。
     status                    TEXT NOT NULL DEFAULT 'staged',
     staged_at                 TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     synced_at                 TEXT,
