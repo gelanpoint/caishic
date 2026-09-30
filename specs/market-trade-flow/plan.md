@@ -70,11 +70,13 @@ market-trade-mvp/
 │   │   ├── offline.py            # 离线暂存、补传与幂等键、清除本地副本、达阈值只告警（REQ-014~016、REQ-030、NFR-013/014）
 │   │   ├── commission.py         # 佣金口径与按实收金额计算（REQ-017）
 │   │   ├── settlement.py         # 日聚合、按需重算、结算单、对账等式（REQ-018~020）
+│   │   ├── metrics.py            # 三个使用率指标的派生计算（口径见 ./data-model.md §5.1；不落表）
 │   │   └── audit.py              # 审计日志（只增不改；NFR-009）
 │   ├── api/                      # HTTP 端点实现，逐一对应 ./contracts/rest-api.md
 │   │   ├── merchant.py           # 秤端（摊主）端点，含本摊位数据边界（REQ-032）
 │   │   ├── admin.py              # 运营端端点（字典与价目表、佣金口径、看板、结算单、指标导出；REQ-021/022）
 │   │   ├── customer.py           # 顾客扫码页端点，只返回有采集来源的字段（REQ-023）
+│   │   ├── health.py             # 健康检查端点（NFR-010）
 │   │   └── mock.py               # 进程内 Mock：支付回调与模拟电子秤，可注入成功/失败/超时（REQ-011）
 │   ├── static/                   # 纯静态前端（无构建、无 CDN，全部本地文件）
 │   │   ├── index.html            # 入口导航（列出操作端与顾客扫码页两个入口）
@@ -92,6 +94,11 @@ market-trade-mvp/
     ├── e2e/                      # AC-001 ~ AC-023 的端到端验证
     └── perf/                     # 并发与响应时间压测脚本（NFR-001 与继承基线的验证）
 ```
+
+> **文件级授权范围说明**：上表中 `app/static/`、`app/seed_data/`、`app/migrations/`、`tests/` 四个目录按**目录级**授权，
+> 其内部文件由 `./tasks.md` §3 的「预估产出文件」逐文件授权（如 `app/static/scale/index.html`、`app/static/js/offline.js`、
+> `app/seed_data/seed.json`、`app/migrations/0001_init.sql`、`tests/contract/*`）。**两个清单必须一致**：
+> `tasks.md` 出现而本表未列的文件，按"目录级授权"处理；若连目录也不在本表内，则**必须改本表**才能创建该文件。
 
 ## 5. 数据流描述
 
