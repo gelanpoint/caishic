@@ -41,6 +41,7 @@ from ..domain.catalog import (
     set_price_list,
 )
 from ..domain.metrics import stall_daily_dashboard
+from ..domain.offline import queue_status, stage_transaction, sync_queue
 from ..domain.payment import pay_transaction
 from ..domain.pricing import change_price, create_transaction, list_transactions, transaction_detail
 from ..domain.refund import refund_transaction
@@ -284,3 +285,47 @@ def read_merchant_dashboard():
     conn = current_db()
     stall = _bound_stall(conn)
     return jsonify(stall_daily_dashboard(conn, stall["stall_id"], request.args.get("business_date"))), 200
+
+
+# ---------------------------------------------------------------------------
+# §3.13 暂存状态 / §3.14 暂存一笔交易 / §3.15 触发补传
+# ---------------------------------------------------------------------------
+
+
+@bp.get("/api/merchant/offline/queue")
+def read_offline_queue():
+    """契约 §3.13：可视标识（待补传条数 / 阈值 / 是否达阈值 / 最早暂存时刻 / 在线与否）。"""
+    conn = current_db()
+    stall = _bound_stall(conn)
+    return jsonify(queue_status(conn, stall["stall_id"])), 200
+
+
+@bp.post("/api/merchant/offline/queue")
+def stage_offline_transaction():
+    """契约 §3.14：断网期间把交易暂存到本地副本队列 → 201。
+
+    存储拒绝写入时由领域层抛 `MT-1007`（**明确报错**，`AC-019`）——
+    绝不接受"看起来存上了、其实没存"，那会让摊主以为钱已经记上（`NFR-014` 的红线）。
+    """
+    conn = current_db()
+    stall = _bound_stall(conn)
+    return (
+        jsonify(
+            stage_transaction(
+                conn, stall, request.get_json(silent=True), request.headers.get(IDEMPOTENCY_HEADER)
+            )
+        ),
+        201,
+    )
+
+
+@bp.post("/api/merchant/offline/sync")
+def sync_offline_queue():
+    """契约 §3.15：触发补传（幂等去重 + 清除本地副本）→ 200。
+
+    逐条失败**不阻断后续**（`REQ-015`）：重复键那条被丢弃并留痕，补传不成那条留在队列里等重试。
+    本端点**不需要** `Idempotency-Key`：它自身可重入，去重靠每条自己的业务键（`§1.7` 亦未把它列为键级去重场景）。
+    """
+    conn = current_db()
+    stall = _bound_stall(conn)
+    return jsonify(sync_queue(conn, stall)), 200

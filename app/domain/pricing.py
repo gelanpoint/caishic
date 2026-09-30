@@ -143,9 +143,22 @@ def _next_transaction_no(conn: sqlite3.Connection, business_date: str) -> str:
 
 
 def create_transaction(
-    conn: sqlite3.Connection, stall: sqlite3.Row, body, idempotency_key: str | None
+    conn: sqlite3.Connection,
+    stall: sqlite3.Row,
+    body,
+    idempotency_key: str | None,
+    *,
+    origin: str = "online",
+    business_date: str | None = None,
 ) -> tuple[dict, bool]:
-    """创建交易并计价（契约 §3.6）；返回 `(响应体, 是否为幂等命中)`。"""
+    """创建交易并计价（契约 §3.6）；返回 `(响应体, 是否为幂等命中)`。
+
+    `origin` / `business_date` 是给**离线补传**（§3.15 / `T-019`）用的：补传的两件事与在线下单不同 ——
+    ① 来源要记成 `backfilled`（`data-model.md` §2.8 的 `origin` 枚举，用于区分"当时在线"与"事后补传"）；
+    ② 营业日要用**离线期间所属营业日**（暂存行上的 `business_date`），不是补传当天的日期 ——
+       否则昨天的交易会被记成今天的，日聚合与对账直接错位。
+    两者默认值即 §3.6 的在线行为，故调用方不传时行为与本函数引入这两个参数之前**完全一致**。
+    """
     if not isinstance(body, dict):
         raise TradeError("MT-1008", "请求体必须是 JSON 对象")
     # 契约 §3.6：请求头 `Idempotency-Key` 必填（不传时取请求体字段，见 §2.8）
@@ -153,6 +166,18 @@ def create_transaction(
     if not isinstance(key, str) or not key or len(key) > 64:
         raise TradeError(
             "MT-1008", "缺少幂等键（请求头 Idempotency-Key，长度 ≤64）", {"header": "Idempotency-Key"}
+        )
+    # 请求体自带的 `client_idempotency_key` 也单独校验（`data-model.md` §2.8 的列约束是 ≤64）：
+    # 与 `offline.stage_transaction` 同一口径 —— 同一规则在两处各写一份就会漂移，故两边都显式校验，
+    # 且错误码与字段名一致（`MT-1008` / `client_idempotency_key`）。
+    body_key = body.get("client_idempotency_key")
+    if body_key is not None and (
+        not isinstance(body_key, str) or not body_key or len(body_key) > 64
+    ):
+        raise TradeError(
+            "MT-1008",
+            "`client_idempotency_key` 必须是长度 1~64 的字符串",
+            {"field": "client_idempotency_key", "max_length": 64},
         )
 
     parsed = _parse_items(body)
@@ -173,7 +198,10 @@ def create_transaction(
             {"idempotency_key": key, "transaction_no": existing["transaction_no"]},
         )
 
-    business_date = date.today().isoformat()
+    if business_date is None:
+        business_date = date.today().isoformat()
+    else:
+        business_date = parse_business_date(business_date, field="business_date")
     lines: list[tuple[int, int, int, int, int, int]] = []
     for product_id, weight_grams in parsed:
         product = conn.execute(
@@ -215,9 +243,9 @@ def create_transaction(
         INSERT INTO "transaction"
             (transaction_no, stall_id, business_date, status, total_amount_cents,
              round_off_cents, origin, client_idempotency_key)
-        VALUES (?, ?, ?, 'priced', ?, 0, 'online', ?)
+        VALUES (?, ?, ?, 'priced', ?, 0, ?, ?)
         """,
-        (transaction_no, stall_id, business_date, total, key),
+        (transaction_no, stall_id, business_date, total, origin, key),
     )
     transaction_id = int(cursor.lastrowid)
     for product_id, category_id, weight_grams, original, final, amount in lines:
