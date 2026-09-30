@@ -18,74 +18,13 @@ from datetime import date
 from .. import TradeError
 from ..db import now_iso
 from .audit import write_audit
-from .pricing import ALLOCATE_RETRIES, _unique_conflict
+from .numbering import insert_payment_row
 from .transactions import find_transaction, require_stall_scope
 
 #: 操作人长度上限（契约 §3.10：`operator` ≤32）
 OPERATOR_MAX_LEN = 32
 #: 收款流水号长度上限（`data-model.md` §2.10）
 PAYMENT_NO_MAX_LEN = 32
-
-
-def _next_payment_no(conn: sqlite3.Connection, business_date: str) -> str:
-    """生成收款流水号 `PAY-YYYYMMDD-NNNNNN`。
-
-    ⚠️ **本函数不是并发安全的**（与 `pricing._next_transaction_no` 同一个根因：
-    `SELECT MAX` 与 `INSERT` 之间没有写锁）。调用方必须走 `_insert_payment_with_retry`。
-    """
-    prefix = f"PAY-{business_date.replace('-', '')}"
-    row = conn.execute(
-        "SELECT payment_no FROM payment WHERE payment_no LIKE ? ORDER BY payment_no DESC LIMIT 1",
-        (f"{prefix}-%",),
-    ).fetchone()
-    sequence = int(row["payment_no"].rsplit("-", 1)[1]) + 1 if row else 1
-    return f"{prefix}-{sequence:06d}"
-
-
-def _insert_payment_with_retry(
-    conn: sqlite3.Connection,
-    *,
-    business_date: str,
-    transaction_id: int,
-    method: str,
-    amount_cents: int,
-    status: str,
-    confirmed_at: str | None,
-    operator: str | None,
-) -> str:
-    """插入支付流水；**并发下流水号冲突则回滚重算重试**，返回最终使用的 `payment_no`。
-
-    根因与契约依据同 `pricing._insert_transaction_with_retry`（`T-034` 实测：
-    并发收款撞 `ux_payment_no` → 未处理的 `sqlite3.IntegrityError` → 500 且丢一笔收款）。
-    `AC-020` / `REQ-031` 要求并发下每笔都被完整保存；`REQ-009`/`REQ-010` 的收款同样不能被吞掉。
-
-    **有界重试的明确出口**：重试耗尽 → 契约 §4 的 `MT-1012`（409 + §1.2 统一格式），
-    绝不把原始 `IntegrityError` 漏成 500。`ALLOCATE_RETRIES` 与计价那边**共用同一个数**
-    （同一个"号段分配"规则只留一处定义）。
-    """
-    for attempt in range(ALLOCATE_RETRIES):
-        payment_no = _next_payment_no(conn, business_date)
-        try:
-            conn.execute(
-                """
-                INSERT INTO payment
-                    (payment_no, transaction_id, method, amount_cents, status, confirmed_at, operator)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (payment_no, transaction_id, method, amount_cents, status, confirmed_at, operator),
-            )
-            return payment_no
-        except sqlite3.IntegrityError as exc:
-            conn.rollback()
-            if not (_unique_conflict(exc, "payment.payment_no") and attempt + 1 < ALLOCATE_RETRIES):
-                if _unique_conflict(exc, "payment.payment_no"):
-                    raise TradeError(
-                        "MT-1012",
-                        "并发写入冲突（收款流水号被抢占），请重试",
-                        {"payment_no": payment_no, "attempts": ALLOCATE_RETRIES},
-                    ) from exc
-                raise
-    raise AssertionError("收款流水号分配重试次数用尽（并发冲突未收敛）")
 
 
 def has_success_payment(conn: sqlite3.Connection, transaction_id: int) -> bool:
@@ -138,7 +77,7 @@ def pay_transaction(
                 "MT-1001", "该交易已有成功流水，不得重复收款", {"transaction_no": transaction_no}
             )
         confirmed_at = now_iso()
-        payment_no = _insert_payment_with_retry(
+        payment_no = insert_payment_row(
             conn,
             business_date=business_date,
             transaction_id=int(txn["id"]),
@@ -165,7 +104,7 @@ def pay_transaction(
         )
 
     # 收款码：置 pending，等 §3.17 回调驱动交易转 paid
-    payment_no = _insert_payment_with_retry(
+    payment_no = insert_payment_row(
         conn,
         business_date=business_date,
         transaction_id=int(txn["id"]),

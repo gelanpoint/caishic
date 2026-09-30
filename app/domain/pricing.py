@@ -26,6 +26,7 @@ from .. import TradeError
 from ..db import now_iso
 from .audit import write_audit
 from .catalog import parse_business_date
+from .numbering import insert_transaction_row
 from .transactions import find_transaction, require_stall_scope, transaction_payload
 
 #: 单笔明细行数上限（契约 §3.6：`items` 长度 1~20）
@@ -89,123 +90,6 @@ def _item_fingerprint(conn: sqlite3.Connection, transaction_id: int) -> list[tup
     ).fetchall()
     return [(row["product_id"], row["weight_grams"]) for row in rows]
 
-
-
-def _next_transaction_no(conn: sqlite3.Connection, business_date: str) -> str:
-    """生成交易号 `T-YYYYMMDD-NNNN`（按营业日流水号递增）。
-
-    ⚠️ **本函数不是并发安全的**：`SELECT MAX` 与调用方的 `INSERT` 之间没有写锁，
-    两个并发请求会算出同一个号（根因与处置见 `_insert_transaction_with_retry`）。
-    调用方必须走 `_insert_transaction_with_retry`，不要直接 INSERT。
-    """
-    prefix = f"T-{business_date.replace('-', '')}"
-    row = conn.execute(
-        'SELECT transaction_no FROM "transaction" WHERE transaction_no LIKE ? '
-        "ORDER BY transaction_no DESC LIMIT 1",
-        (f"{prefix}-%",),
-    ).fetchone()
-    sequence = int(row["transaction_no"].rsplit("-", 1)[1]) + 1 if row else 1
-    return f"{prefix}-{sequence:04d}"
-
-
-#: 号段分配的**有界重试**次数（并发撞唯一约束时回滚 → 重算 → 重试）。
-#: 为什么是 5：本期是单机 SQLite 的**演示级并发**（`NFR-001`：峰值 <20，同一营业日的号段只有
-#: 一个自增序列）。一次冲突意味着"读号与写号之间被另一个写者插了进去"，冲突概率随并发数上升；
-#: 5 次连续失败在 20 并发下已是极端尾部；再多没有实测依据，故不写一个"看起来更安全"的大数
-#: （没有依据的数字就是假指标）。**重试耗尽不是抛原始异常**：出口是契约定义的 `MT-1012`
-#: （§4「唯一约束冲突」），4xx + §1.2 统一错误格式 —— 宁可明确报"冲突请重试"，也不能变成 500。
-ALLOCATE_RETRIES = 5
-
-
-def _unique_conflict(exc: sqlite3.IntegrityError, column: str) -> bool:
-    """该 `IntegrityError` 是否是**指定列**上的唯一约束冲突（SQLite 的消息形态是稳定的）。"""
-    message = str(exc)
-    return "UNIQUE constraint failed" in message and column in message
-
-
-def _insert_transaction_with_retry(
-    conn: sqlite3.Connection,
-    *,
-    stall_id: int,
-    business_date: str,
-    total: int,
-    origin: str,
-    key: str,
-    lines: list[tuple[int, int, int, int, int, int]],
-) -> tuple[int, dict | None]:
-    """插入交易行 + 明细行；**并发下交易号冲突则回滚重算重试**。
-
-    ## 这个函数为什么存在（`T-034` 实测出来的真缺陷，根因不是猜的）
-
-    交易号是"先 `SELECT MAX` 再加 1，然后 INSERT"，而**读号不在写锁内**：两个并发请求
-    （两个摊位同时收银、或并发补传）算出同一个号，第二条 INSERT 撞
-    `ux_transaction_no`（`transaction.transaction_no`）→ 抛**未处理的 `sqlite3.IntegrityError`**
-    → HTTP 500（还是 Flask 默认 HTML，不是契约 §1.2 的统一错误格式），**这笔交易直接丢了**。
-    实测 traceback：`app/api/merchant.py:135 → app/domain/pricing.py:202`。
-
-    **契约判据（改动方向由它决定，不是由"让测试变绿"决定）**：`AC-020`「多个摊位**同时**提交交易，
-    写入完成时**每笔交易均被完整保存**、交易号唯一、互不覆盖」；`REQ-031` 同义。
-    故处置是"**冲突即重算重试**"，不是"把并发用例的断言放宽"。
-    为什么不用加锁/序列号表：本期是单机 SQLite 演示级并发（`NFR-001`），
-    有界重试即可收敛，且**不引入新的锁语义、不改数据模型**（改模型属于另一类决策）。
-
-    两类冲突分别处置（**怎么区分写在代码里**，不靠注释口头约定）：
-    - `transaction.transaction_no` 冲突（`_unique_conflict(exc, "transaction.transaction_no")`）
-      → 重算号重试；**重试用尽** → 抛契约 §4 的 `MT-1012`（409 + §1.2 统一格式），
-      **不把原始 `IntegrityError` 漏出去**（那会变成 500 且丢单 —— 正是本次要修的缺陷）；
-    - `transaction.client_idempotency_key` 冲突（`_unique_conflict(exc, "client_idempotency_key")`，
-      即**并发同键重发**）→ 按契约 §1.3「重复请求返回**首次结果**」返回既有那笔
-      （`replay` 非空，调用方据此标记幂等命中），不报错、不新建。
-
-    返回 `(transaction_id, 幂等重放的响应体或 None)`。
-    """
-    cursor = None
-    for attempt in range(ALLOCATE_RETRIES):
-        transaction_no = _next_transaction_no(conn, business_date)
-        try:
-            cursor = conn.execute(
-                """
-                INSERT INTO "transaction"
-                    (transaction_no, stall_id, business_date, status, total_amount_cents,
-                     round_off_cents, origin, client_idempotency_key)
-                VALUES (?, ?, ?, 'priced', ?, 0, ?, ?)
-                """,
-                (transaction_no, stall_id, business_date, total, origin, key),
-            )
-            break
-        except sqlite3.IntegrityError as exc:
-            conn.rollback()
-            if _unique_conflict(exc, "client_idempotency_key"):
-                existing = conn.execute(
-                    'SELECT * FROM "transaction" WHERE stall_id = ? AND client_idempotency_key = ?',
-                    (stall_id, key),
-                ).fetchone()
-                if existing is not None:
-                    return 0, transaction_payload(conn, existing)
-            if _unique_conflict(exc, "transaction.transaction_no"):
-                if attempt + 1 < ALLOCATE_RETRIES:
-                    continue  # 号被并发抢走了 → 回滚已做，重算号再来
-                raise TradeError(  # 有界重试的**明确出口**：契约 §4 的"唯一约束冲突"
-                    "MT-1012",
-                    "并发写入冲突（交易号被抢占），请重试",
-                    {"idempotency_key": key, "attempts": ALLOCATE_RETRIES},
-                ) from exc
-            raise
-    assert cursor is not None, "号段分配重试次数用尽（并发冲突未收敛）"
-
-    transaction_id = int(cursor.lastrowid)
-    for product_id, category_id, weight_grams, original, final, amount in lines:
-        conn.execute(
-            """
-            INSERT INTO transaction_item
-                (transaction_id, product_id, category_id, weight_grams, original_unit_price_cents,
-                 final_unit_price_cents, amount_cents, price_changed, is_round_off)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0)
-            """,
-            (transaction_id, product_id, category_id, weight_grams, original, final, amount),
-        )
-    conn.commit()
-    return transaction_id, None
 
 
 def create_transaction(
@@ -305,7 +189,7 @@ def create_transaction(
     total = sum(line[5] for line in lines)
     # 交易号分配 + 落库统一走"冲突即重算重试"（并发下 `SELECT MAX` 与 INSERT 之间有窗口，
     # 直接 INSERT 会在并发时 500 且丢单 —— 根因与契约依据见该函数的 docstring）。
-    transaction_id, replay = _insert_transaction_with_retry(
+    transaction_id, replay_row = insert_transaction_row(
         conn,
         stall_id=stall_id,
         business_date=business_date,
@@ -314,9 +198,9 @@ def create_transaction(
         key=key,
         lines=lines,
     )
-    if replay is not None:
+    if replay_row is not None:
         # 并发同键重发：另一个请求已写入同一幂等键 → 契约 §1.3「重复请求返回首次结果」
-        return replay, True
+        return transaction_payload(conn, replay_row), True
 
     txn = conn.execute('SELECT * FROM "transaction" WHERE id = ?', (transaction_id,)).fetchone()
     return transaction_payload(conn, txn), False

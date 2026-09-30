@@ -69,6 +69,7 @@ market-trade-mvp/
 │   ├── domain/                   # 业务逻辑层（不依赖 HTTP，可被单测直接调用）
 │   │   ├── catalog.py            # 品类字典与「摊位别名 → 标准品类」映射、价目表设置与「复制上一营业日价格」（REQ-002、REQ-003）
 │   │   ├── transactions.py       # 交易读端点：列表 §3.7 / 详情 §3.8 + 组装函数 transaction_payload()（Q-16 按语义从 pricing.py 拆出）
+│   │   ├── numbering.py          # 号段（交易号/流水号）分配与**并发安全**的交易/流水落库（有界重试；T-034 按语义从 pricing.py 拆出）
 │   │   ├── pricing.py            # 计价、改价留痕、抹零、标价一致率（REQ-005~008、REQ-027）
 │   │   ├── payment.py            # 收款码/现金、支付回调幂等、交易落库（REQ-009~012、REQ-026、REQ-029）
 │   │   ├── refund.py             # 退货冲正、只冲减一次（REQ-013、REQ-028）
@@ -100,6 +101,14 @@ market-trade-mvp/
     ├── e2e/                      # AC-001 ~ AC-023 的端到端验证
     └── perf/                     # 并发与响应时间压测脚本（NFR-001 与继承基线的验证）
 ```
+
+> **测试支撑模块（非用例，`T-031`/`T-035` 按语义拆出，逐文件授权）**：`tests/conftest.py`（**只放 pytest 夹具**）、
+> `tests/e2e_support.py`（端到端助手：服务生命周期 / HTTP 与库助手 / 独立复算公式）、
+> `tests/gates.py`（`docs/standards/quality-gates.md` 阈值的**唯一机器入口**）、
+> `tests/contract/contract_support.py`（契约层助手；`tests/contract/conftest.py` 只是三行垫片）。
+> 拆的直接原因是**同名 `conftest` 撞车**（两个 `conftest.py` 同名且两边目录都进 `sys.path`，
+> 用例写 `from conftest import ...` 会解析到不确定的那一个 → 全量 `pytest -q` 收不起用例），
+> 以及 400 行单文件门禁；详见 `./tasks.md` §3 备注。
 
 > **文件级授权范围说明**：上表中 `app/static/`、`app/seed_data/`、`app/migrations/`、`tests/` 四个目录按**目录级**授权，
 > 其内部文件由 `./tasks.md` §3 的「预估产出文件」逐文件授权（如 `app/static/scale/index.html`、`app/static/js/offline.js`、
