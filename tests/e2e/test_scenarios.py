@@ -196,7 +196,9 @@ def test_offline_toggle_stage_then_sync_clears_pending(live_server, browser, sho
     page.click("#syncNow")
     page.wait_for_function("document.querySelector('#syncResult').textContent.includes('补传')")
     result = page.inner_text("#syncResult")
-    pending_after = _pending_count(page)
+    # 同上：`#syncResult` 是同步写上的，`#pending` 要等 `§3.13` 那一趟 GET 回来 ——
+    # 立刻读会读到旧值（本用例第一次进全套跑时就是这么偶发失败的：**自己的异步没等，不是产品缺陷**）。
+    pending_after = _wait_pending(page, 0, "补传后")
     assert pending_after == 0, f"补传后界面 pending 应归零，实际 {pending_after}（{result}）"
     # 服务端自报的计数必须与"我们点了 2 笔"一致 —— 这是"确实暂存了 2 笔"的**另一半证据**
     assert f"补传 {staged} 笔" in result, f"补传条数应与暂存条数一致：{result!r}"

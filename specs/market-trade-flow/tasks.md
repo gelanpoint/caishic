@@ -75,16 +75,18 @@
 | T-029 | 「无 CDN / 无外部资源」静态自检：扫描全部静态文件不得含外链域名或构建产物引用 | T-026 | [P] | REQ-025；AC-013 | 扫描通过；**故意插入一个 CDN `<script src>` 后必须变红**（灵敏度要求） | tests/contract/test_no_external_assets.py |
 | T-030 | 端到端验证（一）：AC-001、AC-002、AC-003、AC-004 三大成功场景 + 现金等价入账 | T-026、T-027、T-028 | | REQ-005、REQ-009、REQ-010、REQ-012、REQ-013、REQ-014、REQ-015、REQ-018、REQ-020、REQ-021；AC-001/AC-002/AC-003/AC-004 | 四个场景全部通过并**留实测输出**（含对账等式三处数值） | tests/e2e/test_scenarios.py |
 | T-031 | 端到端验证（二）：异常与边界（重量越界、退货超原单、回调重复、阈值继续接受、暂存失败、越权访问） | T-030 | | REQ-016、REQ-027、REQ-028、REQ-029、REQ-030、REQ-032；AC-009/AC-010/AC-017/AC-018/AC-019/AC-021 | 六个异常场景全部通过；**每个都断言"没有产生错误数据"**（不只是报错） | tests/conftest.py、tests/e2e/test_edge_cases.py、tests/e2e/test_edge_payment.py、tests/e2e/test_edge_offline.py |
-| T-032 | 端到端验证（三）：其余 AC 全覆盖（含三个使用率指标的分子分母核对、标价一致率、别名归集、复制昨天价、扫码页字段来源） | T-030 | | REQ-002、REQ-003、REQ-006、REQ-008、REQ-022、REQ-023；AC-005/AC-006/AC-007/AC-008/AC-011/AC-014/AC-015/AC-016/AC-022/AC-023 | §6 矩阵中列出的 AC 全部通过（人工逐条对照） | tests/e2e/test_coverage_rest.py |
+| T-032 | 端到端验证（三）：其余 AC 全覆盖（含三个使用率指标的分子分母核对、标价一致率、别名归集、复制昨天价、扫码页字段来源） | T-030 | | REQ-002、REQ-003、REQ-006、REQ-008、REQ-022、REQ-023；AC-005/AC-006/AC-007/AC-008/AC-011/AC-014/AC-015/AC-016/AC-022/AC-023 | §6 矩阵中列出的 AC 全部通过（人工逐条对照） | tests/e2e/test_coverage_rest.py、tests/e2e/test_coverage_catalog.py、tests/e2e/test_coverage_admin.py |
 | T-033 | 演示硬要求核验与断网彩排：局域网 IP、两个入口地址、**同机双浏览器窗口**（秤端 + 顾客端）全流程、端口占用检测、数据文件路径打印 | T-030 | | REQ-025；AC-013 | `AGENTS.md` §3 的 5 条硬要求**逐条现场验收**；**断网状态下跑完一遍全流程** | tests/e2e/test_demo_requirements.py |
 | T-034 | 并发与响应时间压测：多摊位并发写入不覆盖、交易号唯一、接口响应时间采样 | T-016、T-022 | | REQ-031；NFR-001；AC-020 | 并发写入后**条数与交易号唯一性均可核验**；响应时间采样结果与 `docs/standards/quality-gates.md` 的阈值比对 | tests/perf/test_concurrency.py |
 | T-035 | 收尾核对：质量门禁逐项核对、**干净环境实证（只安装 `requirements.txt` → `python run.py` 必须能启动）**、`scripts/reset_demo.py` 从零重建演练、依赖清单锁定、把核对结果追加进项目状态 | T-029、T-031、T-032、T-033、T-034 | | —(收尾)；NFR-003、NFR-004 | CP-D 四项逐条核对；**干净环境实证须留实测输出**（依据 `docs/adr/0004-依赖范围界定-运行期与开发期.md` §3 第 4 条）；核对记录写入 `docs/PROJECT-STATE.md` | docs/PROJECT-STATE.md（追加核对记录） |
 | T-036 | **检查灵敏度验证（自动化负例）**：① 路由表 ↔ 契约 §2 比对——**故意注册一个契约里没有的端点，比对必须变红**；② 敏感字段扫描——**故意加一个 `id_card` 字段，扫描必须命中**；③ 运行期隔离检查——**故意在 `run.py` 里 `import pytest`，检查必须变红**；④ 移除故意破坏物后必须恢复绿。四条缺一即判定对应检查不成立 | T-007、T-015 | | REQ-024；NFR-009；AC-012 | 四条负例各自的实际输出留痕（红 → 恢复绿）；作为 CP-C 第④项 | tests/contract/test_check_sensitivity.py |
 
-> **`2026-09-30` `T-031` 走查夹具收敛 + 按语义拆分**：新增 `tests/conftest.py`（`tests/` 目录级授权 + 本表逐文件授权），
-> 把 `live_server` / `browser` / `shots` 与走查助手从 `test_scenarios.py` 提到一处，供 `T-030`~`T-034` 共用
-> —— 同一条规则（服务怎么起、日志往哪写、什么算就绪）写五遍就是下次漂移的种子；
-> `T-031` 的用例按**语义**拆成三个文件（输入与权限 / 支付回调 / 离线链路），单文件均 ≤400 行（`quality-gates.md` §1.2）。
+> **`2026-09-30` `T-031`/`T-032` 走查夹具收敛 + 按语义拆分**：新增 `tests/conftest.py`（**只放 pytest 夹具**）与
+> `tests/e2e_support.py`（**助手**：服务生命周期 / HTTP 与库助手 / 按 `data-model.md` §0·§5.1 口径的独立复算公式；
+> 按语义拆是因为 `conftest.py` 一度到 424 行、超 `quality-gates.md` §1.2 的 400 行阈值），
+> 由 `T-030`~`T-034` 共用 —— 同一条规则（服务怎么起、日志往哪写、什么算就绪）写五遍就是下次漂移的种子；
+> `T-031`/`T-032` 的用例按**端点语义**拆成多个文件（输入与权限 / 支付回调 / 离线链路；交易行为 / 目录与顾客页 / 运营端读模型），
+> 单文件均 ≤400 行（`Q-16` 的拆法先例：按语义拆，不做机械对半切）。
 
 > **`T-007` 产出文件的补充说明（`2026-09-30`）**：新增仓库根 `pytest.ini`（已在 `plan.md` §4 登记）。
 > 理由：pytest 默认把 basetemp 放在系统 Temp 的 `pytest-of-<user>/` 编号目录并在其中维护 `pytest-current` 目录符号链接，
