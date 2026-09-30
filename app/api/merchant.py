@@ -1,10 +1,11 @@
 """秤端（摊主）端点组：契约 §3.2 会话、§3.3/§3.4 价目表、§3.5 商品、§3.6 创建交易并计价、
-§3.7 交易列表、§3.8 交易详情、§3.12 商户看板。
+§3.7 交易列表、§3.8 交易详情、§3.9 改价/抹零、§3.12 商户看板。
 
-关联：`REQ-002`、`REQ-003`、`REQ-004`、`REQ-005`、`REQ-006`、`REQ-012`、`REQ-021`、`REQ-027`、
-`REQ-032`；`NFR-007`；`AC-001`/`AC-006`/`AC-014`/`AC-015`/`AC-016`/`AC-017`/`AC-021`。
+关联：`REQ-002`、`REQ-003`、`REQ-004`、`REQ-005`、`REQ-006`、`REQ-007`、`REQ-008`、`REQ-012`、
+`REQ-021`、`REQ-027`、`REQ-032`；`NFR-007`；`AC-001`/`AC-006`/`AC-007`/`AC-008`/`AC-014`/`AC-015`/
+`AC-016`/`AC-017`/`AC-021`。
 对应任务：`tasks.md` `T-015`（§3.2~§3.5、§3.7/§3.8/§3.12 秤端读端点 —— 后三处由 `T-008` 执行时
-发现归属缺口并补进 `tasks.md` §1.3）、`T-016`（§3.6 创建交易并计价）。
+发现归属缺口并补进 `tasks.md` §1.3）、`T-016`（§3.6 创建交易、§3.9 改价/抹零）。
 
 本模块**只是 HTTP 皮肤**：解析请求 → 取本请求的连接与摊位会话 → 调用 `app/domain/` 下的领域函数
 → `jsonify` 结果。**业务规则一条都不在这里重写**（重写一遍就是第二份事实来源，必然与领域层漂移）；
@@ -21,8 +22,9 @@
 3. **会话校验先于参数校验**：`X-Stall-Session` 无效一律先回 `MT-1005`(401)，
    避免"未登录也能通过参数报错探出业务规则"。
 
-**本批次范围止于 §3.12**：§3.9 改价/抹零、§3.10 收款、§3.11 退货、§3.13~§3.15 离线、运营端与顾客端
-端点不在本文件内，按 `tasks.md` §1.3 的归属由后续任务（`T-016` 余下部分 / `T-017`~`T-023`）实现。
+**范围**：本提交实现 §3.2~§3.9；§3.10 收款 / §3.11 退货由本轮后续提交加入本文件；
+§3.13~§3.15 离线、运营端与顾客端端点不在本文件内，按 `tasks.md` §1.3 的归属由
+`T-019`/`T-020`~`T-023` 实现。
 """
 
 from __future__ import annotations
@@ -38,7 +40,7 @@ from ..domain.catalog import (
     set_price_list,
 )
 from ..domain.metrics import stall_daily_dashboard
-from ..domain.pricing import create_transaction, list_transactions, transaction_detail
+from ..domain.pricing import change_price, create_transaction, list_transactions, transaction_detail
 
 bp = Blueprint("merchant", __name__)
 
@@ -180,6 +182,29 @@ def read_transaction_detail(transaction_no):
     conn = current_db()
     stall = _bound_stall(conn)
     return jsonify(transaction_detail(conn, stall["stall_id"], transaction_no)), 200
+
+
+# ---------------------------------------------------------------------------
+# §3.9 改价 / 抹零（留痕）
+# ---------------------------------------------------------------------------
+
+
+@bp.post("/api/merchant/transactions/<transaction_no>/price-change")
+def change_stall_transaction_price(transaction_no):
+    """契约 §3.9：改价或抹零，并写入**只增不改**的留痕。
+
+    全部规则在 `app/domain/pricing.change_price()`：可改价状态（`MT-1001`）、
+    `final_unit_price_cents` 与 `round_off_cents` 二选一（`MT-1008`）、
+    幅度 >50% 需确认（`MT-1011`，**只要求确认、不阻止**）、抹零与改价分开标记（`REQ-008` / `AC-008`）。
+    金额重算同样在那里（本层不重算 —— 涉钱口径只准有一处实现）。
+
+    契约 §3.9 的请求头只要求 `X-Stall-Session`（**不要求** `Idempotency-Key`）：
+    改价是"改已有行 + 写留痕"，不是新建资金事实；若在此额外强制幂等键，
+    就是给契约之外的调用方新增一个必填项（`RL-1`）。
+    """
+    conn = current_db()
+    stall = _bound_stall(conn)
+    return jsonify(change_price(conn, stall, transaction_no, request.get_json(silent=True))), 200
 
 
 # ---------------------------------------------------------------------------
