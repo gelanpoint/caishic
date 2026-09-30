@@ -35,14 +35,12 @@ if str(REPO_ROOT) not in sys.path:
 TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="mt-contract-"))
 os.environ["MT_DATA_DIR"] = str(TEST_DATA_DIR)
 
-#: 演示数据里的已知摊位号（`seed.json` 的首个摊位）
-SEED_STALL_NO = "A-01"
+SEED_STALL_NO = "A-01"  #: 演示数据里的已知摊位号（`seed.json` 的首个摊位）
 
 #: **非接口路由豁免表**：契约 §2 只登记接口端点，入口导航页与静态资源由 Flask 托管
 #: （`plan.md` §4 / `AGENTS.md` §3 硬要求 4）。表外任何路由都会被判为「契约外端点」并失败，
-#: 强制「新增端点必须先进契约再进代码」（`RL-1`）。
-#: ⚠️ 路径必须是 `normalize_rule` 之后的**归一形式**（`/static/{filename}`）——
-#: 原写 `<path:filename>` 与归一后的路由表永远匹配不上，该缺陷由真实破坏演练暴露并在此修正。
+#: 强制「新增端点必须先进契约再进代码」（`RL-1`）。⚠️ 路径必须是 `normalize_rule` 之后的归一形式
+#: （原写 `<path:filename>` 与归一后的路由表永远匹配不上，该缺陷由真实破坏演练暴露并修正）。
 NON_API_ROUTES: frozenset[tuple[str, str]] = frozenset({("GET", "/"), ("GET", "/static/{filename}")})
 
 # 1. 契约解析
@@ -117,6 +115,11 @@ def assert_route_table_matches_contract(app) -> None:
         problems.append(f"实现已注册但契约 §2 未登记（{len(extra)} 个，违反 RL-1「规格先于代码」）：\n{lines}")
     if problems:
         raise AssertionError("路由表 ↔ 契约 §2 端点总表不一致：\n" + "\n".join(problems))
+
+
+def assert_endpoint_implemented(app, method: str, path: str) -> None:
+    """**前置**：端点必须已实现 —— 否则"期望 404 / `MT-1009`"会被通用 404 处理器**假绿**（T-008 首轮实测暴露）。"""
+    assert (method, path) in registered_endpoints(app), f"前置失败：{method} {path} 尚未实现（契约 §2 已登记）"
 
 # 3. 统一错误响应格式（契约 §1.2 + §4）
 
