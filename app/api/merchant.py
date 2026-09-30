@@ -1,11 +1,13 @@
 """秤端（摊主）端点组：契约 §3.2 会话、§3.3/§3.4 价目表、§3.5 商品、§3.6 创建交易并计价、
-§3.7 交易列表、§3.8 交易详情、§3.9 改价/抹零、§3.12 商户看板。
+§3.7 交易列表、§3.8 交易详情、§3.9 改价/抹零、§3.10 确认收款、§3.11 退货冲正、§3.12 商户看板。
 
-关联：`REQ-002`、`REQ-003`、`REQ-004`、`REQ-005`、`REQ-006`、`REQ-007`、`REQ-008`、`REQ-012`、
-`REQ-021`、`REQ-027`、`REQ-032`；`NFR-007`；`AC-001`/`AC-006`/`AC-007`/`AC-008`/`AC-014`/`AC-015`/
-`AC-016`/`AC-017`/`AC-021`。
+关联：`REQ-002`、`REQ-003`、`REQ-004`、`REQ-005`、`REQ-006`、`REQ-007`、`REQ-008`、`REQ-009`、
+`REQ-010`、`REQ-012`、`REQ-013`、`REQ-021`、`REQ-026`、`REQ-027`、`REQ-028`、`REQ-032`；
+`NFR-007`；`AC-001`/`AC-002`/`AC-004`/`AC-006`/`AC-007`/`AC-008`/`AC-014`/`AC-015`/`AC-016`/
+`AC-017`/`AC-021`。
 对应任务：`tasks.md` `T-015`（§3.2~§3.5、§3.7/§3.8/§3.12 秤端读端点 —— 后三处由 `T-008` 执行时
-发现归属缺口并补进 `tasks.md` §1.3）、`T-016`（§3.6 创建交易、§3.9 改价/抹零）。
+发现归属缺口并补进 `tasks.md` §1.3）、`T-016`（§3.6 创建交易、§3.9 改价/抹零）、
+`T-017`（§3.10 确认收款）、`T-018`（§3.11 退货冲正）。
 
 本模块**只是 HTTP 皮肤**：解析请求 → 取本请求的连接与摊位会话 → 调用 `app/domain/` 下的领域函数
 → `jsonify` 结果。**业务规则一条都不在这里重写**（重写一遍就是第二份事实来源，必然与领域层漂移）；
@@ -22,9 +24,8 @@
 3. **会话校验先于参数校验**：`X-Stall-Session` 无效一律先回 `MT-1005`(401)，
    避免"未登录也能通过参数报错探出业务规则"。
 
-**范围**：本提交实现 §3.2~§3.9；§3.10 收款 / §3.11 退货由本轮后续提交加入本文件；
-§3.13~§3.15 离线、运营端与顾客端端点不在本文件内，按 `tasks.md` §1.3 的归属由
-`T-019`/`T-020`~`T-023` 实现。
+**范围**：本提交实现 §3.2~§3.11；§3.13~§3.15 离线、运营端与顾客端端点不在本文件内，
+按 `tasks.md` §1.3 的归属由 `T-019`/`T-020`~`T-023` 实现。
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ from ..domain.catalog import (
 from ..domain.metrics import stall_daily_dashboard
 from ..domain.payment import pay_transaction
 from ..domain.pricing import change_price, create_transaction, list_transactions, transaction_detail
+from ..domain.refund import refund_transaction
 
 bp = Blueprint("merchant", __name__)
 
@@ -235,6 +237,36 @@ def pay_stall_transaction(transaction_no):
         request.headers.get(IDEMPOTENCY_HEADER),
     )
     return jsonify(payload), status
+
+
+# ---------------------------------------------------------------------------
+# §3.11 退货冲正（只冲减一次）
+# ---------------------------------------------------------------------------
+
+
+@bp.post("/api/merchant/transactions/<transaction_no>/refund")
+def refund_stall_transaction(transaction_no):
+    """契约 §3.11：只冲减一次；**重复提交返回 200 + `replayed: true` 且金额不变**。
+
+    **幂等命中不是错误**（`spec.md` §5 / 契约 §4 末注）：这条路径绝不能返回 4xx ——
+    调用方（秤端）在弱网下会重发，把它当失败就会重复提示摊主"退货没成功"。
+    幂等判定与状态/金额闸门的先后顺序在领域层（`app/domain/refund.py` 的模块 docstring 有说明），
+    本层只负责把结果转成 200。
+    """
+    conn = current_db()
+    stall = _bound_stall(conn)
+    return (
+        jsonify(
+            refund_transaction(
+                conn,
+                stall,
+                transaction_no,
+                request.get_json(silent=True),
+                request.headers.get(IDEMPOTENCY_HEADER),
+            )
+        ),
+        200,
+    )
 
 
 # ---------------------------------------------------------------------------
