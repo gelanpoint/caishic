@@ -81,14 +81,20 @@ def bind_session(conn: sqlite3.Connection, body) -> dict:
 
 
 def require_session(conn: sqlite3.Connection, token: str | None) -> sqlite3.Row:
-    """校验 `X-Stall-Session` 并返回会话绑定的摊位行（契约 §1.6 / §4 `MT-1005`）。"""
+    """校验 `X-Stall-Session` 并返回会话绑定的摊位行（契约 §1.6 / §4 `MT-1005`）。
+
+    返回的列是**一个摊位行的可用子集**，含 `payment_receiver_token`（脱敏值）——
+    它是契约 §3.10 收款码响应 `receiver_token_masked` 的来源（`REQ-024` / `NFR-012`）。
+    放在这里而不是让收款端点自己再查一次：同一个摊位行只准有一条查询路径，
+    否则"会话绑定的是哪个摊位"就有两处各自解释的机会（本函数是 `REQ-032` 边界的唯一入口）。
+    """
     if not isinstance(token, str) or not token:
         raise TradeError("MT-1005", "缺少会话 Token（请求头 X-Stall-Session）", {"header": "X-Stall-Session"})
 
     row = conn.execute(
         """
         SELECT s.id AS stall_id, s.stall_no, s.name AS stall_name, s.status AS stall_status,
-               ss.id AS session_id
+               s.payment_receiver_token, ss.id AS session_id
         FROM stall_session ss
         JOIN stall s ON s.id = ss.stall_id
         WHERE ss.session_token = ? AND ss.is_active = 1

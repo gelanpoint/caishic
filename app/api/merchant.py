@@ -40,6 +40,7 @@ from ..domain.catalog import (
     set_price_list,
 )
 from ..domain.metrics import stall_daily_dashboard
+from ..domain.payment import pay_transaction
 from ..domain.pricing import change_price, create_transaction, list_transactions, transaction_detail
 
 bp = Blueprint("merchant", __name__)
@@ -205,6 +206,35 @@ def change_stall_transaction_price(transaction_no):
     conn = current_db()
     stall = _bound_stall(conn)
     return jsonify(change_price(conn, stall, transaction_no, request.get_json(silent=True))), 200
+
+
+# ---------------------------------------------------------------------------
+# §3.10 确认收款（现金 / 收款码）
+# ---------------------------------------------------------------------------
+
+
+@bp.post("/api/merchant/transactions/<transaction_no>/payment")
+def pay_stall_transaction(transaction_no):
+    """契约 §3.10：`method = cash` → 200（立即成功并落支付流水）；`method = qr` → 202（待回调）。
+
+    **现金与收款码写同一张 `payment` 表**（`REQ-010` / `data-model.md` §2.10），以 `method` 区分 ——
+    为现金另建一张表会直接打碎对账等式「订单总额 = 支付流水 = 分账明细」（`AC-003`），
+    而等式正是本系统的资金红线。
+
+    状态码由领域层给出（`pay_transaction` 返回 `(响应体, 状态)`）：现金 200 / 收款码 202 是
+    **契约 §3.10 的两种不同语义**（已到账 vs 已生成待回调），不是同一个 200 加个标记 ——
+    编排层若在这里统一成 200，调用方就分不清"钱到了"和"码给了"。
+    """
+    conn = current_db()
+    stall = _bound_stall(conn)
+    payload, status = pay_transaction(
+        conn,
+        stall,
+        transaction_no,
+        request.get_json(silent=True),
+        request.headers.get(IDEMPOTENCY_HEADER),
+    )
+    return jsonify(payload), status
 
 
 # ---------------------------------------------------------------------------
