@@ -11,117 +11,55 @@
 2. **离线**：切离线 → 暂存若干笔 → 切回在线 → 补传 → 界面 `pending` 归零；
 3. **顾客扫码页**：**浏览器里真正渲染出来的字段**必须与接口白名单一致（不是只看接口）。
 
+> **夹具已收敛到 `tests/conftest.py`**（`T-031` 建立）：`live_server` / `browser` / `shots` /
+> `new_page` / `snap` 由 `T-030`~`T-034` 的走查文件共用 —— 一条规则只写一处。
+> 上一版把 `live_server` 写在本文件里，`T-031` 起若再复制四份就是"同一个规则写五遍"。
+
 证据：断言 + 关键步骤截图（截图落在 `.pytest-tmp/e2e-shots/`，该目录已被 `.gitignore` 忽略，
 不会污染仓库；断言失败时 pytest 会打印真实 DOM 文本，便于定位"点不动"）。
 """
 
 from __future__ import annotations
 
-import json
-import os
-import socket
-import subprocess
-import sys
-import time
-import urllib.request
-from pathlib import Path
-
-import pytest
-
-# 证据要能在**任何控制台**下打出来：Windows 默认 GBK，遇到 `¥` 这类字符会直接
-# `UnicodeEncodeError` 把用例判红（**检查本身成了故障源** —— 本轮实测就是这么挂的）。
-# 故显式把 stdout 改成 UTF-8 + 出错替换：编码问题不再伪装成"页面点不动"。
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SHOTS = REPO_ROOT / ".pytest-tmp" / "e2e-shots"
-STALL = "A-01"
+from conftest import (
+    SEED_STALL,
+    active_products,
+    bind_stall,
+    create_transaction,
+    http_json,
+    new_page,
+    snap,
+)
 
 
-# ---------------------------------------------------------------------------
-# 夹具：真起一个服务（独立数据目录，绝不碰演示库 data/market_trade.sqlite3）
-# ---------------------------------------------------------------------------
+def _pending_count(page) -> int:
+    """读界面上的待补传条数（`#pending` 的显示形态：`N / 阈值 200…`）。"""
+    return int(page.inner_text("#pending").split("/")[0].strip())
 
 
-def _free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
+def _wait_pending(page, expected: int, where: str) -> int:
+    """等 `#pending` **恰好等于** `expected`，并把它作为断言返回。
 
-
-@pytest.fixture(scope="module")
-def live_server(tmp_path_factory):
-    """用仓库的 `run.py` 真起服务（含建库/迁移/种子），退出时收干净。"""
-    data_dir = tmp_path_factory.mktemp("mt-e2e-data")
-    port = _free_port()
-    env = {**os.environ, "MT_DATA_DIR": str(data_dir)}
-    # 服务端输出必须落到**文件**：曾经用 `subprocess.PIPE` 且没人读，werkzeug 的请求日志
-    # 填满 64KB 管道缓冲后**服务端就阻塞在写**上 —— 表现是"前几个用例正常、后面的用例永远卡住"，
-    # 极容易被误判成"页面点不动"（本轮实测踩过）。文件不会被写阻塞，出问题还能读回来看。
-    server_log = data_dir / "server.log"
-    handle = server_log.open("w", encoding="utf-8", errors="replace")
-    proc = subprocess.Popen(
-        [sys.executable, "run.py", "--port", str(port)],
-        cwd=str(REPO_ROOT),
-        env=env,
-        stdout=handle,
-        stderr=subprocess.STDOUT,
-    )
-    base = f"http://127.0.0.1:{port}"
-    deadline = time.time() + 60
-    while time.time() < deadline:
-        if proc.poll() is not None:
-            raise AssertionError(
-                f"服务启动即退出（exit {proc.returncode}）：\n"
-                + server_log.read_text(encoding="utf-8", errors="replace")
-            )
-        try:
-            with urllib.request.urlopen(base + "/healthz", timeout=2) as response:
-                if response.status == 200:
-                    break
-        except Exception:
-            time.sleep(0.5)
-    else:
-        proc.terminate()
-        raise AssertionError("服务 60 秒内未就绪")
-    yield base
-    proc.terminate()
+    为什么要等而不是立刻读：`#pending` 来自 `§3.13` 的一次 GET（`refreshOffline()` 的 promise），
+    而 `#offlineNote` 是暂存响应回来后**同步**写上的 —— 两个数字由**两条不同的异步链**更新，
+    立刻读会撞上"提示已更新、状态还没回来"的瞬间。
+    等一个**精确值**（而不是"等到有变化"）是**收紧**而不是放宽：值不对就超时报错，
+    报错里同时给出 `#pending` 与 `#offlineNote` 两个数，便于判断是"没暂存"还是"没刷新"。
+    """
     try:
-        proc.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-    handle.close()
-
-
-@pytest.fixture(scope="module")
-def browser():
-    from playwright.sync_api import sync_playwright
-
-    with sync_playwright() as play:
-        instance = play.chromium.launch()
-        yield instance
-        instance.close()
-
-
-@pytest.fixture(scope="module")
-def shots():
-    """截图目录（仓库内但被 `.gitignore` 忽略，避免"为了留证据而污染仓库"）。"""
-    SHOTS.mkdir(parents=True, exist_ok=True)
-    return SHOTS
-
-
-def new_page(browser):
-    page = browser.new_page(viewport={"width": 1100, "height": 900})
-    page.set_default_timeout(15000)
-    return page
-
-
-def snap(page, shots, name: str) -> str:
-    path = shots / f"{name}.png"
-    page.screenshot(path=str(path), full_page=True)
-    print(f"[截图] {path}")
-    return str(path)
+        page.wait_for_function(
+            "n => parseInt(document.querySelector('#pending').textContent.split('/')[0], 10) === n",
+            arg=expected,
+            timeout=5000,
+        )
+    except Exception:  # noqa: BLE001 - 超时是主信号，但要把它转成带上下文的断言失败
+        raise AssertionError(
+            f"{where}：`#pending` 在 5 秒内未达到 {expected}（实际 {_pending_count(page)}；"
+            f"界面提示 {page.inner_text('#offlineNote')!r}）"
+        ) from None
+    observed = _pending_count(page)
+    assert observed == expected, f"{where}：`#pending` 应为 {expected}，实际 {observed}"
+    return observed
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +70,7 @@ def snap(page, shots, name: str) -> str:
 def test_scale_cash_flow_price_change_and_refund(live_server, browser, shots):
     """秤端主线：全部操作**靠点按**完成（`AC-006` 的"选品不要输入"）。"""
     page = new_page(browser)
-    page.goto(f"{live_server}/scale/")
+    page.goto(f"{live_server.base}/scale/")
     page.click("#defaultStall")
     page.wait_for_selector(".tile")
     tiles = page.locator(".tile").count()
@@ -195,7 +133,7 @@ def test_scale_cash_flow_price_change_and_refund(live_server, browser, shots):
 def test_scale_qr_flow_returns_payload_and_masked_token(live_server, browser, shots):
     """收款码一路：`§3.10` 返回 202 + 收款码内容 + 脱敏收款标识。"""
     page = new_page(browser)
-    page.goto(f"{live_server}/scale/")
+    page.goto(f"{live_server.base}/scale/")
     page.click("#defaultStall")
     page.wait_for_selector(".tile")
     page.locator(".tile").first.click()
@@ -218,13 +156,21 @@ def test_scale_qr_flow_returns_payload_and_masked_token(live_server, browser, sh
 
 
 def test_offline_toggle_stage_then_sync_clears_pending(live_server, browser, shots):
-    """离线主线：开关是**界面上显式可点的**（`REQ-014`），补传后 pending 必须归零（`NFR-013`）。"""
+    """离线主线：开关是**界面上显式可点的**（`REQ-014`），补传后 pending 必须归零（`NFR-013`）。
+
+    **本节在 `T-031` 按父代理要求收紧过一次（精度不足 → 精确到增量）**：
+    上一版是"点两次、只断言界面出现了暂存提示"，而界面**瞬时显示过「待补传 1 笔」** ——
+    若第二次点击其实没暂存成功（界面仍留着上一次的提示），旧断言**照样通过**。
+    现在改为逐笔断言 `#pending` 的**增量恰为 1**，并要求补传结果给出 `补传 2 笔` / `清除副本 2 笔`
+    两个由**服务端计数**的数字：**界面数字与服务端计数两边同时对得上**，才算"确实暂存了 2 笔"。
+    """
     page = new_page(browser)
-    page.goto(f"{live_server}/scale/")
+    page.goto(f"{live_server.base}/scale/")
     page.click("#defaultStall")
     page.wait_for_selector(".tile")
 
-    pending_before = int(page.inner_text("#pending").split("/")[0].strip())
+    pending_before = _pending_count(page)
+    assert pending_before == 0, f"前置：本次会话开始时不应有待补传，实际 {pending_before}"
     page.click("#offlineToggle")
     assert "离线" in page.inner_text("#offlineBadge"), "切换后徽标应显示离线"
 
@@ -232,18 +178,30 @@ def test_offline_toggle_stage_then_sync_clears_pending(live_server, browser, sho
     for index in range(staged):
         page.locator(".tile").nth(index % page.locator(".tile").count()).click()
         page.click("#checkout")
-        page.wait_for_function("document.querySelector('#offlineNote').textContent.includes('暂存')")
+        # 逐笔断言 `#pending` 的**增量恰为 1**（第 1 笔 → 1、第 2 笔 → 2）：
+        # 上一版只断言"界面出现过暂存提示"，两次点击若只暂存成功 1 笔也照样通过（精度不足）。
+        _wait_pending(page, pending_before + index + 1, f"第 {index + 1} 笔暂存后")
+        note = page.inner_text("#offlineNote")
+        assert f"待补传 {index + 1} 笔" in note, (
+            f"第 {index + 1} 笔暂存后界面提示应含「待补传 {index + 1} 笔」，实际 {note!r}"
+        )
     snap(page, shots, "offline-1-staged")
-    print(f"[离线] 已暂存 {staged} 笔；界面提示：{page.inner_text('#offlineNote')}")
+    print(
+        f"[离线] 已暂存 {staged} 笔（界面 #pending 增量 = {_pending_count(page) - pending_before}）；"
+        f"界面提示：{page.inner_text('#offlineNote')}"
+    )
 
     page.click("#offlineToggle")
     assert "在线" in page.inner_text("#offlineBadge"), "切回后徽标应显示在线"
     page.click("#syncNow")
     page.wait_for_function("document.querySelector('#syncResult').textContent.includes('补传')")
     result = page.inner_text("#syncResult")
-    pending_after = int(page.inner_text("#pending").split("/")[0].strip())
+    pending_after = _pending_count(page)
     assert pending_after == 0, f"补传后界面 pending 应归零，实际 {pending_after}（{result}）"
-    assert pending_before == 0, "前置：本次会话开始时应无待补传"
+    # 服务端自报的计数必须与"我们点了 2 笔"一致 —— 这是"确实暂存了 2 笔"的**另一半证据**
+    assert f"补传 {staged} 笔" in result, f"补传条数应与暂存条数一致：{result!r}"
+    assert f"清除副本 {staged} 笔" in result, f"补传成功后应清除 {staged} 笔本地副本（NFR-013）：{result!r}"
+    assert "失败 0 笔" in result, f"补传不应失败：{result!r}"
     print(f"[离线] 补传 OK：{result}")
     snap(page, shots, "offline-2-synced")
     page.close()
@@ -254,34 +212,27 @@ def test_offline_toggle_stage_then_sync_clears_pending(live_server, browser, sho
 # ---------------------------------------------------------------------------
 
 
-def _api(base: str, method: str, path: str, body=None, headers=None):
-    data = None if body is None else json.dumps(body).encode()
-    request = urllib.request.Request(base + path, data=data, method=method)
-    request.add_header("Content-Type", "application/json")
-    for key, value in (headers or {}).items():
-        request.add_header(key, value)
-    with urllib.request.urlopen(request) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-
 def test_customer_page_renders_exactly_the_sourced_fields(live_server, browser, shots):
     """顾客页：**页面上出现的每个字段都必须有来源**（`REQ-023` / `AC-011`），多一个都不行。"""
-    session = _api(live_server, "POST", "/api/merchant/session", {"stall_no": STALL})
-    token = session["session_token"]
-    head = {"X-Stall-Session": token, "Idempotency-Key": "e2e-customer-1"}
-    products = _api(live_server, "GET", "/api/merchant/products", headers=head)
-    product = [item for item in products if item["status"] == "active"][0]
-    txn = _api(live_server, "POST", "/api/merchant/transactions",
-               {"items": [{"product_id": product["id"], "weight_grams": 800}]}, head)
-    head_pay = {"X-Stall-Session": token, "Idempotency-Key": "e2e-customer-1-pay"}
-    _api(live_server, "POST", f"/api/merchant/transactions/{txn['transaction_no']}/payment",
-         {"method": "cash", "operator": "e2e"}, head_pay)
+    token = bind_stall(live_server, SEED_STALL)
+    product = active_products(live_server, token)[0]
+    status, txn = create_transaction(
+        live_server, token, [{"product_id": product["id"], "weight_grams": 800}], "e2e-customer-1"
+    )
+    assert status == 201, f"契约 §3.6 期望 201，实际 {status}：{txn}"
+    status, paid = live_server.api(
+        "POST",
+        f"/api/merchant/transactions/{txn['transaction_no']}/payment",
+        {"method": "cash", "operator": "e2e"},
+        {"X-Stall-Session": token, "Idempotency-Key": "e2e-customer-1-pay"},
+    )
+    assert status == 200, f"契约 §3.10 现金收款期望 200，实际 {status}：{paid}"
 
-    receipt = _api(live_server, "GET", f"/api/customer/receipts/{txn['transaction_no']}")
-    profile = _api(live_server, "GET", f"/api/customer/stalls/{STALL}/profile")
+    _, receipt = http_json(live_server.base, "GET", f"/api/customer/receipts/{txn['transaction_no']}")
+    _, profile = http_json(live_server.base, "GET", f"/api/customer/stalls/{SEED_STALL}/profile")
 
     page = new_page(browser)
-    page.goto(f"{live_server}/customer/?stall={STALL}&txn={txn['transaction_no']}")
+    page.goto(f"{live_server.base}/customer/?stall={SEED_STALL}&txn={txn['transaction_no']}")
     page.wait_for_selector("#receiptItems")
     body = page.inner_text("body")
     snap(page, shots, "customer-1-rendered")
