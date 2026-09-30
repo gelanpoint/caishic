@@ -358,3 +358,91 @@ def test_audit_logs_are_read_only_and_cover_funding_events(client):
         assert response.status_code == 405, (
             f"契约 §3.31/`NFR-009`：留痕**不提供任何写接口**，{method.upper()} 应为 405，实际 {response.status_code}"
         )
+
+
+# ---------------------------------------------------------------------------
+# §3.30 的灵敏度负例（`Q-19`）：**制造"分子≠分母"再断言**
+# ---------------------------------------------------------------------------
+#
+# 为什么必须有这一条（`Q-19` 实测，2026-09-30）：
+# `test_usage_metrics_three_indicators_with_numerator_and_denominator` 会把六个分子/分母逐项回库核对，
+# 判据本身很硬 —— 但它是在**种子 + 本套测试的数据状态**下跑的，而那个状态下
+# `cash_txn` 分子 1 / 分母 1、`price_list` 分子 10 / 分母 10（**分子恰好等于分母**）。
+# 于是"把分子写死成常量"与"真去查库"**输出完全一样**，该用例**抓不到写死**（实测：把
+# `price_list_numerator` 写死成 `active_stalls`，上面的用例仍然通过）。
+#
+# 本用例的作用就是**把这个盲区堵上**：先把状态造成"分子 ≠ 分母"，再断言。
+# 这样任何一处写死（分子固定、分母固定、"分子=分母"）都必然失败。
+#
+# 副作用与安全边界（有意接受）：本用例会**删掉一个在营摊位当日某个在售商品的价格行**、
+# 并**新增一笔未收款的交易**，这两处都改变了会话级共享数据。故：
+#   - 它放在本文件**最后**（前面的用例如需完整价目表，早已跑完）；
+#   - 删除只针对**一个**摊位的**一行**，且该摊位**不是** `STALL_ADMIN`（避免影响结算/对账用例）；
+#   - 全仓库没有任何其它用例断言"价目表维护率 = 10000"（已核：`_expected_metrics` 是**回库现算**的，
+#     不写死期望值，故它反而会跟着新状态一起走）；
+
+
+def test_usage_metrics_numerator_is_actually_queried(client, db_conn):
+    """`Q-19` / `AC-005` 灵敏度负例：分子与分母**必须真的来自查询**，写死即失败。"""
+    today = today_iso()
+    _paid_transaction(client, "q19")
+
+    # ① 先造一笔**未收款**交易：分母（当日全部走秤笔数）会 +1，而现金分子不动 ⇒ 现金分子 < 分母
+    token = bind_stall_session(client, STALL_ADMIN)
+    create_priced_transaction(client, token, idempotency_key="t013-q19-unpaid")
+
+    # ② 再让某个**非观察摊位**当日缺一个在售商品的价格 ⇒ 价目表维护率分子 = 分母 − 1
+    victim = db_conn.execute(
+        """
+        SELECT s.id, s.stall_no FROM stall s
+        WHERE s.status = 'active' AND s.stall_no <> ?
+          AND EXISTS (SELECT 1 FROM product p JOIN price_item pi
+                        ON pi.product_id = p.id AND pi.stall_id = s.id
+                      WHERE p.stall_id = s.id AND p.status = 'active' AND pi.business_date = ?)
+        ORDER BY s.stall_no LIMIT 1
+        """,
+        (STALL_ADMIN, today),
+    ).fetchone()
+    assert victim is not None, "前置：应存在一个已维护价目表的在营摊位"
+    removed = db_conn.execute(
+        """
+        DELETE FROM price_item WHERE id = (
+            SELECT pi.id FROM price_item pi JOIN product p ON p.id = pi.product_id
+            WHERE p.stall_id = ? AND p.status = 'active' AND pi.business_date = ?
+            ORDER BY pi.id LIMIT 1)
+        """,
+        (int(victim["id"]), today),
+    ).rowcount
+    assert removed == 1, f"前置：应删掉 {victim['stall_no']} 当日的一行价格，实际 {removed}"
+    db_conn.commit()
+
+    payload = json_of(client.get("/api/admin/metrics/usage", query_string={"business_date": today}))
+    expected = _expected_metrics(db_conn, today)
+
+    # 六个数逐一回库核对（与主用例同强度）
+    for key, value in expected.items():
+        assert payload[key] == value, f"`AC-005` 指标 {key} 与库中直接统计不一致：{payload[key]} vs {value}"
+
+    # 本用例的**关键断言**：状态已造成"分子≠分母"，写死任何一侧都过不了
+    assert payload["price_list_numerator"] == payload["price_list_denominator"] - 1, (
+        "`Q-19`：已造出『某摊位当日缺一个在售商品价格』的状态，价目表维护率分子应恰为分母 − 1；"
+        f"实际 分子={payload['price_list_numerator']} 分母={payload['price_list_denominator']}"
+        "（若这里相等，说明分子没有真的查库）"
+    )
+    assert payload["cash_txn_numerator"] < payload["cash_txn_denominator"], (
+        "`Q-19`：已造出一笔未收款交易，现金交易占比的分子应严格小于分母；"
+        f"实际 分子={payload['cash_txn_numerator']} 分母={payload['cash_txn_denominator']}"
+    )
+    assert payload["cash_txn_numerator"] == expected["cash_txn_numerator"], "现金分子必须等于回库统计"
+
+    # 万分比必须由这两个数推出来（不许另算一套），容差 ±1 吸收取整方式差异
+    for bp_key, num_key, den_key in (
+        ("price_list_maintenance_bp", "price_list_numerator", "price_list_denominator"),
+        ("cash_txn_share_bp", "cash_txn_numerator", "cash_txn_denominator"),
+    ):
+        numerator, denominator = payload[num_key], payload[den_key]
+        assert denominator > 0
+        expected_bp = round(numerator / denominator * 10000)
+        assert abs(payload[bp_key] - expected_bp) <= 1, (
+            f"{bp_key} 与分子/分母不一致：{payload[bp_key]} vs {expected_bp}"
+        )
