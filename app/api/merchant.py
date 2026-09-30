@@ -43,8 +43,9 @@ from ..domain.catalog import (
 from ..domain.metrics import stall_daily_dashboard
 from ..domain.offline import queue_status, stage_transaction, sync_queue
 from ..domain.payment import pay_transaction
-from ..domain.pricing import change_price, create_transaction, list_transactions, transaction_detail
+from ..domain.pricing import change_price, create_transaction
 from ..domain.refund import refund_transaction
+from ..domain.transactions import list_transactions, transaction_detail
 
 bp = Blueprint("merchant", __name__)
 

@@ -18,7 +18,7 @@ from datetime import date
 from .. import TradeError
 from ..db import now_iso
 from .audit import write_audit
-from .pricing import find_transaction, require_stall_scope
+from .transactions import find_transaction, require_stall_scope
 
 #: 操作人长度上限（契约 §3.10：`operator` ≤32）
 OPERATOR_MAX_LEN = 32

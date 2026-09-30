@@ -11,8 +11,10 @@
 3. **抹零不是改价**（`REQ-008` / `AC-008`）：抹零只减总额、**不计入**标价一致率 ——
    落库时 `is_round_off = 1` 而 `price_changed = 0`；改价则相反。标价一致率只看 `price_changed`。
 
-写侧与读侧同处一模块：`transaction_payload()`（§3.6 响应与 §3.8 详情共用的组装函数）在这里，
-若把 §3.7/§3.8 的读查询放到 `app/api/`，同一个交易行就会被两处各组装一次 —— 那是漂移的种子。
+**读写分处两个模块，组装函数只有一处**（`Q-16` 按语义拆分）：计价与改价的**写路径**在本模块，
+交易的**读端点**（§3.7 列表 / §3.8 详情）与组装函数 `transaction_payload()` 在 `app/domain/transactions.py`。
+若把读查询放到 `app/api/`，同一个交易行就会被两处各组装一次 —— 那是漂移的种子；
+故拆开后**写路径 import 读侧的组装函数**（`pricing` → `transactions` 单向，不成环）。
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from .. import TradeError
 from ..db import now_iso
 from .audit import write_audit
 from .catalog import parse_business_date
+from .transactions import find_transaction, require_stall_scope, transaction_payload
 
 #: 单笔明细行数上限（契约 §3.6：`items` 长度 1~20）
 MAX_ITEMS = 20
@@ -86,48 +89,6 @@ def _item_fingerprint(conn: sqlite3.Connection, transaction_id: int) -> list[tup
     ).fetchall()
     return [(row["product_id"], row["weight_grams"]) for row in rows]
 
-
-def transaction_payload(conn: sqlite3.Connection, txn: sqlite3.Row) -> dict:
-    """把交易行与明细组装成契约 §3.6 / §3.8 的响应体。"""
-    items = conn.execute(
-        """
-        SELECT id, product_id, category_id, weight_grams, original_unit_price_cents,
-               final_unit_price_cents, amount_cents, price_changed, is_round_off
-        FROM transaction_item WHERE transaction_id = ? ORDER BY id
-        """,
-        (txn["id"],),
-    ).fetchall()
-    return {
-        "transaction_no": txn["transaction_no"],
-        "status": txn["status"],
-        "business_date": txn["business_date"],
-        "total_amount_cents": txn["total_amount_cents"],
-        "received_amount_cents": txn["received_amount_cents"],
-        "round_off_cents": txn["round_off_cents"],
-        "origin": txn["origin"],
-        "created_at": txn["created_at"],
-        "items": [dict(row) for row in items],
-    }
-
-
-def find_transaction(conn: sqlite3.Connection, transaction_no: str) -> sqlite3.Row:
-    """按交易号取交易；不存在 → `MT-1009`。"""
-    txn = conn.execute(
-        'SELECT * FROM "transaction" WHERE transaction_no = ?', (transaction_no,)
-    ).fetchone()
-    if txn is None:
-        raise TradeError("MT-1009", f"交易不存在：{transaction_no}", {"transaction_no": transaction_no})
-    return txn
-
-
-def require_stall_scope(txn: sqlite3.Row, stall_id: int) -> None:
-    """秤端数据边界（`REQ-032` / `AC-021` / `MT-1004`）：非本摊位的数据一律 403。"""
-    if txn["stall_id"] != stall_id:
-        raise TradeError(
-            "MT-1004",
-            "不得访问非本摊位的交易数据",
-            {"transaction_no": txn["transaction_no"]},
-        )
 
 
 def _next_transaction_no(conn: sqlite3.Connection, business_date: str) -> str:
@@ -369,76 +330,3 @@ def change_price(conn: sqlite3.Connection, stall: sqlite3.Row, transaction_no: s
     return {"transaction_no": transaction_no, "total_amount_cents": total, "audit_event": "price_change"}
 
 
-# ---------------------------------------------------------------------------
-# §3.7 交易列表 / §3.8 交易详情（秤端读端点；写侧在上面）
-# ---------------------------------------------------------------------------
-
-
-#: 契约 §3.7：`limit` 默认 50、上限 200。
-DEFAULT_LIST_LIMIT = 50
-MAX_LIST_LIMIT = 200
-
-
-def _parse_limit(raw) -> int:
-    """解析契约 §3.7 的 `limit`。
-
-    规则（**只有一条**，免得两个边界各判一次）：`limit` 是"返回条数上限"，
-    故可解释为整数时**夹到 `[1, MAX_LIST_LIMIT]`** —— 契约写的是"上限 200"（约束返回条数），
-    不是"超过 200 就拒绝"；且 §3.7 声明的可能错误只有 `MT-1005`/`MT-1004`，
-    在此发明 422 就等于在契约之外新增错误形态（`RL-1`）。
-    无法解释为整数（`limit=abc`）才按通用码 `MT-1008` 拒绝。
-    """
-    if raw is None or raw == "":
-        return DEFAULT_LIST_LIMIT
-    try:
-        value = int(raw)
-    except (TypeError, ValueError) as exc:
-        raise TradeError("MT-1008", "`limit` 必须是整数", {"field": "limit"}) from exc
-    return max(1, min(value, MAX_LIST_LIMIT))
-
-
-def list_transactions(conn: sqlite3.Connection, stall_id: int, business_date, limit_raw=None) -> dict:
-    """本摊位交易列表（契约 §3.7）→ `{"total": n, "items": [...]}`。
-
-    `total` 是**过滤后的总条数**（不受 `limit` 影响）：分页对象里 `total` 若也被 `limit` 截断，
-    调用方就无法知道"还有多少没取到"，分页就失去意义。
-    摊位过滤（`REQ-032` / `AC-021`）与 `limit` 都在 SQL 层完成，不先全表取回再在 Python 里切。
-    """
-    filters = ["stall_id = ?"]
-    params: list = [stall_id]
-    if business_date is not None:
-        filters.append("business_date = ?")
-        params.append(parse_business_date(business_date))
-
-    where = " AND ".join(filters)
-    total = int(
-        conn.execute(f'SELECT COUNT(*) AS n FROM "transaction" WHERE {where}', params).fetchone()["n"]
-    )
-    rows = conn.execute(
-        f'SELECT * FROM "transaction" WHERE {where} ORDER BY id DESC LIMIT ?',
-        [*params, _parse_limit(limit_raw)],
-    ).fetchall()
-    return {"total": total, "items": [transaction_payload(conn, row) for row in rows]}
-
-
-def transaction_detail(conn: sqlite3.Connection, stall_id: int, transaction_no: str) -> dict:
-    """交易详情与凭证数据（契约 §3.8）→ §2.8 顶层 + `items` + `payments` + `printable: false`。
-
-    顺序有语义：**先判存在（`MT-1009` 404）再判归属（`MT-1004` 403）** ——
-    颠倒过来会让"不存在的交易号"回 403，而它其实连存在性都不该被确认（`T-008`/`T-009` 用例锁定两者）。
-    """
-    txn = find_transaction(conn, transaction_no)
-    require_stall_scope(txn, stall_id)
-
-    payments = conn.execute(
-        """
-        SELECT payment_no, method, amount_cents, status, callback_no, confirmed_at, operator, created_at
-        FROM payment WHERE transaction_id = ? ORDER BY id
-        """,
-        (txn["id"],),
-    ).fetchall()
-    payload = transaction_payload(conn, txn)
-    payload["payments"] = [dict(row) for row in payments]
-    # 契约 §3.8：固定字段，明示不打印（REQ-012 只要求屏幕展示）
-    payload["printable"] = False
-    return payload

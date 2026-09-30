@@ -68,6 +68,7 @@ market-trade-mvp/
 │   │   └── seed.json             # **产物**：由 ./scripts/gen_seed.py 生成（可复算，禁止手改后不回改生成规则）
 │   ├── domain/                   # 业务逻辑层（不依赖 HTTP，可被单测直接调用）
 │   │   ├── catalog.py            # 品类字典与「摊位别名 → 标准品类」映射、价目表设置与「复制上一营业日价格」（REQ-002、REQ-003）
+│   │   ├── transactions.py       # 交易读端点：列表 §3.7 / 详情 §3.8 + 组装函数 transaction_payload()（Q-16 按语义从 pricing.py 拆出）
 │   │   ├── pricing.py            # 计价、改价留痕、抹零、标价一致率（REQ-005~008、REQ-027）
 │   │   ├── payment.py            # 收款码/现金、支付回调幂等、交易落库（REQ-009~012、REQ-026、REQ-029）
 │   │   ├── refund.py             # 退货冲正、只冲减一次（REQ-013、REQ-028）

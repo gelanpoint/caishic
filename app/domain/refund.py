@@ -23,7 +23,7 @@ import sqlite3
 from .. import TradeError
 from ..db import now_iso
 from .audit import write_audit
-from .pricing import find_transaction, require_stall_scope
+from .transactions import find_transaction, require_stall_scope
 
 #: 退货单号长度上限（`data-model.md` §2.12）
 REFUND_NO_MAX_LEN = 32

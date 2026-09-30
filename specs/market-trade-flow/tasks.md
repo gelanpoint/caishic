@@ -50,16 +50,16 @@
 | T-004 | 数据模型与迁移：19 张表 DDL、25 条索引、`audit_log` 只增不改触发器、`schema_migration` | T-002 | | REQ-010、REQ-013、REQ-015、REQ-031；NFR-009 | 从零启动后表/索引数量与 `data-model.md` §1/§6 一致；**对 `audit_log` 手动执行一次 `UPDATE` 与 `DELETE`，二者都必须被拒绝** | app/migrations/0001_init.sql、app/db.py |
 | T-005 | 种子数据与导入：商户/摊位档案、品类字典与别名映射、商品与价目表（本地文件，不依赖外网） | T-004 | | REQ-001、REQ-002、REQ-003、REQ-025；AC-013/AC-014/AC-015 | 断网环境下导入成功；抽查询问 `stall`/`product`/`price_item` 行数；重复启动**不产生重复数据**。**规模口径见 `data-model.md` §5 修正注记**（演示规模：10 摊位 / 40～60 标准品类 / 每摊位 20～30 商品 / 别名 1～3 个每品类）。**别名两类语义见 `data-model.md` §2.5 与 `app/seed.py` docstring**。**产物可复算**：删掉 `app/seed_data/seed.json` 后重跑 `scripts/gen_seed.py` 必须**逐字节还原**，并用 `--check` 复验 —— **生成规则不在仓库里，产物就不可核验**（父代理 `2026-09-30` 裁定要求） | app/seed.py、app/seed_data/seed.json、scripts/gen_seed.py |
 | T-006 | 重置演示数据脚本（删除数据文件并重跑种子） | T-005 | | NFR-003；NFR-004 | 执行一次后系统回到初始状态且可再次交易（人工核对，CP-A 第④项） | scripts/reset_demo.py |
-| T-007 | 契约测试基础设施：开发期依赖清单与**运行期隔离检查**（`ast` 扫描 `run.py` 与 `app/**` 的 import，**带灵敏度负例**）、**Flask 路由表 ↔ 契约 §2 端点总表双向一致检查**、响应体与库文件「零命中身份证/银行卡」扫描、统一错误响应格式断言 | T-006 | | REQ-024；NFR-009、NFR-010；AC-012 | 两个检查先跑成**失败**（实现尚未存在）；格式断言对已知坏样例报错；**隔离检查在故意 `import pytest` 时必须变红** | requirements-dev.txt、pytest.ini、tests/contract/conftest.py、tests/contract/test_deps_isolation.py、tests/contract/test_contract_surface.py、tests/contract/test_sensitive_scan.py |
+| T-007 | 契约测试基础设施：开发期依赖清单与**运行期隔离检查**（`ast` 扫描 `run.py` 与 `app/**` 的 import，**带灵敏度负例**）、**Flask 路由表 ↔ 契约 §2 端点总表双向一致检查**、响应体与库文件「零命中身份证/银行卡」扫描、统一错误响应格式断言 | T-006 | | REQ-024；NFR-009、NFR-010；AC-012 | 两个检查先跑成**失败**（实现尚未存在）；格式断言对已知坏样例报错；**隔离检查在故意 `import pytest` 时必须变红** | requirements-dev.txt、pytest.ini、tests/contract/conftest.py、tests/contract/sensitive_scan.py、tests/contract/test_deps_isolation.py、tests/contract/test_contract_surface.py、tests/contract/test_sensitive_scan.py |
 | T-008 | 契约测试：秤端会话、商品、价目表端点（含 `MT-1004`/`MT-1005`/`MT-1009` 用例） | T-007 | [P] | REQ-003、REQ-004、REQ-008、REQ-032；AC-006/AC-014/AC-015/AC-021 | 先失败；由 T-015 实现后转为全绿 | tests/contract/test_merchant_catalog.py |
 | T-009 | 契约测试：交易创建与改价（含 `MT-1002` 重量越界、`MT-1006` 价目缺失、`MT-1011` 改价确认、`MT-1012` 幂等键） | T-007 | [P] | REQ-005、REQ-006、REQ-007、REQ-027；AC-001/AC-007/AC-016/AC-017 | 先失败；由 T-016 实现后转为全绿 | tests/contract/test_transaction_price.py |
-| T-010 | 契约测试：收款与支付回调（含 `MT-1001` 非法流转、重复回调幂等命中返回 200） | T-007 | [P] | REQ-009、REQ-010、REQ-011、REQ-026、REQ-029；AC-004/AC-009/AC-010 | 先失败；由 T-017 实现后转为全绿 | tests/contract/test_payment.py |
+| T-010 | 契约测试：收款与支付回调（含 `MT-1001` 非法流转、重复回调幂等命中返回 200） | T-007 | [P] | REQ-009、REQ-010、REQ-011、REQ-026、REQ-029；AC-004/AC-009/AC-010 | 先失败；由 T-017 实现后转为全绿 | tests/contract/test_payment.py、tests/contract/test_payment_callback.py |
 | T-011 | 契约测试：退货冲正（含 `MT-1003` 超原单、重复提交 `replayed`） | T-007 | [P] | REQ-013、REQ-028；AC-002/AC-017 | 先失败；由 T-018 实现后转为全绿 | tests/contract/test_refund.py |
-| T-012 | 契约测试：离线暂存与补传（含 `MT-1007` 暂存失败、幂等键重复丢弃不阻断、`purged` 清除副本） | T-007 | [P] | REQ-014、REQ-015、REQ-016、REQ-030；NFR-013、NFR-014；AC-003/AC-018/AC-019 | 先失败；由 T-019 实现后转为全绿 | tests/contract/test_offline.py |
-| T-013 | 契约测试：运营端字典/别名/佣金口径/日聚合/结算/对账/指标/留痕 | T-007 | [P] | REQ-002、REQ-017、REQ-018、REQ-019、REQ-020、REQ-022；AC-005/AC-022/AC-023 | 先失败；由 T-020~T-022 实现后转为全绿 | tests/contract/test_admin.py |
+| T-012 | 契约测试：离线暂存与补传（含 `MT-1007` 暂存失败、幂等键重复丢弃不阻断、`purged` 清除副本） | T-007 | [P] | REQ-014、REQ-015、REQ-016、REQ-030；NFR-013、NFR-014；AC-003/AC-018/AC-019 | 先失败；由 T-019 实现后转为全绿 | tests/contract/test_offline_stage.py、tests/contract/test_offline_sync.py |
+| T-013 | 契约测试：运营端字典/别名/佣金口径/日聚合/结算/对账/指标/留痕 | T-007 | [P] | REQ-002、REQ-017、REQ-018、REQ-019、REQ-020、REQ-022；AC-005/AC-022/AC-023 | 先失败；由 T-020~T-022 实现后转为全绿 | tests/contract/test_admin.py、tests/contract/test_admin_ops.py |
 | T-014 | 契约测试：顾客扫码页（字段白名单、无来源字段即失败） | T-007 | [P] | REQ-008、REQ-023；AC-011 | 先失败；由 T-023 实现后转为全绿 | tests/contract/test_customer.py |
 | T-015 | 实现：秤端会话绑定与目录类端点（含摊位数据边界守卫） | T-008 | | REQ-002、REQ-003、REQ-004、REQ-032；NFR-007；AC-006/AC-014/AC-015/AC-021 | T-008 由红转绿；提交信息含任务编号与 `REQ` | app/api/merchant.py、app/domain/catalog.py |
-| T-016 | 实现：计价与改价/抹零（含改价留痕、标价一致率标记、交易状态机 `priced` 分支） | T-009、T-015 | | REQ-005、REQ-006、REQ-007、REQ-008、REQ-027；AC-001/AC-007/AC-016/AC-017/AC-020 | T-009 由红转绿；`AC-016` 累加用例与 `AC-017` 越界用例通过 | app/domain/pricing.py、app/api/merchant.py |
+| T-016 | 实现：计价与改价/抹零（含改价留痕、标价一致率标记、交易状态机 `priced` 分支） | T-009、T-015 | | REQ-005、REQ-006、REQ-007、REQ-008、REQ-027；AC-001/AC-007/AC-016/AC-017/AC-020 | T-009 由红转绿；`AC-016` 累加用例与 `AC-017` 越界用例通过 | app/domain/pricing.py、app/domain/transactions.py、app/api/merchant.py |
 | T-017 | 实现：收款、支付回调与 Mock（现金入同一支付流水表；Mock 秤与支付可注入成功/失败/超时） | T-010、T-016 | | REQ-009、REQ-010、REQ-011、REQ-026、REQ-029；AC-004/AC-009/AC-010 | T-010 由红转绿；**重复回调返回 200 且交易与佣金笔数不变**（`AC-010`） | app/domain/payment.py、app/api/mock.py |
 | T-018 | 实现：退货冲正（只冲减一次，冲正后触发日聚合重算） | T-011、T-016 | | REQ-013、REQ-028；AC-002/AC-017 | T-011 由红转绿；重复退货后金额与佣金**不再变化** | app/domain/refund.py |
 | T-019 | 实现：离线暂存与补传（幂等去重、达阈值只告警仍接受、失败明确报错、成功后清除本地副本） | T-012、T-016 | | REQ-014、REQ-015、REQ-016、REQ-030；NFR-013、NFR-014；AC-003/AC-018/AC-019 | T-012 由红转绿；补传后库中 `payload_json` 为空且 `purged_at` 非空 | app/domain/offline.py |
@@ -85,6 +85,13 @@
 > 理由：pytest 默认把 basetemp 放在系统 Temp 的 `pytest-of-<user>/` 编号目录并在其中维护 `pytest-current` 目录符号链接，
 > 会话收尾清理该链接时在 Windows 上抛 `PermissionError`，**导致全绿用例集也以退出码 1 结束**（实测复现 → 根因 → 修复记录见 `docs/PROJECT-STATE.md` 变更记录）。
 > `pytest.ini` 只做一件事：把 basetemp 固定到仓库内 `.pytest-tmp/`。
+
+> **`2026-09-30` 按 `Q-16` 拆分产出文件（纯移动，不改用例语义）**：单文件 400 行阈值裁定「拆、不放宽」后，下列文件按**端点语义**一分为二，`预估产出文件` 列已同步；`pytest tests/contract -q` 拆分前后均为 **217 passed**（收集数量与红绿分布不变）：
+> `tests/contract/conftest.py` → 另出 `tests/contract/sensitive_scan.py`（夹具 vs 敏感扫描原语）；
+> `tests/contract/test_payment.py` → 另出 `tests/contract/test_payment_callback.py`（§3.10 收款 vs §3.17 回调）；
+> `tests/contract/test_offline.py` → `test_offline_stage.py` + `test_offline_sync.py`（§3.13/§3.14 暂存 vs §3.15 补传）；
+> `tests/contract/test_admin.py` → 另出 `tests/contract/test_admin_ops.py`（§3.20~§3.24 配置类 vs §3.25~§3.31 报表/结算类）；
+> `app/domain/pricing.py` → 另出 `app/domain/transactions.py`（§3.6/§3.9 计价写路径 vs §3.7/§3.8 交易读端点）。
 
 ## 4. 完成定义（DoD，适用于每个任务）
 
