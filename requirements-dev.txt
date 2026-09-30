@@ -1,0 +1,17 @@
+# 开发期工具清单（仅限开发与测试期；**不进演示机**）
+# 范围界定与依据：docs/adr/0004-依赖范围界定-运行期与开发期.md §3
+#            + .specify/memory/constitution.md §1「开发期工具」小节
+#
+# 硬边界（违反即返工）：
+#   1. 本文件内的任何工具**不得出现在 requirements.txt**；
+#   2. 本文件内的任何工具**不得被 `run.py` 或 `app/**` 引用**（含 `import`）；
+#      机械检查：tests/contract/test_deps_isolation.py（`ast` 扫描，带灵敏度负例）
+#   3. **不安装到演示机** —— 演示机的运行期依赖只有 requirements.txt 里的 Flask；
+#   4. 本文件内工具自身的漏洞**不在**运行期漏洞响应时限（docs/standards/quality-gates.md §1.1）的适用范围内。
+#
+# 安装（仅在开发机执行）：python -m pip install -r requirements-dev.txt
+#
+# 版本取值：2026-09-30 实测可下载并锁定的版本（`python -m pip download pytest coverage --no-deps`）。
+
+pytest==9.1.1
+coverage==7.16.2

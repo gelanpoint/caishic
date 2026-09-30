@@ -1,0 +1,12 @@
+# 运行期依赖清单（演示机只需要安装这一份）
+# 范围界定与依据：docs/adr/0004-依赖范围界定-运行期与开发期.md
+#            §1：宪法 §1 的依赖白名单约束的是「运行期依赖」。本文件即该白名单的落地清单。
+#
+# 硬边界（宪法 §1「开发期工具」小节）：
+#   - 本文件**只允许**出现运行期依赖；
+#   - `pytest` / `coverage` 等开发期工具**不得出现在本文件**，它们属于 requirements-dev.txt；
+#   - 本文件的内容不得被 `run.py` 或 `app/**` 绕过（机械检查见 tests/contract/test_deps_isolation.py）。
+#
+# 安装：python -m pip install -r requirements.txt
+
+Flask==3.1.3

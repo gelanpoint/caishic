@@ -22,9 +22,10 @@
 | 查「当初为什么这样定」 | `specs/market-trade-flow/discovery.md` | 访谈问答与决策留痕 |
 | 查方案的外部事实依据 | `docs/调研报告-现实情况.md` | 一手调研留痕（**外部输入，只读，不改动**） |
 | 技术选型 / 架构 | `docs/adr/` + `docs/standards/architecture.md` | 已接受的 `ADR`；决策树与默认值清单 |
+| 人工裁定（父代理/负责人拍板） | `docs/decisions/` | 落盘版正式裁定，**取代对话答复**；命名 `YYYY-MM-DD-<标题>.md` |
 | 不可协商的原则 | `.specify/memory/constitution.md` | 红线条款（§2 安全红线 / §5 禁止事项） |
 | 复核项目级别 | `docs/standards/classification.md` | 定级三问、判定表、兜底规则 |
-| 质量阈值 | `docs/standards/quality-gates.md` | 阈值只在那里写一次（当前为 `待填入` 占位） |
+| 质量阈值 | `docs/standards/quality-gates.md` | 阈值只在那里写一次（状态 `已定义`，2026-09-30 批准；**本文件不复述数值**） |
 | 非功能默认值 | `docs/standards/nfr-baseline.md` | 按级别的基线 |
 
 **ADR 登记（全项目唯一登记处，不另设独立 ADR 索引文件）**
@@ -34,6 +35,7 @@
 | `docs/adr/0001-单体与嵌入式数据库.md` | 本期采用单体 all-in-one + 嵌入式数据库（决策树叶子 a）；**部署形态为单机原生进程，见 ADR-0003** | `已接受` |
 | `docs/adr/0002-环境策略-单环境.md` | 环境策略 —— 本期采用单环境（偏离 P2 默认的三环境） | `已接受` |
 | `docs/adr/0003-技术栈偏离参考默认值.md` | 技术栈偏离叶子 a 参考默认值（Flask + 标准库 `sqlite3` + 纯静态前端 + 原生进程，不用 Docker） | `已接受` |
+| `docs/adr/0004-依赖范围界定-运行期与开发期.md` | 依赖范围界定：宪法 §1 白名单**约束运行期依赖**；开发期工具（`pytest` / `coverage`）单列于 `requirements-dev.txt`，**不得出现在 `requirements.txt`、不得被 `run.py` 或 `app/**` 引用** | `已接受` |
 
 ## 2. 不可协商（红线速记）
 
@@ -56,9 +58,9 @@
 
 **环境前置**
 
-- **前置门禁（硬要求）**：`docs/standards/quality-gates.md` 的阈值必须在**写第一行产品代码之前**填入，并把该文件「状态」改为 `已定义`；阈值只在那一处写，别处只引用。
+- **前置门禁（硬要求）**：`docs/standards/quality-gates.md` 的阈值必须在**写第一行产品代码之前**填入，并把该文件「状态」改为 `已定义`；阈值只在那一处写，别处只引用。（**本项已于 `2026-09-30` 完成，状态 `已定义`**，满足后方开工）
 - 运行时：**Python 3.11 及以上**（演示机为自有笔记本，可提前安装环境；不做免安装打包）。
-- 依赖清单：以仓库根 `requirements.txt` 为准（**由实现环节创建**，本阶段不预设内容）。
+- 依赖清单**分两份**：`requirements.txt` = **运行期**（只有 `Flask`，演示机只装这份）；`requirements-dev.txt` = **开发期**工具（`pytest` / `coverage`，**不进 `requirements.txt`、不得被 `run.py` 或 `app/**` 引用、不装演示机**）。依据 `docs/adr/0004-依赖范围界定-运行期与开发期.md`。（两份清单均由实现环节创建，本阶段不预设内容）
 - 不使用 Docker、不依赖外网。
 
 ```text
