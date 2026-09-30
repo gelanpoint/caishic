@@ -137,6 +137,7 @@ def create_app() -> Flask:
             conn.close()
 
     # ---- 蓝图注册（端点实现逐一对应契约 §3） ----------------------------
+    from .api.admin import bp as admin_bp
     from .api.customer import bp as customer_bp
     from .api.health import bp as health_bp
     from .api.merchant import bp as merchant_bp
@@ -146,5 +147,6 @@ def create_app() -> Flask:
     app.register_blueprint(merchant_bp)
     app.register_blueprint(mock_bp)
     app.register_blueprint(customer_bp)
+    app.register_blueprint(admin_bp)
 
     return app

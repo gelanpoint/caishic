@@ -227,3 +227,151 @@ def _copy_from_previous_day(conn: sqlite3.Connection, stall_id: int, day: str) -
         )
     conn.commit()
     return {"business_date": day, "source": "copied_previous_day", "items": _price_rows(conn, stall_id, day)}
+
+
+# ---------------------------------------------------------------------------
+# §3.20 / §3.21 标准品类字典、§3.22 摊位别名映射（`REQ-002`、`AC-014`）
+# ---------------------------------------------------------------------------
+#
+# 为什么字典维护**落在本模块**：`plan.md` §4 写明「别名映射由 `app/domain/catalog.py` 维护」，
+# 且 §2.5 的别名正是"把摊位叫法归一到标准品类"的落点 —— 与秤端选品/记账口径同源，
+# 分到别处就会变成"字典在 A 处维护、记账在 B 处解释"的两条口径。
+
+CATEGORY_FIELDS = "id, code, name, status"
+CATEGORY_STATUSES = ("active", "inactive")
+CATEGORY_CODE_MAX_LEN = 16
+CATEGORY_NAME_MAX_LEN = 32
+ALIAS_NAME_MAX_LEN = 32
+#: `stall_category_alias` 的对外元素（`data-model.md` §2.5；用 `stall_no` 而非内部 `stall_id`）
+ALIAS_FIELDS = "a.id AS id, s.stall_no AS stall_no, a.alias_name AS alias_name, a.category_id AS category_id"
+
+
+def list_categories(conn: sqlite3.Connection) -> list[dict]:
+    """契约 §3.20：全部标准品类（`data-model.md` §2.4）。**不隐藏停用项** ——
+    停用是"不能再选"，不是"查不到"：历史交易仍指向它，查不到反而无法核对。"""
+    rows = conn.execute(f"SELECT {CATEGORY_FIELDS} FROM category ORDER BY id").fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_aliases(conn: sqlite3.Connection) -> list[dict]:
+    """契约 §3.20：全部「摊位别名 → 标准品类」映射（`data-model.md` §2.5）。"""
+    rows = conn.execute(
+        f"""
+        SELECT {ALIAS_FIELDS}
+        FROM stall_category_alias a
+        JOIN stall s ON s.id = a.stall_id
+        ORDER BY a.id
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def create_category(conn: sqlite3.Connection, body) -> dict:
+    """契约 §3.21：新增标准品类 → 201；`code` 全表唯一，重复 → `MT-1012`（409）。"""
+    if not isinstance(body, dict):
+        raise TradeError("MT-1008", "请求体必须是 JSON 对象")
+
+    code = body.get("code")
+    if not isinstance(code, str) or not 1 <= len(code) <= CATEGORY_CODE_MAX_LEN:
+        raise TradeError(
+            "MT-1008",
+            f"`code` 必须是长度 1~{CATEGORY_CODE_MAX_LEN} 的字符串",
+            {"field": "code", "max_length": CATEGORY_CODE_MAX_LEN},
+        )
+    name = body.get("name")
+    if not isinstance(name, str) or not 1 <= len(name) <= CATEGORY_NAME_MAX_LEN:
+        raise TradeError(
+            "MT-1008",
+            f"`name` 必须是长度 1~{CATEGORY_NAME_MAX_LEN} 的字符串",
+            {"field": "name", "max_length": CATEGORY_NAME_MAX_LEN},
+        )
+    status = body.get("status", "active")
+    if status not in CATEGORY_STATUSES:
+        raise TradeError(
+            "MT-1008",
+            f"`status` 必须是 {'/'.join(CATEGORY_STATUSES)} 之一",
+            {"field": "status", "allowed": list(CATEGORY_STATUSES)},
+        )
+
+    # 唯一性**先查再插**：直接靠 `ux_category_code` 撞 `IntegrityError` 得到的是异常而非契约错误码，
+    # 且无法区分"编码重复"与其它约束。唯一索引仍是最后一道闸门（并发下由它兜底）。
+    duplicate = conn.execute("SELECT id FROM category WHERE code = ?", (code,)).fetchone()
+    if duplicate is not None:
+        raise TradeError("MT-1012", f"品类编码已存在：{code}", {"code": code, "existing_id": int(duplicate["id"])})
+
+    cursor = conn.execute(
+        "INSERT INTO category (code, name, status, created_at) VALUES (?, ?, ?, ?)",
+        (code, name, status, now_iso()),
+    )
+    conn.commit()
+    row = conn.execute(f"SELECT {CATEGORY_FIELDS} FROM category WHERE id = ?", (int(cursor.lastrowid),)).fetchone()
+    return dict(row)
+
+
+def create_alias(conn: sqlite3.Connection, body) -> dict:
+    """契约 §3.22：维护「摊位别名 → 标准品类」→ 201。
+
+    - 摊位不存在 / 品类不存在或非 `active` → `MT-1009`（契约 §3.22 明示"品类或摊位不存在"）；
+    - 同摊位同别名重复 → `MT-1012`（§2.5 的 `ux_alias_stall_name`）。
+    """
+    if not isinstance(body, dict):
+        raise TradeError("MT-1008", "请求体必须是 JSON 对象")
+
+    stall_no = body.get("stall_no")
+    if not isinstance(stall_no, str) or not 1 <= len(stall_no) <= STALL_NO_MAX_LEN:
+        raise TradeError(
+            "MT-1008",
+            f"`stall_no` 必须是长度 1~{STALL_NO_MAX_LEN} 的字符串",
+            {"field": "stall_no", "max_length": STALL_NO_MAX_LEN},
+        )
+    alias_name = body.get("alias_name")
+    if not isinstance(alias_name, str) or not 1 <= len(alias_name) <= ALIAS_NAME_MAX_LEN:
+        raise TradeError(
+            "MT-1008",
+            f"`alias_name` 必须是长度 1~{ALIAS_NAME_MAX_LEN} 的字符串",
+            {"field": "alias_name", "max_length": ALIAS_NAME_MAX_LEN},
+        )
+    category_id = body.get("category_id")
+    if isinstance(category_id, bool) or not isinstance(category_id, int):
+        raise TradeError("MT-1008", "`category_id` 必须是整数", {"field": "category_id"})
+
+    stall = conn.execute("SELECT id FROM stall WHERE stall_no = ?", (stall_no,)).fetchone()
+    if stall is None:
+        raise TradeError("MT-1009", f"摊位不存在：{stall_no}", {"stall_no": stall_no})
+    category = conn.execute("SELECT id, status FROM category WHERE id = ?", (category_id,)).fetchone()
+    if category is None:
+        raise TradeError("MT-1009", f"标准品类不存在：{category_id}", {"category_id": category_id})
+    if category["status"] != "active":
+        # 停用品类不能再被映射：否则新别名会指向一个"已停用"的记账口径
+        raise TradeError(
+            "MT-1009",
+            f"标准品类已停用，不能再建立别名映射：{category_id}",
+            {"category_id": category_id, "status": category["status"]},
+        )
+
+    stall_id = int(stall["id"])
+    duplicate = conn.execute(
+        "SELECT id FROM stall_category_alias WHERE stall_id = ? AND alias_name = ?",
+        (stall_id, alias_name),
+    ).fetchone()
+    if duplicate is not None:
+        raise TradeError(
+            "MT-1012",
+            f"该摊位已存在同别名映射：{alias_name}",
+            {"stall_no": stall_no, "alias_name": alias_name, "existing_id": int(duplicate["id"])},
+        )
+
+    cursor = conn.execute(
+        "INSERT INTO stall_category_alias (stall_id, alias_name, category_id, created_at) VALUES (?, ?, ?, ?)",
+        (stall_id, alias_name, category_id, now_iso()),
+    )
+    conn.commit()
+    row = conn.execute(
+        f"""
+        SELECT {ALIAS_FIELDS}
+        FROM stall_category_alias a JOIN stall s ON s.id = a.stall_id
+        WHERE a.id = ?
+        """,
+        (int(cursor.lastrowid),),
+    ).fetchone()
+    return dict(row)
