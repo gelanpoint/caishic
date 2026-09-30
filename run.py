@@ -26,6 +26,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from app import config  # noqa: E402  （必须在 sys.path 处理之后导入）
 from app import create_app  # noqa: E402
+from app.db import init_database  # noqa: E402
 
 _LINE = "=" * 68
 
@@ -118,6 +119,13 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     lan_ip = detect_lan_ip()
+
+    # ---- 自动建库 / 按序补齐迁移（AC-013「一条启动命令」，data-model.md §7） ----
+    applied = init_database()
+    if applied:
+        print(f"[建库] 本次执行迁移：{', '.join(applied)}")
+    else:
+        print("[建库] 数据库已存在且已是最新版本（未重复执行迁移）")
 
     app = create_app()
     print_startup_banner(host, port, lan_ip)
