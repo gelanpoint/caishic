@@ -27,6 +27,7 @@ if str(_REPO_ROOT) not in sys.path:
 from app import config  # noqa: E402  （必须在 sys.path 处理之后导入）
 from app import create_app  # noqa: E402
 from app.db import init_database  # noqa: E402
+from app.seed import import_seed, summary_line  # noqa: E402
 
 _LINE = "=" * 68
 
@@ -126,6 +127,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[建库] 本次执行迁移：{', '.join(applied)}")
     else:
         print("[建库] 数据库已存在且已是最新版本（未重复执行迁移）")
+
+    # ---- 导入种子数据（T-005；REQ-025 只读本地文件、不依赖外网） ----
+    # 幂等：重复启动只补缺，不产生重复数据，也不覆盖摊主已调整过的价目表（见 app/seed.py 模块 docstring）。
+    seed_summary = import_seed()
+    print(f"[种子] {summary_line(seed_summary)}")
 
     app = create_app()
     print_startup_banner(host, port, lan_ip)
