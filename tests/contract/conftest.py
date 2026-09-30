@@ -52,7 +52,18 @@ SEED_STALL_NO = "A-01"  #: 演示数据里的已知摊位号（`seed.json` 的�
 #: （`plan.md` §4 / `AGENTS.md` §3 硬要求 4）。表外任何路由都会被判为「契约外端点」并失败，
 #: 强制「新增端点必须先进契约再进代码」（`RL-1`）。⚠️ 路径必须是 `normalize_rule` 之后的归一形式
 #: （原写 `<path:filename>` 与归一后的路由表永远匹配不上，该缺陷由真实破坏演练暴露并修正）。
-NON_API_ROUTES: frozenset[tuple[str, str]] = frozenset({("GET", "/"), ("GET", "/static/{filename}")})
+NON_API_ROUTES: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("GET", "/"),
+        ("GET", "/static/{filename}"),
+        # 三个页面入口（T-026 秤端 / T-027 运营端 / T-028 顾客扫码页）—— 页面不是接口，
+        # 但 `run.py` 的启动横幅正是按这三个路径打印演示入口，故它们必须有路由
+        # （否则现场照着横幅打开会 404）。改路径必须同时改这里，否则路由表比对会红。
+        ("GET", "/scale/"),
+        ("GET", "/admin/"),
+        ("GET", "/customer/"),
+    }
+)
 
 # 1. 契约解析
 

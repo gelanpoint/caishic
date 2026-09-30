@@ -97,6 +97,29 @@ def create_app() -> Flask:
         """入口导航页（列出操作端与顾客扫码页两个入口）。"""
         return send_from_directory(config.STATIC_DIR, "index.html")
 
+    # ---- 三个页面入口（T-026 秤端 / T-027 运营端 / T-028 顾客扫码页） ----
+    # 说明：这三个路由**不是接口**（契约 §2 不登记页面），故它们登记在契约测试的
+    # `NON_API_ROUTES` 豁免表里；`run.py` 的启动横幅也按这三个路径打印入口地址，
+    # 两者是同一份事实（改路径必须同时改 `NON_API_ROUTES`，否则路由表比对会红）。
+    def _page(name: str):
+        """返回 `app/static/<name>/index.html`；目录名固定，不接受来自请求的路径片段。"""
+        return send_from_directory(str(config.STATIC_DIR / name), "index.html")
+
+    @app.get("/scale/")
+    def scale_page():
+        """秤端（摊主收银台）页面。"""
+        return _page("scale")
+
+    @app.get("/admin/")
+    def admin_page():
+        """运营端（市场方）页面。"""
+        return _page("admin")
+
+    @app.get("/customer/")
+    def customer_page():
+        """顾客扫码页（不登录）。"""
+        return _page("customer")
+
     # ---- 业务错误 → 契约 §1.2 响应 -------------------------------------
     @app.errorhandler(TradeError)
     def handle_trade_error(err: TradeError):

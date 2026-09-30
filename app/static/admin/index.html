@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>运营端 · 市场方</title>
+<!-- 运营端页面（T-027）。本地资源，无外链（REQ-025）。
+     **页面上每个数字都直接来自接口响应**：不估算、不补零、不留"好看的默认值" ——
+     尤其是使用率指标，分子与分母必须一起显示（AC-005）。 -->
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+<h1>运营端 · 市场方</h1>
+<div class="sub">字典与别名 · 佣金口径 · 看板 · 日终聚合与结算 · 对账 · 指标导出 · 留痕</div>
+
+<div class="card">
+  <div class="row">
+    <button id="reload" class="primary">刷新全部</button>
+    <span class="muted" id="aggResult"></span>
+  </div>
+  <div class="err" id="err"></div>
+</div>
+
+<div class="card">
+  <h2>1 · 品类字典与别名映射（§3.20 / §3.21 / §3.22）</h2>
+  <div class="muted" id="catCount">—</div>
+  <div class="row">
+    <label class="field">编码 <input id="catCode" value="DEMO1" maxlength="16"></label>
+    <label class="field">名称 <input id="catName" value="演示品类" maxlength="32"></label>
+    <button id="newCategory">新增品类</button>
+  </div>
+  <div id="categories"></div>
+  <h2>别名映射（别名 → 标准品类；按标准品类记账）</h2>
+  <div id="aliases"></div>
+</div>
+
+<div class="card">
+  <h2>2 · 佣金口径（§3.23 / §3.24，按<b>实收金额</b>计算）</h2>
+  <div class="row">
+    <label class="field">收费对象
+      <select id="ruleObject"><option value="merchant">merchant（向商户收）</option>
+        <option value="customer">customer（向顾客收）</option><option value="market">market（市场自留）</option></select>
+    </label>
+    <label class="field">费率（万分比，如 200 = 2%） <input id="ruleRate" value="200"></label>
+    <button id="newRule" class="primary">新增今日生效口径</button>
+  </div>
+  <div id="rules"></div>
+</div>
+
+<div class="card">
+  <h2>3 · 市场方看板（§3.25）</h2>
+  <div id="market"></div>
+  <div id="stalls"></div>
+</div>
+
+<div class="card">
+  <h2>4 · 日终聚合与结算单（§3.26 / §3.27 / §3.28）</h2>
+  <div class="row">
+    <button id="aggregate" class="primary">执行今日日终聚合</button>
+    <label class="field">结算摊位 <input id="settleStall" value="A-01" maxlength="16"></label>
+    <button id="newSettlement">生成今日结算单</button>
+  </div>
+  <div id="settlements"></div>
+</div>
+
+<div class="card">
+  <h2>5 · 对账等式（§3.29）：订单总额 = 支付流水 = 分账明细</h2>
+  <div id="recon"></div>
+  <div class="muted">口径 = <b>已结算</b>交易（money 真收过的）；在途未收款交易不计入，
+    否则任何一笔等付款交易都会让市场长期显示"不平"。分账基数已扣除抹零。</div>
+</div>
+
+<div class="card">
+  <h2>6 · 指标导出（§3.30）：分子与分母一起给</h2>
+  <div id="metrics"></div>
+  <div class="muted" id="metricsNote"></div>
+</div>
+
+<div class="card">
+  <h2>7 · 资金链路留痕（§3.31，<b>只读</b>）</h2>
+  <div class="muted" id="auditTotal">—</div>
+  <div id="audits"></div>
+  <div class="muted">留痕只增不改：数据库触发器拒绝 UPDATE / DELETE，接口也不提供任何写入口（NFR-009）。</div>
+</div>
+
+<p class="muted"><a href="/">← 返回入口导航</a></p>
+
+<script src="../js/admin.js"></script>
+</body>
+</html>

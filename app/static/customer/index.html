@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>顾客扫码页</title>
+<!-- 顾客扫码页（T-028）。本地资源，无外链（REQ-025）；**无需登录**（NFR-007 放宽项）。
+     页面只展示有采集来源的字段：接口没给、或给了空值的字段**一律不渲染**（REQ-023 / AC-011）。 -->
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+<h1>摊位信息与交易凭证</h1>
+<div class="sub">本页只展示<b>有采集来源</b>的字段；没有数据的字段不显示（宁可不给，不给空壳）。</div>
+
+<div class="card">
+  <div class="row">
+    <label class="field" style="margin:0;flex:1">
+      摊位
+      <select id="stallPick">
+        <option value="A-01">A-01 老张蔬菜摊</option>
+        <option value="A-02">A-02</option>
+        <option value="A-03">A-03</option>
+        <option value="A-04">A-04</option>
+        <option value="A-05">A-05</option>
+      </select>
+    </label>
+    <button id="reload" class="primary">刷新</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>摊位信息与信用指标（<span id="profileFor">—</span>）</h2>
+  <div id="profile"></div>
+  <div class="muted">标价一致率口径：期内交易明细中未改价的比例；<b>抹零不计入</b>（REQ-008）。</div>
+</div>
+
+<div class="card hide" id="receiptCard">
+  <h2>交易凭证（<span id="receiptNo">—</span>）</h2>
+  <div id="receipt"></div>
+  <div id="receiptItems"></div>
+  <div class="muted">金额与明细直接取自交易记录；本页不显示顾客个人身份信息与完整收款账号（REQ-024）。</div>
+</div>
+
+<div class="err" id="err"></div>
+<p class="muted">演示：在网址后加 <code>?stall=A-01&amp;txn=T-20260930-0001</code> 可直接查看某笔凭证。</p>
+<p class="muted"><a href="/">← 返回入口导航</a></p>
+
+<script src="../js/customer.js"></script>
+</body>
+</html>

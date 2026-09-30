@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>操作端 · 秤端收银台</title>
+<!-- 秤端页面（T-026）。全部资源为仓库内本地文件：样式 ../css/app.css、脚本 ../js/offline.js
+     与 ./../js/scale.js —— 无外链、无外部字体、无图标库（REQ-025）。
+     设计原点（AC-006）：**选品不要输入** —— 选品点图标、重量点预设或"读秤"，全程不用打字。 -->
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+<h1>操作端 · 秤端收银台</h1>
+<div class="sub">选品 → 称重 → 计价 → 收款 → 凭证（全程点按，不用打字）</div>
+
+<div class="card">
+  <div class="row">
+    <span>当前摊位：<b id="stallName">未绑定</b></span>
+    <span class="spacer"></span>
+    <span class="badge" id="offlineBadge">在线</span>
+    <button id="offlineToggle" class="ghost">切到离线</button>
+  </div>
+  <div class="row" id="bindBox">
+    <span class="muted">选择摊位：</span>
+    <span id="stalls" class="row"></span>
+    <button id="defaultStall" class="primary">默认摊位 A-01</button>
+  </div>
+  <div class="err" id="bindErr"></div>
+</div>
+
+<div class="card" id="bound">
+  <h2>1 · 选品（点图标）</h2>
+  <div class="grid" id="products"></div>
+
+  <h2>2 · 称重（点预设或读秤）</h2>
+  <div class="row">
+    <span>本次重量：<b id="weightNow">1000 g</b></span>
+    <span class="spacer"></span>
+    <span id="weights" class="row"></span>
+  </div>
+
+  <h2>3 · 本单明细</h2>
+  <div id="cart"></div>
+  <div class="row">
+    <button id="checkout" class="primary">计价 / 暂存</button>
+    <span class="muted">离线开关打开时，这一步只把本地副本暂存（§3.14），不假装记账</span>
+  </div>
+  <div class="err" id="payErr"></div>
+  <div class="muted" id="offlineNote"></div>
+</div>
+
+<div class="card hide" id="payBox">
+  <h2>4 · 收款</h2>
+  <div class="kv"><span>交易号</span><b id="txnNo">—</b></div>
+  <div class="kv"><span>应收</span><b class="total" id="txnTotal">¥ 0.00</b></div>
+  <div id="txnItems"></div>
+  <div class="row">
+    <button id="payCash" class="primary">现金收款</button>
+    <button id="payQr">生成收款码</button>
+  </div>
+  <div id="qrBox" class="card hide">
+    <div class="muted">收款码内容（本地生成，等待回调）：</div>
+    <div id="qrPayload" class="muted"></div>
+    <div class="kv"><span>收款标识（脱敏）</span><b id="qrToken">—</b></div>
+  </div>
+  <div class="row hide" id="afterSale">
+    <button id="priceOff">改价：九折</button>
+    <button id="priceRound">抹零 0.50 元</button>
+    <button id="refund" class="danger">全额退货</button>
+    <span class="muted">改价与退货都会写留痕（§3.9 / §3.11）</span>
+  </div>
+</div>
+
+<div class="card">
+  <h2>离线状态与补传</h2>
+  <div class="kv"><span>服务端可达性（§3.13 的 online）</span><b id="serverOnline">—</b></div>
+  <div class="kv"><span>待补传 / 告警阈值</span><b id="pending">—</b></div>
+  <div class="kv"><span>最早暂存时刻</span><b id="oldest">—</b></div>
+  <div class="row"><button id="syncNow" class="primary">立即补传</button>
+    <span class="muted">补传成功后本地副本被清除（NFR-013）</span></div>
+  <div class="muted" id="syncResult"></div>
+  <div class="err" id="offlineErr"></div>
+</div>
+
+<p class="muted"><a href="/">← 返回入口导航</a></p>
+
+<script src="../js/offline.js"></script>
+<script src="../js/scale.js"></script>
+</body>
+</html>
