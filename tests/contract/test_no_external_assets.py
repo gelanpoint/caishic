@@ -114,31 +114,52 @@ def test_static_pages_reference_only_local_assets():
                 )
 
 
-def test_static_pages_local_asset_paths_actually_resolve():
-    """本地引用必须**真的能解析到文件**。
+def test_static_pages_local_asset_paths_resolve_as_served_urls():
+    """本地引用必须按**浏览器的方式**解析后仍指向真实文件。
 
-    "零外链"只保证不引站外，**不保证站内路径没写错**：`../js/scal.js` 这种手误同样是外链检查的盲区，
-    而它的现场表现与引 CDN 完全一样（页面打不开/功能缺失）。故这里逐个解析并断言文件存在；
-    站内绝对路径（`/static/...`）也一并覆盖。
+    这条检查是被真实缺陷逼出来的（`2026-09-30`，Playwright 浏览器走查发现）：
+    页面 `/scale/` 里写 `../js/scale.js`，**磁盘上**能解析到 `app/static/js/scale.js`
+    （旧检查据此判绿），但**浏览器**按 URL 解析 → 请求 `/js/scale.js` → 404
+    ⇒ 页面无样式、无脚本、**整页点不动**。旧检查只证明"文件在磁盘上存在"，
+    证明不了"浏览器取得到"—— 两件事在"页面 URL 与文件位置不同构"时就会分叉。
+
+    故现在按 URL 解析（`urljoin(页面 URL, 引用)`），再按服务端真实规则映射回文件：
+    `/static/<p>` → `app/static/<p>`；目录式路由（`/scale/` 等）→ 其 `index.html`；
+    其余 `/<p>` → `app/static/<p>`。映射不到文件即失败。
     """
+    from urllib.parse import urljoin
+
+    served = {
+        "index.html": "/",
+        "scale/index.html": "/scale/",
+        "admin/index.html": "/admin/",
+        "customer/index.html": "/customer/",
+    }
     checked = 0
-    for rel in ("index.html", "scale/index.html", "admin/index.html", "customer/index.html"):
+    for rel, page_url in served.items():
         page = STATIC_DIR / rel
-        for attr in ("src", "href"):
-            for value in re.findall(rf'{attr}="([^"]+)"', page.read_text(encoding="utf-8")):
-                if value.startswith("#") or value.startswith("mailto:"):
-                    continue
-                if value.startswith("/"):
-                    # 站内绝对路径：既可能是资源（`/static/js/x.js`），也可能是页面路由（`/scale/`）
-                    inner = value.lstrip("/")
-                    if inner.startswith("static/"):
-                        inner = inner[len("static/"):]
-                    base = (STATIC_DIR / inner).resolve() if inner else STATIC_DIR
-                    target = base / "index.html" if base.is_dir() else base
-                else:
-                    target = (page.parent / value).resolve()
-                assert target.is_file(), f"{rel} 引用 `{value}`，但解析不到文件：{target}"
-                checked += 1
+        for value in re.findall(r'(?:src|href)="([^"]+)"', page.read_text(encoding="utf-8")):
+            if value.startswith(("#", "mailto:")):
+                continue
+            path = urljoin(page_url, value).split("?", 1)[0]
+            # 服务端的真实规则**只有三条**（其余一律 404）：`/`、三个页面路由、`/static/<p>`。
+            # ⚠️ **不能**用"映射不到就退回 `app/static/<path>`"这种宽松兜底 —— 第一版正是这么写的，
+            # 于是 `/js/scale.js` 又能"在磁盘上找到文件"、缺陷照样漏过（本轮负例把它抓了出来）。
+            if path == "/":
+                target = STATIC_DIR / "index.html"
+            elif path in ("/scale/", "/admin/", "/customer/"):
+                target = STATIC_DIR / path.strip("/") / "index.html"
+            elif path.startswith("/static/"):
+                target = STATIC_DIR / path[len("/static/"):]
+            else:
+                raise AssertionError(
+                    f"{rel} 引用 `{value}`：浏览器会请求 `{path}`，但**服务端没有这个路由**"
+                    "（只有 `/`、三个页面路由与 `/static/<路径>`）—— 现场表现为无样式、无脚本、整页点不动"
+                )
+            assert target.is_file(), (
+                f"{rel} 引用 `{value}`：浏览器会请求 `{path}`，但服务端取不到文件（映射到 {target}）"
+            )
+            checked += 1
     assert checked >= 8, f"只解析到 {checked} 个引用，太少（清单可能被改动）"
 
 

@@ -133,6 +133,7 @@
         state.total = payload.total_amount_cents;
         renderTicket(payload);
         show("payBox", true);
+        show("priceOps", true);   // 改价只能在收款前（收款后 API 会回 MT-1001，界面就不该给这个按钮）
         state.cart = [];
         renderCart();
       })

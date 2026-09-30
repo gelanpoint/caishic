@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>操作端 · 秤端收银台</title>
-<!-- 秤端页面（T-026）。全部资源为仓库内本地文件：样式 ../css/app.css、脚本 ../js/offline.js
-     与 ./../js/scale.js —— 无外链、无外部字体、无图标库（REQ-025）。
+<!-- 秤端页面（T-026）。全部资源为仓库内本地文件：样式 /static/css/app.css、脚本 /static/js/offline.js
+     与 /static/js/scale.js —— 无外链、无外部字体、无图标库（REQ-025）。
      设计原点（AC-006）：**选品不要输入** —— 选品点图标、重量点预设或"读秤"，全程不用打字。 -->
-<link rel="stylesheet" href="../css/app.css">
+<link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body>
 <h1>操作端 · 秤端收银台</h1>
@@ -54,6 +54,11 @@
   <div class="kv"><span>交易号</span><b id="txnNo">—</b></div>
   <div class="kv"><span>应收</span><b class="total" id="txnTotal">¥ 0.00</b></div>
   <div id="txnItems"></div>
+  <div class="row hide" id="priceOps">
+    <button id="priceOff">改价：九折</button>
+    <button id="priceRound">抹零 0.50 元</button>
+    <span class="muted">改价必须在**收款前**（收款后契约只允许退货；收款后改价会被 MT-1001 拒绝）</span>
+  </div>
   <div class="row">
     <button id="payCash" class="primary">现金收款</button>
     <button id="payQr">生成收款码</button>
@@ -64,10 +69,8 @@
     <div class="kv"><span>收款标识（脱敏）</span><b id="qrToken">—</b></div>
   </div>
   <div class="row hide" id="afterSale">
-    <button id="priceOff">改价：九折</button>
-    <button id="priceRound">抹零 0.50 元</button>
     <button id="refund" class="danger">全额退货</button>
-    <span class="muted">改价与退货都会写留痕（§3.9 / §3.11）</span>
+    <span class="muted">退货会写留痕（§3.11）</span>
   </div>
 </div>
 
@@ -84,7 +87,7 @@
 
 <p class="muted"><a href="/">← 返回入口导航</a></p>
 
-<script src="../js/offline.js"></script>
-<script src="../js/scale.js"></script>
+<script src="/static/js/offline.js"></script>
+<script src="/static/js/scale.js"></script>
 </body>
 </html>
