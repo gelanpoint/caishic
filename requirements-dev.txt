@@ -10,8 +10,18 @@
 #   4. 本文件内工具自身的漏洞**不在**运行期漏洞响应时限（docs/standards/quality-gates.md §1.1）的适用范围内。
 #
 # 安装（仅在开发机执行）：python -m pip install -r requirements-dev.txt
+#   走查还要装浏览器内核：python -m playwright install chromium
 #
 # 版本取值：2026-09-30 实测可下载并锁定的版本（`python -m pip download pytest coverage --no-deps`）。
+#   `playwright` 版本取自本机 `pip show playwright`（同一日实测）。
+#
+# ⚠️ `playwright` 是 `T-030`~`T-033` 的**真实浏览器走查**依赖（父代理裁定：人工走查不可复现，
+#    必须用 Playwright 跑可重复的走查）。它此前**没有**登记在本清单里 —— 那等于"走查在一台干净的
+#    开发机上跑不起来"，与"不可复现的验收等于没有验收"是同一类问题，故按本文件既有规则补登记。
+#    它**不进演示机**（演示机只装 `requirements.txt` 的 Flask），也不被 `run.py` / `app/**` 引用；
+#    缺失时走查会**显式跳过并说明"这不是通过，是没检查"**（见 `tests/conftest.py` 的 `browser` 夹具）。
+#    **待父代理追认**：`docs/adr/0004` §3 的工具枚举（示例为 pytest / coverage）需同步补上本项。
 
 pytest==9.1.1
 coverage==7.16.2
+playwright==1.60.0

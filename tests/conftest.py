@@ -36,6 +36,7 @@ from e2e_support import (  # noqa: F401  （再导出，保持既有 `from conft
     item_amount,
     new_page,
     pay_transaction,
+    pending_count,
     ratio_bp,
     reconciliation,
     scalar,
@@ -44,6 +45,7 @@ from e2e_support import (  # noqa: F401  （再导出，保持既有 `from conft
     stall_id,
     start_live_server,
     today_iso,
+    wait_pending,
     wait_until_healthy,
 )
 

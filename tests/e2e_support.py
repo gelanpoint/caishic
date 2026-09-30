@@ -345,3 +345,35 @@ def snap(page, shots: Path, name: str) -> str:
     page.screenshot(path=str(path), full_page=True)
     print(f"[截图] {path}")
     return str(path)
+
+
+def pending_count(page) -> int:
+    """读秤端界面上的待补传条数（`#pending` 的显示形态：`N / 阈值 …`）。"""
+    return int(page.inner_text("#pending").split("/")[0].strip())
+
+
+def wait_pending(page, expected: int, where: str) -> int:
+    """等 `#pending` **恰好等于** `expected`，并把它作为断言返回。
+
+    为什么必须等（`T-030`/`T-033` 实测都撞到过）：`#pending` 来自 `§3.13` 的一次 GET
+    （`refreshOffline()` 的 promise），而 `#offlineNote` / `#syncResult` 是暂存/补传响应回来后
+    **同步**写上的 —— 两个数字由**两条不同的异步链**更新，立刻读会撞上"提示已更新、状态还没回来"
+    的瞬间（实测：提示写着「待补传 1 笔」、`#pending` 还是 0）。那是**走查自己没等异步**，不是产品缺陷。
+
+    等一个**精确值**是**收紧**而不是放宽：值不对就超时报错，报错里同时给出两个数，
+    便于判断是"没暂存"还是"没刷新"。
+    """
+    try:
+        page.wait_for_function(
+            "n => parseInt(document.querySelector('#pending').textContent.split('/')[0], 10) === n",
+            arg=expected,
+            timeout=5000,
+        )
+    except Exception:  # noqa: BLE001 - 超时是主信号，但要把它转成带上下文的断言失败
+        raise AssertionError(
+            f"{where}：`#pending` 在 5 秒内未达到 {expected}（实际 {pending_count(page)}；"
+            f"界面提示 {page.inner_text('#offlineNote')!r}）"
+        ) from None
+    observed = pending_count(page)
+    assert observed == expected, f"{where}：`#pending` 应为 {expected}，实际 {observed}"
+    return observed

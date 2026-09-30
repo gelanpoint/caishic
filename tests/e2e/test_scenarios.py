@@ -28,38 +28,10 @@ from conftest import (
     create_transaction,
     http_json,
     new_page,
+    pending_count,
     snap,
+    wait_pending,
 )
-
-
-def _pending_count(page) -> int:
-    """读界面上的待补传条数（`#pending` 的显示形态：`N / 阈值 200…`）。"""
-    return int(page.inner_text("#pending").split("/")[0].strip())
-
-
-def _wait_pending(page, expected: int, where: str) -> int:
-    """等 `#pending` **恰好等于** `expected`，并把它作为断言返回。
-
-    为什么要等而不是立刻读：`#pending` 来自 `§3.13` 的一次 GET（`refreshOffline()` 的 promise），
-    而 `#offlineNote` 是暂存响应回来后**同步**写上的 —— 两个数字由**两条不同的异步链**更新，
-    立刻读会撞上"提示已更新、状态还没回来"的瞬间。
-    等一个**精确值**（而不是"等到有变化"）是**收紧**而不是放宽：值不对就超时报错，
-    报错里同时给出 `#pending` 与 `#offlineNote` 两个数，便于判断是"没暂存"还是"没刷新"。
-    """
-    try:
-        page.wait_for_function(
-            "n => parseInt(document.querySelector('#pending').textContent.split('/')[0], 10) === n",
-            arg=expected,
-            timeout=5000,
-        )
-    except Exception:  # noqa: BLE001 - 超时是主信号，但要把它转成带上下文的断言失败
-        raise AssertionError(
-            f"{where}：`#pending` 在 5 秒内未达到 {expected}（实际 {_pending_count(page)}；"
-            f"界面提示 {page.inner_text('#offlineNote')!r}）"
-        ) from None
-    observed = _pending_count(page)
-    assert observed == expected, f"{where}：`#pending` 应为 {expected}，实际 {observed}"
-    return observed
 
 
 # ---------------------------------------------------------------------------
@@ -169,7 +141,7 @@ def test_offline_toggle_stage_then_sync_clears_pending(live_server, browser, sho
     page.click("#defaultStall")
     page.wait_for_selector(".tile")
 
-    pending_before = _pending_count(page)
+    pending_before = pending_count(page)
     assert pending_before == 0, f"前置：本次会话开始时不应有待补传，实际 {pending_before}"
     page.click("#offlineToggle")
     assert "离线" in page.inner_text("#offlineBadge"), "切换后徽标应显示离线"
@@ -180,14 +152,14 @@ def test_offline_toggle_stage_then_sync_clears_pending(live_server, browser, sho
         page.click("#checkout")
         # 逐笔断言 `#pending` 的**增量恰为 1**（第 1 笔 → 1、第 2 笔 → 2）：
         # 上一版只断言"界面出现过暂存提示"，两次点击若只暂存成功 1 笔也照样通过（精度不足）。
-        _wait_pending(page, pending_before + index + 1, f"第 {index + 1} 笔暂存后")
+        wait_pending(page, pending_before + index + 1, f"第 {index + 1} 笔暂存后")
         note = page.inner_text("#offlineNote")
         assert f"待补传 {index + 1} 笔" in note, (
             f"第 {index + 1} 笔暂存后界面提示应含「待补传 {index + 1} 笔」，实际 {note!r}"
         )
     snap(page, shots, "offline-1-staged")
     print(
-        f"[离线] 已暂存 {staged} 笔（界面 #pending 增量 = {_pending_count(page) - pending_before}）；"
+        f"[离线] 已暂存 {staged} 笔（界面 #pending 增量 = {pending_count(page) - pending_before}）；"
         f"界面提示：{page.inner_text('#offlineNote')}"
     )
 
@@ -198,7 +170,7 @@ def test_offline_toggle_stage_then_sync_clears_pending(live_server, browser, sho
     result = page.inner_text("#syncResult")
     # 同上：`#syncResult` 是同步写上的，`#pending` 要等 `§3.13` 那一趟 GET 回来 ——
     # 立刻读会读到旧值（本用例第一次进全套跑时就是这么偶发失败的：**自己的异步没等，不是产品缺陷**）。
-    pending_after = _wait_pending(page, 0, "补传后")
+    pending_after = wait_pending(page, 0, "补传后")
     assert pending_after == 0, f"补传后界面 pending 应归零，实际 {pending_after}（{result}）"
     # 服务端自报的计数必须与"我们点了 2 笔"一致 —— 这是"确实暂存了 2 笔"的**另一半证据**
     assert f"补传 {staged} 笔" in result, f"补传条数应与暂存条数一致：{result!r}"
