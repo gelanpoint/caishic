@@ -16,6 +16,7 @@ env/
 ENV/
 
 # 本地数据库与运行时数据（演示数据由种子脚本重建，不入库）
+data/
 *.sqlite3
 *.sqlite3-journal
 *.db
