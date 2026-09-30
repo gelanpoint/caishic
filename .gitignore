@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+ENV/
+
+# 本地数据库与运行时数据（演示数据由种子脚本重建，不入库）
+*.sqlite3
+*.sqlite3-journal
+*.db
+*.db-journal
+
+# 日志与临时文件
+*.log
+logs/
+tmp/
+.cache/
+
+# 测试与覆盖率产物
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# 编辑器 / 操作系统
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# 本地覆盖配置（可能含密钥，绝不入库）
+#   注意：`.env.example` 这类**只含占位符**的样例文件应当入库，故不在此忽略
+.env
+.env.local
+.env.*.local
+*.local.md
+AGENTS.local.md
+CLAUDE.local.md
+
+# 注意：以下内容**必须入库**，不要加入忽略列表
+#   .specify/memory/constitution.md   ← 项目宪法（项目文档，非本地状态）
+#   AGENTS.md / docs/ / specs/        ← 记忆锚与全部交付文档
