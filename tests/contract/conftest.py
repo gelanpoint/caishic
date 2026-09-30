@@ -329,11 +329,20 @@ def today_iso() -> str:
     return date.today().isoformat()
 
 
-def json_of(response) -> dict:
-    """取响应 JSON（失败时给出可读的状态码与正文片段）。"""
+def json_of(response) -> dict | list:
+    """取响应 JSON（失败时给出可读的状态码与正文片段）。
+
+    **接受对象或数组** —— 契约里两种响应形态都有：§3.2 / §3.3 / §3.4 回对象，
+    §3.5 商品列表回数组。本助手原先只接受 `dict`，与契约 §3.5「响应(200): 数组」
+    **直接矛盾**：任何符合契约的实现都不可能通过，属**测试自身的缺陷**，故按契约修正
+    （契约是唯一事实来源，不是测试 —— 判据与本次变更原因见提交信息）。
+
+    仍拒绝标量与 null —— 保留本助手作为「响应结构校验」的价值；
+    放宽到"什么都接受"就等于把这个检查废掉。
+    """
     payload = response.get_json(silent=True)
-    assert isinstance(payload, dict), (
-        f"响应不是 JSON 对象：HTTP {response.status_code} {response.get_data(as_text=True)[:300]}"
+    assert isinstance(payload, (dict, list)), (
+        f"响应既不是 JSON 对象也不是数组：HTTP {response.status_code} {response.get_data(as_text=True)[:300]}"
     )
     return payload
 
@@ -359,8 +368,8 @@ def bind_stall_session(client, stall_no: str = SEED_STALL_NO) -> str:
     return token
 
 
-def catalog(client, token: str) -> tuple[list, list]:
-    """取回本摊位当前可售商品与当日价目表（契约 §3.5 / §3.3）。"""
+def catalog(client, token: str) -> tuple[list, dict | list]:
+    """取回本摊位当前可售商品（§3.5：**数组**）与当日价目表（§3.3：对象）—— 形态不同，故并集标注。"""
     products = client.get("/api/merchant/products", headers=session_headers(token))
     assert products.status_code == 200, (
         f"契约 §3.5 期望 200，实际 {products.status_code}：{products.get_data(as_text=True)[:300]}"
