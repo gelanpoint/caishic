@@ -114,6 +114,56 @@ def test_static_pages_reference_only_local_assets():
                 )
 
 
+def test_static_pages_local_asset_paths_actually_resolve():
+    """本地引用必须**真的能解析到文件**。
+
+    "零外链"只保证不引站外，**不保证站内路径没写错**：`../js/scal.js` 这种手误同样是外链检查的盲区，
+    而它的现场表现与引 CDN 完全一样（页面打不开/功能缺失）。故这里逐个解析并断言文件存在；
+    站内绝对路径（`/static/...`）也一并覆盖。
+    """
+    checked = 0
+    for rel in ("index.html", "scale/index.html", "admin/index.html", "customer/index.html"):
+        page = STATIC_DIR / rel
+        for attr in ("src", "href"):
+            for value in re.findall(rf'{attr}="([^"]+)"', page.read_text(encoding="utf-8")):
+                if value.startswith("#") or value.startswith("mailto:"):
+                    continue
+                if value.startswith("/"):
+                    # 站内绝对路径：既可能是资源（`/static/js/x.js`），也可能是页面路由（`/scale/`）
+                    inner = value.lstrip("/")
+                    if inner.startswith("static/"):
+                        inner = inner[len("static/"):]
+                    base = (STATIC_DIR / inner).resolve() if inner else STATIC_DIR
+                    target = base / "index.html" if base.is_dir() else base
+                else:
+                    target = (page.parent / value).resolve()
+                assert target.is_file(), f"{rel} 引用 `{value}`，但解析不到文件：{target}"
+                checked += 1
+    assert checked >= 8, f"只解析到 {checked} 个引用，太少（清单可能被改动）"
+
+
+def test_js_files_parse_as_javascript():
+    """四个脚本必须能被解析（无语法错误）—— 页面坏掉的另一半原因就藏在这里。
+
+    判据不靠"读一遍代码"：用 `node --check` 真解析（Node 属于演示机常见的本地工具）。
+    若环境里没有 Node，则**跳过并明确说明**（不允许静默通过假装检查过）。
+    """
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("环境里没有 node，无法做 JS 语法解析（这不是通过，是没检查）")
+    for name in ("offline.js", "scale.js", "admin.js", "customer.js"):
+        result = subprocess.run(
+            [node, "--check", str(STATIC_DIR / "js" / name)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"{name} 语法错误：\n{result.stdout}\n{result.stderr}"
+
+
+
 # ---------------------------------------------------------------------------
 # 扫描器自身的灵敏度（合成样例，随每次 pytest 一起跑）
 # ---------------------------------------------------------------------------
