@@ -72,9 +72,13 @@ def test_latency_thresholds_are_read_from_the_gate_file():
 def test_interface_latency_within_gate_thresholds(live_server):
     """门禁项：在**演示数据目录所在的卷**上，按"摊主点按"的形态采样接口响应时间。
 
-    样本 = 单客户端连续 20 笔（选品→计价→收款，与现场动线同形）+ 3 路轻并发 12 笔
-    （"评委数人同时点"）。这组样本里**没有 10 路写突发**：突发是容量观察，
+    样本 = 单客户端连续 50 笔（选品→计价→收款，与现场动线同形）+ 3 路轻并发 50 笔
+    （"评委数人同时点"），共 100 个 —— 这组样本里**没有 10 路写突发**：突发是容量观察，
     它的分位数由磁盘 fsync 决定（见模块 docstring 的归因表），拿它判"接口响应时间"量的是盘。
+
+    **为什么是 100 个而不是十几个**：`p95` 在小样本上就是"第二慢的那一个"（32 个样本时
+    第 31 位），单个抖动就能决定结论 —— 那不是分位数，是掷骰子。100 个样本时 p95 取第 95 位
+    （最近秩法偏保守，取第 96 位），一次 hiccup 不再左右判定。
     """
     thresholds = parse_latency_thresholds()
     stalls = ["A-01", "A-02", "A-03", "A-04"]
@@ -100,7 +104,7 @@ def test_interface_latency_within_gate_thresholds(live_server):
 
     one_round(stalls[0], 0)  # 预热：首请求要建连接/编译语句，不拿冷启动冒充稳态
 
-    sequential = [one_round(stalls[0], index) for index in range(1, 21)]
+    sequential = [one_round(stalls[0], index) for index in range(1, 51)]
     light: list[float] = []
     lock = threading.Lock()
 
@@ -110,19 +114,27 @@ def test_interface_latency_within_gate_thresholds(live_server):
             light.append(value)
 
     with futures.ThreadPoolExecutor(max_workers=3) as pool:
-        list(pool.map(light_round, range(12)))
+        list(pool.map(light_round, range(50)))
 
     samples = sequential + light
     p50, p95, p99 = statistics.median(samples), percentile(samples, 0.95), percentile(samples, 0.99)
-    assert p95 < thresholds["p95_ms"], (
-        f"接口响应时间 p95={p95:.0f}ms 超出 {GATE_FILE.name} 的阈值 {thresholds['source']}"
-        f"（样本 {len(samples)}：单客户端 {len(sequential)} + 3 路轻并发 {len(light)}）"
-    )
-    assert p99 < thresholds["p99_ms"], (
-        f"接口响应时间 p99={p99:.0f}ms 超出 {GATE_FILE.name} 的阈值 {thresholds['source']}"
-    )
     print(f"[门禁] 接口响应时间（演示数据目录卷）：中位 {p50:.0f}ms / p95 {p95:.0f}ms / p99 {p99:.0f}ms"
           f" —— 阈值 {thresholds['source']}，样本 {len(samples)} 个（单客户端 {len(sequential)} + 轻并发 {len(light)}）")
+    if p95 >= thresholds["p95_ms"] or p99 >= thresholds["p99_ms"]:
+        # 失败时**把归因一起给出来**：这条阈值在本机 D: 盘上的余量本来就薄，
+        # 失败信息里不带盘的实测值，下一个人只能靠猜（"是代码慢还是盘慢"）。
+        fast = _raw_fsync_p50_ms(Path(tempfile.gettempdir()) / "mt-perf-fsync-gate")
+        repo = _raw_fsync_p50_ms(REPO_ROOT / ".pytest-tmp" / "perf-fsync-gate")
+        raise AssertionError(
+            f"接口响应时间超阈：p50={p50:.0f}ms / p95={p95:.0f}ms / p99={p99:.0f}ms，"
+            f"阈值 {thresholds['source']}（{GATE_FILE.name}）。\n"
+            f"环境实测（同一段原始 I/O）：256KB+fsync p50 —— C: {fast:.0f}ms vs D: {repo:.0f}ms。\n"
+            "该阈值**在本机 D: 盘（演示数据目录所在卷）上余量很薄**：本用例量的是"
+            "「单客户端点按 + 3 路轻并发」，D: 的 fsync 成本直接吃掉了大部分余量；"
+            "若这两个数差得远，根因是**盘**不是接口实现（对照实验见 "
+            "test_burst_latency_is_limited_by_disk_fsync_not_by_product）。\n"
+            "处置属人工决定（把现场数据目录挪到 C:，或按 spec.md §4.1 记一次放宽）—— 见 docs/PROJECT-STATE.md。"
+        )
 
 
 # ---------------------------------------------------------------------------

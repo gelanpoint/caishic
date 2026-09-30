@@ -9,16 +9,22 @@
 ## 统一错误处理（契约 §1.2 / §4）
 
 - 错误码 → HTTP 状态的**唯一落点就是本文件的 `ERROR_STATUS`**，逐条抄自
-  `specs/market-trade-flow/contracts/rest-api.md` §4 错误码表（13 条）。**不得在别处再写一套映射**
+  `specs/market-trade-flow/contracts/rest-api.md` §4 错误码表（14 条）。**不得在别处再写一套映射**
   —— 同一个规则写两遍，就是下次漂移的种子。
 - 业务层（`app/domain/`）**不依赖 HTTP**：只抛 `TradeError(code, message, detail)`，
   由下面的错误处理器统一转成契约 §1.2 的响应体与 §4 的状态码。
   这样"契约里的码"与"HTTP 怎么回"各自只有一个出处。
-- 未匹配路径的 404 取 `MT-1009`（唯一与 HTTP 状态无歧义的通用码）；契约 §4 没有定义
-  405 / 500 的通用码，故**本文件不自行发明错误码**（发明即等于在契约之外新增需求，违反 `RL-1`）。
+- **未预期异常也有确定的出口**：任何没被上面接住的异常，统一回 §1.2 格式 + `MT-1014`（500），
+  并把**原始异常与栈只写进服务端日志**（`app.logger.exception`），响应体只给可报障的
+  `request_id`。为什么必须有这条：只有 Flask 默认 500 时，响应体是 **HTML、不符合 §1.2**，
+  调用方既看不出是契约错误、也拿不到任何可追溯标识，**不知道这笔交易到底记没记**——
+  那就把"确定性的失败"退化成了"不知道发生了什么"。
+- 未匹配路径的 404 取 `MT-1009`（唯一与 HTTP 状态无歧义的通用码）。
 """
 
 from __future__ import annotations
+
+import uuid
 
 from flask import Flask, g, jsonify, request, send_from_directory
 
@@ -40,6 +46,9 @@ ERROR_STATUS: dict[str, int] = {
     "MT-1011": 409,
     "MT-1012": 409,
     "MT-1013": 409,
+    # §4 的通用 5xx：未预期异常。**补它不是为了"多一个码"**，而是让"没人预料到的那一类"
+    # 也有确定出口（统一格式 + 可报障标识 + 明确告知"结果不确定"），见模块 docstring。
+    "MT-1014": 500,
 }
 
 
@@ -70,6 +79,21 @@ def error_body(code: str, message: str, detail: dict | None = None) -> dict:
     if detail is not None:
         error["detail"] = detail
     return {"error": error}
+
+
+def is_http_error(err: BaseException) -> bool:
+    """该异常是否自带 HTTP 语义（werkzeug 的 `HTTPException` 族）。
+
+    **为什么不直接 `from werkzeug.exceptions import HTTPException`**：
+    运行期源码的依赖白名单只放 Flask 与标准库（宪法 §1 / `ADR-0003`，由
+    `tests/contract/test_deps_isolation.py` 逐 import 扫描）。`werkzeug` 虽然是 Flask 的硬依赖、
+    装了 Flask 就一定有，但**白名单不是"能 import 就放行"** —— 一旦为它开口子，
+    这道检查就再也挡不住"顺手 import 一个其实也装着的别的东西"。
+    故这里按 `HTTPException` 的**接口契约**判定（`code` 是 HTTP 状态码 + 有 `get_response()`），
+    不 import 它：语义等价，白名单不动。
+    """
+    code = getattr(err, "code", None)
+    return isinstance(code, int) and 400 <= code <= 599 and callable(getattr(err, "get_response", None))
 
 
 def current_db():
@@ -132,9 +156,6 @@ def create_app() -> Flask:
         """统一 404 响应。
 
         错误码取契约 §4 的 `MT-1009`（HTTP 404「资源不存在」）—— 这是**唯一与 HTTP 状态无歧义**的通用码。
-        其余错误码的绑定与断言属 `T-007`（契约测试）与 `T-024`（留痕）的范围：
-        契约 §4 没有定义 405 / 500 的通用码，**本文件不自行发明错误码**
-        （发明即等于在契约之外新增需求，违反 `RL-1`）。
         """
         return (
             jsonify(
@@ -151,6 +172,41 @@ def create_app() -> Flask:
     def handle_bad_request(err):
         """请求体不是合法 JSON 等客户端错误 → 契约 §4 的 `MT-1008`（422 参数校验失败）。"""
         return jsonify(error_body("MT-1008", "参数校验失败", {"reason": str(err.description)})), 422
+
+    @app.errorhandler(Exception)
+    def handle_unexpected_error(err):
+        """**兜底**：没被上面任何处理器接住的异常 → 契约 §1.2 格式 + `MT-1014`（500）。
+
+        两条纪律：
+
+        1. **对外不给栈**：响应体只有码、一句人话、`request_id` 与请求路径 ——
+           栈和原始异常**只进服务端日志**（`logger.exception` 会带 traceback，排查时查得到）。
+           把实现细节回给调用方，既是泄密，也会让"内网演示里随便贴个报错"变成常态。
+        2. **不吞掉 HTTP 语义**：`werkzeug` 的 `HTTPException`（404/405/…）自带状态与语义，
+           直接放行让它按自己的方式回（405 就是 405，不该被兜底改成 500）。
+           本处理器在 `errorhandler(404)` / `errorhandler(400)` **之后**注册，故那两条已经先接住；
+           其余 HTTP 异常（如 405、413）在这里原样放行 —— 判定走 `is_http_error`（不 import werkzeug，
+           见该函数的 docstring）。
+
+        `request_id` 的用途是把"用户截图里的一行字"与"日志里的一次 traceback"对上 ——
+        没有它，现场只能靠时间猜。
+        """
+        if is_http_error(err):
+            return err
+        request_id = uuid.uuid4().hex[:12]
+        app.logger.exception(
+            "未预期异常（request_id=%s，%s %s）", request_id, request.method, request.path
+        )
+        return (
+            jsonify(
+                error_body(
+                    "MT-1014",
+                    "内部错误：该请求未能完成，结果不确定（请勿当作成功）",
+                    {"request_id": request_id, "path": request.path, "method": request.method},
+                )
+            ),
+            500,
+        )
 
     @app.teardown_appcontext
     def close_db(exc):

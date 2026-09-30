@@ -39,9 +39,13 @@ def test_contract_parser_finds_sentinel_endpoints(contract):
 
 
 def test_contract_error_codes_are_continuous_from_1001(contract):
-    """§4 错误码表编号连续（契约自述：「全项目连续编号」）。"""
+    """§4 错误码表编号连续（契约自述：「全项目连续编号」）。
+
+    `1014` 是 `T-034` 补上的通用 5xx 码（未预期异常 → 契约格式而不是 Flask 默认 HTML）；
+    这条断言就是「契约改了、别处没跟」会立刻变红的地方。
+    """
     codes = sorted(contract["error_codes"])
-    assert codes == [f"MT-{n}" for n in range(1001, 1014)], f"错误码表编号不连续：{codes}"
+    assert codes == [f"MT-{n}" for n in range(1001, 1015)], f"错误码表编号不连续：{codes}"
 
 
 # ---------------------------------------------------------------------------
@@ -192,8 +196,12 @@ def test_error_envelope_flags_known_bad_samples(payload, http_status):
 
 
 def test_every_contract_error_code_has_a_declared_http_status():
-    """§4 的 13 个错误码都要有合法 HTTP 状态（解析 + 交叉核验，防止表格漂移）。"""
-    assert len(CONTRACT_ERROR_CODES) == 13, f"契约 §4 应为 13 个错误码，实际 {len(CONTRACT_ERROR_CODES)}"
+    """§4 的每个错误码都要有合法 HTTP 状态（解析 + 交叉核验，防止表格漂移）。
+
+    条数写死的用意：**契约表被改动时必须有人来看一眼这里**（加码是兼容变更，但"悄悄多一个码"
+    同样会让调用方无所适从）。`1014` 是 `T-034` 按 §5 同步补的通用 5xx 码。
+    """
+    assert len(CONTRACT_ERROR_CODES) == 14, f"契约 §4 应为 14 个错误码，实际 {len(CONTRACT_ERROR_CODES)}"
     for code, status in CONTRACT_ERROR_CODES.items():
         assert 400 <= status <= 599, f"{code} 的 HTTP 状态非法：{status}"
 

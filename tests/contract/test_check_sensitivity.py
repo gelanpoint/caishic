@@ -23,10 +23,11 @@
 | `T-007-4` | `T-007` ④ | 统一错误响应格式（契约 §1.2 envelope） |
 | `T-029` | `T-029` | 零外部资源（六种形态 + 干净样例 + URL 层解析） |
 | `Q-19` | `Q-19` | 使用率指标分子必须**来自真查**（差分灵敏度） |
+| `T-034-500` | `T-034` | 未预期异常必须给**契约 §1.2 格式**（`MT-1014`），而不是 Flask 默认 HTML |
 
-**未登记（待人工裁定后补）**：`T-034-500`"未预期异常必须给出契约 §1.2 格式而不是 HTML"。
-它的检查骨架依赖契约 §4 是否新增通用 5xx 码 —— 见 `T-034` 的裁定请求；
-**在裁定前不发明错误码**，故此处不登记（缺口显式留白，不假装已覆盖）。
+`T-034-500` 是压测时实测出来的：未预期异常的响应体是 **HTML**、不符合 §1.2、也没有任何可追溯标识
+—— 调用方既看不出这是契约错误，也**不知道这笔交易到底记没记**。
+按契约 §5 补 `MT-1014` 后，这个家族把"兜底处理器还在不在、有没有泄漏栈"钉进每次 pytest。
 """
 
 from __future__ import annotations
@@ -63,6 +64,7 @@ FAMILIES: dict[str, tuple[str, str]] = {
     "T-007-4": ("统一错误响应格式（§1.2 envelope）", "test_family_t007_4_error_envelope_red_then_green"),
     "T-029": ("静态资源零外部依赖（六形态 + 干净样例）", "test_family_t029_no_external_assets_red_then_green"),
     "Q-19": ("使用率指标分子必须来自真查", "test_family_q19_metric_numerator_red_then_green"),
+    "T-034-500": ("未预期异常 → 契约 §1.2 格式（MT-1014）", "test_family_t034_500_fallback_red_then_green"),
 }
 
 #: 必须被覆盖的家族全集（`T-036` 的验收口径；少一个即守卫变红）
@@ -330,3 +332,78 @@ def test_family_q19_metric_numerator_red_then_green(client, db_conn):
     assert restored == base, f"残留物没清干净（后续用例的绝对计数会被污染）：{base} → {restored}"
     print(f"[Q-19] 还原后：{cash_key}={restored[cash_key]}、{price_key}={restored[price_key]}，与破坏前一致（复绿）")
     print("[Q-19] 结论：两个分子都随真实数据变化 ⇒ 它们是**真查**出来的（写死的实现必红）")
+
+
+# ---------------------------------------------------------------------------
+# T-034-500 未预期异常 → 契约 §1.2 格式（MT-1014）
+# ---------------------------------------------------------------------------
+
+
+def _fallback_violations(response, contract_codes: dict) -> list[str]:
+    """检查"未预期异常"的响应是否合规；返回问题清单（空 = 合规）。
+
+    检查项就是这条修复的验收口径：**契约格式**（不是 HTML）、状态 500、码是 `MT-1014`、
+    带 `request_id`（现场能拿它与日志对上）、**不泄漏实现细节**（栈/路径/异常原文都不该出现）。
+    """
+    problems: list[str] = []
+    text = response.get_data(as_text=True)
+    if response.status_code != 500:
+        problems.append(f"未预期异常应以 500 返回，实际 {response.status_code}")
+    for leak in ("Traceback", "site-packages", "RuntimeError", "sqlite3."):
+        if leak in text:
+            problems.append(f"响应体泄漏了实现细节（出现 {leak!r}）—— 栈只该进日志")
+    if not response.is_json:
+        return problems + ["响应体不是 JSON（Flask 默认 500 就是 HTML，调用方无从判断结果）"]
+    payload = response.get_json()
+    problems.extend(error_envelope_violations(payload, response.status_code, contract_codes))
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if not isinstance(error, dict) or error.get("code") != "MT-1014":
+        problems.append(f"错误码应为 MT-1014（契约 §4 的通用 5xx），实际 {error}")
+    elif not (error.get("detail") or {}).get("request_id"):
+        problems.append("缺少 `detail.request_id`（现场没法把截图与日志里的 traceback 对上）")
+    return problems
+
+
+def test_family_t034_500_fallback_red_then_green():
+    """破坏：撤掉兜底异常处理器（= 修复没上线的状态）→ 必红；新起未破坏的实例 → 复绿。
+
+    这里**真的把处理器摘掉再跑一遍**（不是拿一段假 HTML 冒充）：撤掉之后 Flask 回到
+    默认 500 —— 响应体是 HTML、不符合 §1.2，检查必须抓住它。
+    """
+    from app import create_app
+
+    contract_codes = parse_error_codes()
+
+    def probe(broken: bool):
+        app = create_app()
+
+        @app.get("/api/sensitivity-boom")
+        def boom():
+            raise RuntimeError("故意抛一个没人声明的异常（灵敏度演练）")
+
+        if broken:
+            # Flask 把"按异常类注册"的处理器放在 `error_handler_spec[None][None][<类>]`。
+            # 摘掉 `Exception` 那一格 = 回到"修复没上线"的状态（只动本测试**自建**的实例）。
+            # 摘不到就**报错**（不能因为 Flask 内部结构变了就默认这条负例通过）。
+            removed = app.error_handler_spec[None][None].pop(Exception, None)
+            assert removed is not None, (
+                "没能摘掉兜底处理器（Flask 的处理器表结构变了？）—— 负例必须重写，不能默认通过"
+            )
+        return app.test_client().get("/api/sensitivity-boom")
+
+    good = probe(broken=False)
+    assert _fallback_violations(good, contract_codes) == [], (
+        f"修复在位时未预期异常仍不合规：{good.get_data(as_text=True)[:200]}"
+    )
+    print(f"[T-034-500] 修复在位：未预期异常 → HTTP {good.status_code} + "
+          f"{good.get_json()['error']['code']}（契约格式，带 request_id）")
+
+    bad = probe(broken=True)
+    problems = _fallback_violations(bad, contract_codes)
+    assert problems, "把兜底处理器撤掉后居然还判合规 —— 这条检查是摆设"
+    assert any("不是 JSON" in item for item in problems), f"破坏后没抓住 HTML 响应：{problems}"
+    print(f"[T-034-500] 破坏（撤掉兜底处理器）→ 必红：{problems[0]}")
+
+    again = probe(broken=False)
+    assert _fallback_violations(again, contract_codes) == [], "还原后没有复绿"
+    print("[T-034-500] 还原后：复绿")

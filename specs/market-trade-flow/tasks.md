@@ -77,9 +77,9 @@
 | T-031 | 端到端验证（二）：异常与边界（重量越界、退货超原单、回调重复、阈值继续接受、暂存失败、越权访问） | T-030 | | REQ-016、REQ-027、REQ-028、REQ-029、REQ-030、REQ-032；AC-009/AC-010/AC-017/AC-018/AC-019/AC-021 | 六个异常场景全部通过；**每个都断言"没有产生错误数据"**（不只是报错） | tests/conftest.py、tests/e2e/test_edge_cases.py、tests/e2e/test_edge_payment.py、tests/e2e/test_edge_offline.py |
 | T-032 | 端到端验证（三）：其余 AC 全覆盖（含三个使用率指标的分子分母核对、标价一致率、别名归集、复制昨天价、扫码页字段来源） | T-030 | | REQ-002、REQ-003、REQ-006、REQ-008、REQ-022、REQ-023；AC-005/AC-006/AC-007/AC-008/AC-011/AC-014/AC-015/AC-016/AC-022/AC-023 | §6 矩阵中列出的 AC 全部通过（人工逐条对照） | tests/e2e/test_coverage_rest.py、tests/e2e/test_coverage_catalog.py、tests/e2e/test_coverage_admin.py |
 | T-033 | 演示硬要求核验与断网彩排：局域网 IP、两个入口地址、**同机双浏览器窗口**（秤端 + 顾客端）全流程、端口占用检测、数据文件路径打印 | T-030 | | REQ-025；AC-013 | `AGENTS.md` §3 的 5 条硬要求**逐条现场验收**；**断网状态下跑完一遍全流程** | tests/e2e/test_demo_requirements.py |
-| T-034 | 并发与响应时间压测：多摊位并发写入不覆盖、交易号唯一、接口响应时间采样 | T-016、T-022 | | REQ-031；NFR-001；AC-020 | 并发写入后**条数与交易号唯一性均可核验**；响应时间采样结果与 `docs/standards/quality-gates.md` 的阈值比对 | tests/perf/test_concurrency.py |
+| T-034 | 并发与响应时间压测：多摊位并发写入不覆盖、交易号唯一、接口响应时间采样 | T-016、T-022 | | REQ-031；NFR-001；AC-020 | 并发写入后**条数与交易号唯一性均可核验**；响应时间采样结果与 `docs/standards/quality-gates.md` 的阈值比对 | tests/perf/test_concurrency.py（并发**正确性**：`AC-020` 逐笔核对 + 离线并发零丢弃）、tests/perf/test_latency.py（响应时间门禁 + 突发时延的磁盘归因**对照实验**） |
 | T-035 | 收尾核对：质量门禁逐项核对、**干净环境实证（只安装 `requirements.txt` → `python run.py` 必须能启动）**、`scripts/reset_demo.py` 从零重建演练、依赖清单锁定、把核对结果追加进项目状态 | T-029、T-031、T-032、T-033、T-034 | | —(收尾)；NFR-003、NFR-004 | CP-D 四项逐条核对；**干净环境实证须留实测输出**（依据 `docs/adr/0004-依赖范围界定-运行期与开发期.md` §3 第 4 条）；核对记录写入 `docs/PROJECT-STATE.md` | docs/PROJECT-STATE.md（追加核对记录） |
-| T-036 | **检查灵敏度验证（自动化负例）**：① 路由表 ↔ 契约 §2 比对——**故意注册一个契约里没有的端点，比对必须变红**；② 敏感字段扫描——**故意加一个 `id_card` 字段，扫描必须命中**；③ 运行期隔离检查——**故意在 `run.py` 里 `import pytest`，检查必须变红**；④ 移除故意破坏物后必须恢复绿。四条缺一即判定对应检查不成立 | T-007、T-015 | | REQ-024；NFR-009；AC-012 | 四条负例各自的实际输出留痕（红 → 恢复绿）；作为 CP-C 第④项 | tests/contract/test_check_sensitivity.py |
+| T-036 | **检查灵敏度验证（自动化负例，收口入口）**：① 路由表 ↔ 契约 §2 比对——**故意注册一个契约里没有的端点，比对必须变红**；② 敏感字段扫描——**故意加一个 `id_card` 字段，扫描必须命中**；③ 运行期隔离检查——**故意在 `run.py` 里 `import pytest`，检查必须变红**；④ 移除故意破坏物后必须恢复绿。四条缺一即判定对应检查不成立 | T-007、T-015 | | REQ-024；NFR-009；AC-012 | 四条负例各自的实际输出留痕（红 → 恢复绿）；作为 CP-C 第④项 | tests/contract/test_check_sensitivity.py（**七个家族的收口入口**：`T-007` 四条 + `T-029` 六形态 + `Q-19` 指标差分 + `T-034` 的 `MT-1014` 兜底；一键复跑 `python -m pytest tests/contract/test_check_sensitivity.py -q -s`） |
 
 > **`2026-09-30` `T-031`/`T-032` 走查夹具收敛 + 按语义拆分**：新增 `tests/conftest.py`（**只放 pytest 夹具**）与
 > `tests/e2e_support.py`（**助手**：服务生命周期 / HTTP 与库助手 / 按 `data-model.md` §0·§5.1 口径的独立复算公式；
@@ -92,6 +92,22 @@
 > 理由：pytest 默认把 basetemp 放在系统 Temp 的 `pytest-of-<user>/` 编号目录并在其中维护 `pytest-current` 目录符号链接，
 > 会话收尾清理该链接时在 Windows 上抛 `PermissionError`，**导致全绿用例集也以退出码 1 结束**（实测复现 → 根因 → 修复记录见 `docs/PROJECT-STATE.md` 变更记录）。
 > `pytest.ini` 只做一件事：把 basetemp 固定到仓库内 `.pytest-tmp/`。
+
+> **`2026-09-30` `T-034`/`T-035`/`T-036` 的产出文件与契约变更（计划外文件已说明理由并同步 `plan.md` §4）**：
+> - **契约 §4 新增 `MT-1014`（500 内部错误）**，按本仓契约 §5「破坏性/兼容性变更须同步四处、同一次提交内完成」执行：
+>   ① `contracts/rest-api.md` §4 表（含"为什么必须有"的说明）；② `app/__init__.py` 的 `ERROR_STATUS`（**唯一映射点**，现 14 条）；
+>   ③ `tests/contract/test_contract_surface.py` 的连续性断言（`1001..1014`）与条数断言（14）；
+>   ④ 本条备注。**动因不是"多写一个码"**：`T-034` 实测未预期异常的响应体是 **HTML**、不符合 §1.2、
+>   也没有可追溯标识 —— 调用方看不出是契约错误，也不知道"这笔交易到底记没记"。
+>   新增的兜底处理器把这类异常变成**确定性反馈**（统一格式 + `request_id` + "结果不确定，别当成功"），
+>   原始异常与栈**只进服务端日志**；`werkzeug` 语义族（405 等）原样放行，不被改成 500。
+> - **新增测试支撑模块（唯一名的导入目标，避免"同名 `conftest` 撞车"）**：`tests/gates.py`（门禁阈值读取的唯一机器入口）、
+>   `tests/contract/contract_support.py`（原 `tests/contract/conftest.py` 的助手，`conftest.py` 退化为三行垫片）。
+>   动因：`tests/conftest.py` 与 `tests/contract/conftest.py` **同名**且两边目录都进 `sys.path`，
+>   用例写 `from conftest import ...` 时解析到哪个取决于收集顺序 —— `python -m pytest -q` 实测 **10 个文件 ImportError（收不起用例）**。
+> - **`tests/perf/` 的两个文件按语义分工**：`test_concurrency.py` = 并发**正确性**（`AC-020` 逐笔核对 / 离线并发零丢弃）；
+>   `test_latency.py` = **响应时间**（门禁判定 + 100 样本；另有"突发时延随盘"的对照实验用例，用于环境归因）。
+
 
 > **`2026-09-30` 按 `Q-16` 拆分产出文件（纯移动，不改用例语义）**：单文件 400 行阈值裁定「拆、不放宽」后，下列文件按**端点语义**一分为二，`预估产出文件` 列已同步；`pytest tests/contract -q` 拆分前后均为 **217 passed**（收集数量与红绿分布不变）：
 > `tests/contract/conftest.py` → 另出 `tests/contract/sensitive_scan.py`（夹具 vs 敏感扫描原语）；
