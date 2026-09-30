@@ -56,7 +56,7 @@
 | T-010 | 契约测试：收款与支付回调（含 `MT-1001` 非法流转、重复回调幂等命中返回 200） | T-007 | [P] | REQ-009、REQ-010、REQ-011、REQ-026、REQ-029；AC-004/AC-009/AC-010 | 先失败；由 T-017 实现后转为全绿 | tests/contract/test_payment.py、tests/contract/test_payment_callback.py |
 | T-011 | 契约测试：退货冲正（含 `MT-1003` 超原单、重复提交 `replayed`） | T-007 | [P] | REQ-013、REQ-028；AC-002/AC-017 | 先失败；由 T-018 实现后转为全绿 | tests/contract/test_refund.py |
 | T-012 | 契约测试：离线暂存与补传（含 `MT-1007` 暂存失败、幂等键重复丢弃不阻断、`purged` 清除副本） | T-007 | [P] | REQ-014、REQ-015、REQ-016、REQ-030；NFR-013、NFR-014；AC-003/AC-018/AC-019 | 先失败；由 T-019 实现后转为全绿 | tests/contract/test_offline_stage.py、tests/contract/test_offline_sync.py |
-| T-013 | 契约测试：运营端字典/别名/佣金口径/日聚合/结算/对账/指标/留痕 | T-007 | [P] | REQ-002、REQ-017、REQ-018、REQ-019、REQ-020、REQ-022；AC-005/AC-022/AC-023 | 先失败；由 T-020~T-022 实现后转为全绿 | tests/contract/test_admin.py、tests/contract/test_admin_ops.py |
+| T-013 | 契约测试：运营端字典/别名/佣金口径/日聚合/结算/对账/指标/留痕 | T-007 | [P] | REQ-002、REQ-017、REQ-018、REQ-019、REQ-020、REQ-022；AC-005/AC-022/AC-023 | 先失败；由 T-020~T-022 实现后转为全绿 | tests/contract/test_admin.py、tests/contract/test_admin_ops.py、tests/contract/test_admin_report.py |
 | T-014 | 契约测试：顾客扫码页（字段白名单、无来源字段即失败） | T-007 | [P] | REQ-008、REQ-023；AC-011 | 先失败；由 T-023 实现后转为全绿 | tests/contract/test_customer.py |
 | T-015 | 实现：秤端会话绑定与目录类端点（含摊位数据边界守卫） | T-008 | | REQ-002、REQ-003、REQ-004、REQ-032；NFR-007；AC-006/AC-014/AC-015/AC-021 | T-008 由红转绿；提交信息含任务编号与 `REQ` | app/api/merchant.py、app/domain/catalog.py |
 | T-016 | 实现：计价与改价/抹零（含改价留痕、标价一致率标记、交易状态机 `priced` 分支） | T-009、T-015 | | REQ-005、REQ-006、REQ-007、REQ-008、REQ-027；AC-001/AC-007/AC-016/AC-017/AC-020 | T-009 由红转绿；`AC-016` 累加用例与 `AC-017` 越界用例通过 | app/domain/pricing.py、app/domain/transactions.py、app/api/merchant.py |
@@ -90,7 +90,7 @@
 > `tests/contract/conftest.py` → 另出 `tests/contract/sensitive_scan.py`（夹具 vs 敏感扫描原语）；
 > `tests/contract/test_payment.py` → 另出 `tests/contract/test_payment_callback.py`（§3.10 收款 vs §3.17 回调）；
 > `tests/contract/test_offline.py` → `test_offline_stage.py` + `test_offline_sync.py`（§3.13/§3.14 暂存 vs §3.15 补传）；
-> `tests/contract/test_admin.py` → 另出 `tests/contract/test_admin_ops.py`（§3.20~§3.24 配置类 vs §3.25~§3.31 报表/结算类）；
+> `tests/contract/test_admin.py` → 另出 `tests/contract/test_admin_ops.py`（§3.20~§3.24 配置类 vs §3.25~§3.31 报表/结算类）；**该文件后又按语义再拆一次**：`Q-19` 的灵敏度负例（§3.30）落地后它到 448 行再次超阈值，故再分出 `tests/contract/test_admin_report.py`（§3.25 看板 / §3.30 指标 + `Q-19` 负例 / §3.31 留痕），`test_admin_ops.py` 只留 §3.26~§3.29（聚合/结算/对账）；
 > `app/domain/pricing.py` → 另出 `app/domain/transactions.py`（§3.6/§3.9 计价写路径 vs §3.7/§3.8 交易读端点）。
 
 ## 4. 完成定义（DoD，适用于每个任务）
