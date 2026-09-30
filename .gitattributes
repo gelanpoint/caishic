@@ -1,5 +1,14 @@
-# 行尾与文本处理：统一以 LF 存储，避免跨平台改行尾造成"整文件 diff"
+# 行尾与文本处理：默认以 LF 存储，避免跨平台改行尾造成"整文件 diff"
 * text=auto eol=lf
+
+# Windows 批处理必须用 CRLF
+#   理由：cmd.exe 在部分场景下无法正确处理 LF 行尾的 .bat —— 含 goto/:label、
+#   多行 if (...)、括号块的脚本会出现标签跳转失败、括号解析错误这类"看起来莫名其妙"
+#   的故障；而 start.bat 是点名的现场启动脚本，跑不起来 = 现场演示直接翻车。
+#   跨平台统一的收益，不能拿去换关键启动脚本的确定性。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.sh  text eol=lf
 
 # 明确指出二进制类型（不做行尾转换、不做 diff）
 *.xlsx binary
