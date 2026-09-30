@@ -30,6 +30,7 @@ tmp/
 
 # 测试与覆盖率产物
 .pytest_cache/
+.pytest-tmp/
 .coverage
 .coverage.*
 htmlcov/

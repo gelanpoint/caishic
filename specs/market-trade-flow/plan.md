@@ -57,6 +57,7 @@ market-trade-mvp/
 ├── requirements-dev.txt          # **开发期**工具清单（pytest / coverage）；**不进演示机、不得被 `run.py` 或 `app/**` 引用**（依据 `docs/adr/0004-依赖范围界定-运行期与开发期.md`），实现环节创建
 ├── start.bat                     # Windows 启动脚本（双击即用；eol=crlf），实现环节创建
 ├── start.sh                      # macOS / Linux 启动脚本（eol=lf），实现环节创建
+├── pytest.ini                    # pytest 会话配置：把 basetemp 固定到仓库内 `.pytest-tmp/`（`.gitignore` 已忽略），绕开系统 Temp 的 `pytest-current` 符号链接清理缺陷；T-007 创建
 ├── app/
 │   ├── __init__.py               # Flask 应用工厂：注册蓝图、静态目录、统一错误处理
 │   ├── config.py                 # 配置：端口、数据文件路径、暂存告警阈值（数值来源引用 spec.md，不在代码里另立一套）

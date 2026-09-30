@@ -13,8 +13,10 @@
 
 from __future__ import annotations
 
+import atexit
 import os
 import re
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -32,7 +34,13 @@ REQUIREMENTS_DEV = REPO_ROOT / "requirements-dev.txt"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+#: 契约测试专用数据目录（**进程退出时删除**）。
+#: 这里有两个**互相独立**的问题，不要混为一谈（实测根因见 `docs/PROJECT-STATE.md` 变更记录）：
+#: ① 本目录原先只建不删 → 每次 pytest 都在系统 Temp 泄漏一个 `mt-contract-*`；现由 `atexit` 兜底清除；
+#: ② pytest 自身的 basetemp 清理报 `PermissionError` 与之**无关**（那条路径是 `pytest-of-<user>/pytest-current`，
+#:   与 `mt-contract-*` 无关），修复在仓库根 `pytest.ini` 的 `--basetemp=.pytest-tmp`。
 TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="mt-contract-"))
+atexit.register(shutil.rmtree, TEST_DATA_DIR, ignore_errors=True)
 os.environ["MT_DATA_DIR"] = str(TEST_DATA_DIR)
 
 SEED_STALL_NO = "A-01"  #: 演示数据里的已知摊位号（`seed.json` 的首个摊位）

@@ -42,7 +42,7 @@
 | T-004 | 数据模型与迁移：19 张表 DDL、25 条索引、`audit_log` 只增不改触发器、`schema_migration` | T-002 | | REQ-010、REQ-013、REQ-015、REQ-031；NFR-009 | 从零启动后表/索引数量与 `data-model.md` §1/§6 一致；**对 `audit_log` 手动执行一次 `UPDATE` 与 `DELETE`，二者都必须被拒绝** | app/migrations/0001_init.sql、app/db.py |
 | T-005 | 种子数据与导入：商户/摊位档案、品类字典与别名映射、商品与价目表（本地文件，不依赖外网） | T-004 | | REQ-001、REQ-002、REQ-003、REQ-025；AC-013/AC-014/AC-015 | 断网环境下导入成功；抽查询问 `stall`/`product`/`price_item` 行数；重复启动**不产生重复数据**。**规模口径见 `data-model.md` §5 修正注记**（演示规模：10 摊位 / 40～60 标准品类 / 每摊位 20～30 商品 / 别名 1～3 个每品类）。**别名两类语义见 `data-model.md` §2.5 与 `app/seed.py` docstring**。**产物可复算**：删掉 `app/seed_data/seed.json` 后重跑 `scripts/gen_seed.py` 必须**逐字节还原**，并用 `--check` 复验 —— **生成规则不在仓库里，产物就不可核验**（父代理 `2026-09-30` 裁定要求） | app/seed.py、app/seed_data/seed.json、scripts/gen_seed.py |
 | T-006 | 重置演示数据脚本（删除数据文件并重跑种子） | T-005 | | NFR-003；NFR-004 | 执行一次后系统回到初始状态且可再次交易（人工核对，CP-A 第④项） | scripts/reset_demo.py |
-| T-007 | 契约测试基础设施：开发期依赖清单与**运行期隔离检查**（`ast` 扫描 `run.py` 与 `app/**` 的 import，**带灵敏度负例**）、**Flask 路由表 ↔ 契约 §2 端点总表双向一致检查**、响应体与库文件「零命中身份证/银行卡」扫描、统一错误响应格式断言 | T-006 | | REQ-024；NFR-009、NFR-010；AC-012 | 两个检查先跑成**失败**（实现尚未存在）；格式断言对已知坏样例报错；**隔离检查在故意 `import pytest` 时必须变红** | requirements-dev.txt、tests/contract/conftest.py、tests/contract/test_deps_isolation.py、tests/contract/test_contract_surface.py、tests/contract/test_sensitive_scan.py |
+| T-007 | 契约测试基础设施：开发期依赖清单与**运行期隔离检查**（`ast` 扫描 `run.py` 与 `app/**` 的 import，**带灵敏度负例**）、**Flask 路由表 ↔ 契约 §2 端点总表双向一致检查**、响应体与库文件「零命中身份证/银行卡」扫描、统一错误响应格式断言 | T-006 | | REQ-024；NFR-009、NFR-010；AC-012 | 两个检查先跑成**失败**（实现尚未存在）；格式断言对已知坏样例报错；**隔离检查在故意 `import pytest` 时必须变红** | requirements-dev.txt、pytest.ini、tests/contract/conftest.py、tests/contract/test_deps_isolation.py、tests/contract/test_contract_surface.py、tests/contract/test_sensitive_scan.py |
 | T-008 | 契约测试：秤端会话、商品、价目表端点（含 `MT-1004`/`MT-1005`/`MT-1009` 用例） | T-007 | [P] | REQ-003、REQ-004、REQ-008、REQ-032；AC-006/AC-014/AC-015/AC-021 | 先失败；由 T-015 实现后转为全绿 | tests/contract/test_merchant_catalog.py |
 | T-009 | 契约测试：交易创建与改价（含 `MT-1002` 重量越界、`MT-1006` 价目缺失、`MT-1011` 改价确认、`MT-1012` 幂等键） | T-007 | [P] | REQ-005、REQ-006、REQ-007、REQ-027；AC-001/AC-007/AC-016/AC-017 | 先失败；由 T-016 实现后转为全绿 | tests/contract/test_transaction_price.py |
 | T-010 | 契约测试：收款与支付回调（含 `MT-1001` 非法流转、重复回调幂等命中返回 200） | T-007 | [P] | REQ-009、REQ-010、REQ-011、REQ-026、REQ-029；AC-004/AC-009/AC-010 | 先失败；由 T-017 实现后转为全绿 | tests/contract/test_payment.py |
@@ -72,6 +72,11 @@
 | T-034 | 并发与响应时间压测：多摊位并发写入不覆盖、交易号唯一、接口响应时间采样 | T-016、T-022 | | REQ-031；NFR-001；AC-020 | 并发写入后**条数与交易号唯一性均可核验**；响应时间采样结果与 `docs/standards/quality-gates.md` 的阈值比对 | tests/perf/test_concurrency.py |
 | T-035 | 收尾核对：质量门禁逐项核对、**干净环境实证（只安装 `requirements.txt` → `python run.py` 必须能启动）**、`scripts/reset_demo.py` 从零重建演练、依赖清单锁定、把核对结果追加进项目状态 | T-029、T-031、T-032、T-033、T-034 | | —(收尾)；NFR-003、NFR-004 | CP-D 四项逐条核对；**干净环境实证须留实测输出**（依据 `docs/adr/0004-依赖范围界定-运行期与开发期.md` §3 第 4 条）；核对记录写入 `docs/PROJECT-STATE.md` | docs/PROJECT-STATE.md（追加核对记录） |
 | T-036 | **检查灵敏度验证（自动化负例）**：① 路由表 ↔ 契约 §2 比对——**故意注册一个契约里没有的端点，比对必须变红**；② 敏感字段扫描——**故意加一个 `id_card` 字段，扫描必须命中**；③ 运行期隔离检查——**故意在 `run.py` 里 `import pytest`，检查必须变红**；④ 移除故意破坏物后必须恢复绿。四条缺一即判定对应检查不成立 | T-007、T-015 | | REQ-024；NFR-009；AC-012 | 四条负例各自的实际输出留痕（红 → 恢复绿）；作为 CP-C 第④项 | tests/contract/test_check_sensitivity.py |
+
+> **`T-007` 产出文件的补充说明（`2026-09-30`）**：新增仓库根 `pytest.ini`（已在 `plan.md` §4 登记）。
+> 理由：pytest 默认把 basetemp 放在系统 Temp 的 `pytest-of-<user>/` 编号目录并在其中维护 `pytest-current` 目录符号链接，
+> 会话收尾清理该链接时在 Windows 上抛 `PermissionError`，**导致全绿用例集也以退出码 1 结束**（实测复现 → 根因 → 修复记录见 `docs/PROJECT-STATE.md` 变更记录）。
+> `pytest.ini` 只做一件事：把 basetemp 固定到仓库内 `.pytest-tmp/`。
 
 ## 4. 完成定义（DoD，适用于每个任务）
 
