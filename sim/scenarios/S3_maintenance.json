@@ -1,0 +1,85 @@
+{
+  "arms": [
+    {
+      "flags": {},
+      "name": "S3-预算足额-保底50%",
+      "note": "『维保含在采购内』的落地形式：维护保底占预算 50%",
+      "overrides": {
+        "market_budget_initial_cents": 5000000,
+        "market_maintenance_floor_share": 0.5
+      }
+    },
+    {
+      "flags": {},
+      "name": "S3-预算足额-保底0%",
+      "note": "无免维护承诺：维护预算完全由边际 KPI 产出决定",
+      "overrides": {
+        "market_budget_initial_cents": 5000000,
+        "market_maintenance_floor_share": 0.0
+      }
+    },
+    {
+      "flags": {},
+      "name": "S3-预算0.5×-保底50%",
+      "note": "『维保含在采购内』的落地形式：维护保底占预算 50%",
+      "overrides": {
+        "market_budget_initial_cents": 2500000,
+        "market_maintenance_floor_share": 0.5
+      }
+    },
+    {
+      "flags": {},
+      "name": "S3-预算0.5×-保底0%",
+      "note": "无免维护承诺：维护预算完全由边际 KPI 产出决定",
+      "overrides": {
+        "market_budget_initial_cents": 2500000,
+        "market_maintenance_floor_share": 0.0
+      }
+    },
+    {
+      "flags": {},
+      "name": "S3-预算0.3×-保底50%",
+      "note": "『维保含在采购内』的落地形式：维护保底占预算 50%",
+      "overrides": {
+        "market_budget_initial_cents": 1500000,
+        "market_maintenance_floor_share": 0.5
+      }
+    },
+    {
+      "flags": {},
+      "name": "S3-预算0.3×-保底0%",
+      "note": "无免维护承诺：维护预算完全由边际 KPI 产出决定",
+      "overrides": {
+        "market_budget_initial_cents": 1500000,
+        "market_maintenance_floor_share": 0.0
+      }
+    }
+  ],
+  "baseline_overrides": {
+    "commission_charged_to_merchant": true,
+    "commission_rate_bp": 0,
+    "device_screen_count": 0,
+    "evade_feasibility": 1.0,
+    "info_real_share": 0.9,
+    "market_kpi_metric": "usage",
+    "price_sign_cents_per_stall": 11000,
+    "stall_fee_cents_per_month": 200000
+  },
+  "basis": [
+    "结论 6",
+    "结论 14",
+    "结论 4",
+    "结论 5",
+    "A-12",
+    "A-13"
+  ],
+  "control_note": "六臂 = 3 × 2 网格；只差这两个参数（设备与机队规模完全不变）",
+  "id": "S3",
+  "title": "维护预算：{足额, 0.5×, 0.3×} × {有/无免维护承诺}",
+  "varying_flags": [],
+  "varying_keys": [
+    "market_budget_initial_cents",
+    "market_maintenance_floor_share"
+  ],
+  "what_changes": "市场方初始维护预算与维护保底占比"
+}

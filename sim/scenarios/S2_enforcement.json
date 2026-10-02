@@ -1,0 +1,84 @@
+{
+  "arms": [
+    {
+      "flags": {},
+      "name": "S2-抽检1%-罚款1000元",
+      "note": "罚款下限：假设值（A-14 无数据）",
+      "overrides": {
+        "daily_inspection_rate": 0.01,
+        "merchant_fine_short_cents": 100000
+      }
+    },
+    {
+      "flags": {},
+      "name": "S2-抽检1%-罚款2万元",
+      "note": "量级类比结论 2 —— 但结论 2 罚的是**市场开办者**、事由是明码标价，与『商户短秤』不是同一件事（A-14 明写）",
+      "overrides": {
+        "daily_inspection_rate": 0.01,
+        "merchant_fine_short_cents": 2000000
+      }
+    },
+    {
+      "flags": {},
+      "name": "S2-抽检10%-罚款1000元",
+      "note": "罚款下限：假设值（A-14 无数据）",
+      "overrides": {
+        "daily_inspection_rate": 0.1,
+        "merchant_fine_short_cents": 100000
+      }
+    },
+    {
+      "flags": {},
+      "name": "S2-抽检10%-罚款2万元",
+      "note": "量级类比结论 2 —— 但结论 2 罚的是**市场开办者**、事由是明码标价，与『商户短秤』不是同一件事（A-14 明写）",
+      "overrides": {
+        "daily_inspection_rate": 0.1,
+        "merchant_fine_short_cents": 2000000
+      }
+    },
+    {
+      "flags": {},
+      "name": "S2-抽检30%-罚款1000元",
+      "note": "罚款下限：假设值（A-14 无数据）",
+      "overrides": {
+        "daily_inspection_rate": 0.3,
+        "merchant_fine_short_cents": 100000
+      }
+    },
+    {
+      "flags": {},
+      "name": "S2-抽检30%-罚款2万元",
+      "note": "量级类比结论 2 —— 但结论 2 罚的是**市场开办者**、事由是明码标价，与『商户短秤』不是同一件事（A-14 明写）",
+      "overrides": {
+        "daily_inspection_rate": 0.3,
+        "merchant_fine_short_cents": 2000000
+      }
+    }
+  ],
+  "baseline_overrides": {
+    "commission_charged_to_merchant": true,
+    "commission_rate_bp": 0,
+    "device_screen_count": 0,
+    "evade_feasibility": 1.0,
+    "info_real_share": 0.9,
+    "market_kpi_metric": "usage",
+    "price_sign_cents_per_stall": 11000,
+    "stall_fee_cents_per_month": 200000
+  },
+  "basis": [
+    "结论 4",
+    "结论 2",
+    "结论 13",
+    "A-14",
+    "A-15"
+  ],
+  "control_note": "六臂 = 3 × 2 网格；只差这两个参数",
+  "id": "S2",
+  "title": "监管强度：抽检率 {1%, 10%, 30%} × 短秤罚款两档",
+  "varying_flags": [],
+  "varying_keys": [
+    "daily_inspection_rate",
+    "merchant_fine_short_cents"
+  ],
+  "what_changes": "商户效用里的 p_check（名义抽检率）与 F_short（罚款额）"
+}

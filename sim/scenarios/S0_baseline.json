@@ -1,0 +1,32 @@
+{
+  "arms": [
+    {
+      "flags": {},
+      "name": "S0-基线",
+      "note": "S0 是设计 §5 明写的配置（不抽佣 / 市场方出资 / 统一检定维修 / 物理价签 / 只展示有采集来源的字段），**不是 params.json 的默认值** —— 默认值是『任务书指定口径』（抽佣 2%、考核只看装机量），两者不是一回事，报告里必须分开说。market_kpi_metric=usage 是『统一检定维修』的落地形式（T-SIM-05 已实测：装机量口径下维护预算恒为 0 ⇒ 坏设备永不修）。info_real_share=0.9 是把 D-08『只展示有采集来源的字段』落成数值的**假设**（S4 扫它）。",
+      "overrides": {}
+    }
+  ],
+  "baseline_overrides": {
+    "commission_charged_to_merchant": true,
+    "commission_rate_bp": 0,
+    "device_screen_count": 0,
+    "evade_feasibility": 1.0,
+    "info_real_share": 0.9,
+    "market_kpi_metric": "usage",
+    "price_sign_cents_per_stall": 11000,
+    "stall_fee_cents_per_month": 200000
+  },
+  "basis": [
+    "D-01",
+    "D-02",
+    "D-10",
+    "D-08"
+  ],
+  "control_note": "单臂基线；其余场景的每一臂 = 本配置 + 该场景声明的对照变量",
+  "id": "S0",
+  "title": "基线：不抽佣 + 市场方出资 + 统一检定维修 + 物理价签公示 + 只展示有采集来源的字段",
+  "varying_flags": [],
+  "varying_keys": [],
+  "what_changes": "无对照变量（单臂）；它就是其余 6 个场景的共同基准"
+}

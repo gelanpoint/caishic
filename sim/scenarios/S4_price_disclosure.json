@@ -1,0 +1,60 @@
+{
+  "arms": [
+    {
+      "flags": {},
+      "name": "S4-①无公示",
+      "note": "扫码基本读到空壳（结论 16 的『再也不信』场景）",
+      "overrides": {
+        "device_screen_count": 0,
+        "info_real_share": 0.1,
+        "price_sign_cents_per_stall": 0
+      }
+    },
+    {
+      "flags": {},
+      "name": "S4-②物理价签",
+      "note": "结论 1 湖州做法；单价是假设（110 元/摊，『低一个量级』）",
+      "overrides": {
+        "device_screen_count": 0,
+        "info_real_share": 0.6,
+        "price_sign_cents_per_stall": 11000
+      }
+    },
+    {
+      "flags": {},
+      "name": "S4-③电子屏",
+      "note": "结论 24：1100 元/台（sourced），10 台 = 1.1 万元/市场",
+      "overrides": {
+        "device_screen_count": 10,
+        "info_real_share": 0.95,
+        "price_sign_cents_per_stall": 0
+      }
+    }
+  ],
+  "baseline_overrides": {
+    "commission_charged_to_merchant": true,
+    "commission_rate_bp": 0,
+    "device_screen_count": 0,
+    "evade_feasibility": 1.0,
+    "info_real_share": 0.9,
+    "market_kpi_metric": "usage",
+    "price_sign_cents_per_stall": 11000,
+    "stall_fee_cents_per_month": 200000
+  },
+  "basis": [
+    "结论 1",
+    "结论 24",
+    "结论 16",
+    "D-10"
+  ],
+  "control_note": "三臂只差这三个参数（人、货、客流完全不变）",
+  "id": "S4",
+  "title": "有无价格公示：无公示 / 物理价签（便宜一个量级）/ 电子屏",
+  "varying_flags": [],
+  "varying_keys": [
+    "info_real_share",
+    "device_screen_count",
+    "price_sign_cents_per_stall"
+  ],
+  "what_changes": "扫码内容的真实来源比例 + 公示设备的采购项"
+}

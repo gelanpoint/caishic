@@ -1,0 +1,44 @@
+{
+  "arms": [
+    {
+      "flags": {
+        "self_funded": false
+      },
+      "name": "S5-市场方出资",
+      "note": "结论 14 衡阳/杭州口径：免费配秤 + 统一检定维修 ⇒ 商户无一次性支出",
+      "overrides": {}
+    },
+    {
+      "flags": {
+        "self_funded": true
+      },
+      "name": "S5-商户自费（R6 反例）",
+      "note": "结论 26：3750 元/台由商户承担 + 云软件 5000 元/年（⚠️ P-07 把云软件记在**业主**名下，而设计 §7.1 的 R6 行把它计入商户自费口径 —— 本臂按 R6 行执行，口径差异已在报告登记）。**商户自费是否真的导致弃用，取决于 merchant_adoption_cost_weight（A-18，无出处）**，报告必须同时给出该参数的条件与扫描结果",
+      "overrides": {}
+    }
+  ],
+  "baseline_overrides": {
+    "commission_charged_to_merchant": true,
+    "commission_rate_bp": 0,
+    "device_screen_count": 0,
+    "evade_feasibility": 1.0,
+    "info_real_share": 0.9,
+    "market_kpi_metric": "usage",
+    "price_sign_cents_per_stall": 11000,
+    "stall_fee_cents_per_month": 200000
+  },
+  "basis": [
+    "结论 26",
+    "结论 14",
+    "D-02",
+    "A-18"
+  ],
+  "control_note": "两臂只差出资方；**这就是设计 §7.1 的 `R6` 反例**（商户自费 ⇒ 必须被弃用）",
+  "id": "S5",
+  "title": "设备出资方：市场方出资+含维保 / 商户自费购秤（R6 反例检验）",
+  "varying_flags": [
+    "self_funded"
+  ],
+  "varying_keys": [],
+  "what_changes": "设备由谁掏钱（`self_funded` 开关：商户承担 3750 元/台 + 云软件 5000 元/年）"
+}

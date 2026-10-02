@@ -1,0 +1,58 @@
+{
+  "arms": [
+    {
+      "flags": {},
+      "name": "S6-①堵死",
+      "note": "结论 13 + 结论 12：ρ_anchor≈1 + 出口查验 + 扫码覆盖 ⇒ 私下交易不可行",
+      "overrides": {
+        "evade_feasibility": 0.0,
+        "market_kpi_metric": "usage"
+      }
+    },
+    {
+      "flags": {},
+      "name": "S6-②不堵",
+      "note": "对照臂：什么都不堵",
+      "overrides": {
+        "evade_feasibility": 1.0,
+        "market_kpi_metric": "usage"
+      }
+    },
+    {
+      "flags": {},
+      "name": "S6-③堵死但考核只看装机量",
+      "note": "D-09/REQ-022 的反面：堵死了八两秤，但维护不产出 KPI ⇒ 坏设备不修 ⇒ 走秤率被设备拖死",
+      "overrides": {
+        "evade_feasibility": 0.0,
+        "market_kpi_metric": "installed"
+      }
+    }
+  ],
+  "baseline_overrides": {
+    "commission_charged_to_merchant": true,
+    "commission_rate_bp": 0,
+    "device_screen_count": 0,
+    "evade_feasibility": 1.0,
+    "info_real_share": 0.9,
+    "market_kpi_metric": "usage",
+    "price_sign_cents_per_stall": 11000,
+    "stall_fee_cents_per_month": 200000
+  },
+  "basis": [
+    "结论 13",
+    "结论 12",
+    "结论 4",
+    "结论 5",
+    "D-09",
+    "REQ-022"
+  ],
+  "control_note": "三臂只差这两个参数；设备、客流、佣金全部不变",
+  "id": "S6",
+  "title": "八两秤可行性与考核口径：堵死 / 不堵 / 堵死但考核只看装机量",
+  "varying_flags": [],
+  "varying_keys": [
+    "evade_feasibility",
+    "market_kpi_metric"
+  ],
+  "what_changes": "转暗可行性（ρ_anchor + 出口查验 + 扫码覆盖的合成）与市场方考核口径"
+}

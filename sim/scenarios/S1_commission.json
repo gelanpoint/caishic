@@ -1,0 +1,65 @@
+{
+  "arms": [
+    {
+      "flags": {},
+      "name": "S1-①向商户抽 200bp",
+      "note": "任务书指定口径；2% 只出现在结论 21 的标题对照语境，不是任何市场的实际费率",
+      "overrides": {
+        "commission_charged_to_merchant": true,
+        "commission_rate_bp": 200,
+        "evade_feasibility": 1.0,
+        "stall_fee_cents_per_month": 200000
+      }
+    },
+    {
+      "flags": {},
+      "name": "S1-②不抽佣",
+      "note": "D-01 的对照臂",
+      "overrides": {
+        "commission_charged_to_merchant": true,
+        "commission_rate_bp": 0,
+        "evade_feasibility": 1.0,
+        "stall_fee_cents_per_month": 200000
+      }
+    },
+    {
+      "flags": {},
+      "name": "S1-③温州式向买方 60bp",
+      "note": "结论 12：向买方 0.5%~6%（按品种）、不再收经营户租金水电、买方必须用市场的秤 + 出门查验凭证；本臂取区间下限 0.6% 并把『出门查验』落成 evade_feasibility=0.2（假设）",
+      "overrides": {
+        "commission_charged_to_merchant": false,
+        "commission_rate_bp": 60,
+        "evade_feasibility": 0.2,
+        "stall_fee_cents_per_month": 0
+      }
+    }
+  ],
+  "baseline_overrides": {
+    "commission_charged_to_merchant": true,
+    "commission_rate_bp": 0,
+    "device_screen_count": 0,
+    "evade_feasibility": 1.0,
+    "info_real_share": 0.9,
+    "market_kpi_metric": "usage",
+    "price_sign_cents_per_stall": 11000,
+    "stall_fee_cents_per_month": 200000
+  },
+  "basis": [
+    "结论 21",
+    "D-01",
+    "结论 12",
+    "结论 9",
+    "结论 10"
+  ],
+  "control_note": "三臂只差佣金口径；⚠️ 2% **不是实测费率**（结论 21 标题的对照口径）",
+  "id": "S1",
+  "title": "抽佣对照：向商户 2% / 不抽佣 / 温州式向买方 0.6% 且不收摊位费",
+  "varying_flags": [],
+  "varying_keys": [
+    "commission_rate_bp",
+    "commission_charged_to_merchant",
+    "stall_fee_cents_per_month",
+    "evade_feasibility"
+  ],
+  "what_changes": "佣金口径（费率 + 收费对象 + 摊位费 + 出门查验导致的转暗可行性）"
+}
