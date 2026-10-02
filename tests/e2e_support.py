@@ -349,8 +349,40 @@ def snap(page, shots: Path, name: str) -> str:
 
 
 def pending_count(page) -> int:
-    """读秤端界面上的待补传条数（`#pending` 的显示形态：`N / 阈值 …`）——**夹具总定义处只有这一份**。"""
-    return int(page.inner_text("#pending").split("/")[0].strip())
+    """读秤端界面上的待补传条数（`#pending` 的显示形态：`N / 阈值 …`）——**夹具总定义处只有这一份**。
+
+    ⚠️ **`#pending` 的初始值是 `—`（不是 0）**，要等 `refreshOffline()` 那次 GET 回来才变成
+    `N / 阈值 …`。因此**直接调用本函数有竞态**：读早了会拿到 `—`。
+    早先的实现是裸 `int(...)`，于是抛 `ValueError: invalid literal for int() with base 10: '—'`
+    —— 一个**看起来像随机失败**的报错（`2026-10-02` 全量跑 4 次红 1 次，同批 `p99` 达 3172ms，
+    机器过载时 GET 更慢、更容易撞上）。
+    现在改成**带上下文的断言失败**，并且调用方应优先用 `wait_pending` / `wait_pending_ready` 先等异步落定。
+    """
+    raw = page.inner_text("#pending").split("/")[0].strip()
+    assert raw.isdigit(), (
+        f"`#pending` 还不是数字（读到 {raw!r}）—— 它要等 `refreshOffline()` 的 GET 回来。"
+        "请先用 `wait_pending_ready()` / `wait_pending()` 等异步落定，不要直接读。"
+    )
+    return int(raw)
+
+
+def wait_pending_ready(page, where: str, timeout: int = 5000) -> int:
+    """等 `#pending` **从初始的 `—` 变成真实数字**（即 `refreshOffline()` 已落定），返回该数字。
+
+    这是"自己的异步没等"的**正解**：把"等一个精确值"拆成"先等它变成数字"（本函数）
+    与"再等它等于期望值"（`wait_pending`）两步，报错时能区分"没刷新"与"值不对"。
+    """
+    try:
+        page.wait_for_function(
+            "() => /^\\d+\\s*\\//.test(document.querySelector('#pending').textContent.trim())",
+            timeout=timeout,
+        )
+    except Exception:  # noqa: BLE001 - 超时要转成带上下文的断言失败
+        raise AssertionError(
+            f"{where}：`#pending` 在 {timeout}ms 内仍是 {page.inner_text('#pending')!r}"
+            "（未变成 `N / 阈值`，说明 `refreshOffline()` 的 GET 一直没回来）"
+        ) from None
+    return pending_count(page)
 
 
 def wait_pending(page, expected: int, where: str) -> int:
@@ -372,7 +404,7 @@ def wait_pending(page, expected: int, where: str) -> int:
         )
     except Exception:  # noqa: BLE001 - 超时是主信号，但要把它转成带上下文的断言失败
         raise AssertionError(
-            f"{where}：`#pending` 在 5 秒内未达到 {expected}（实际 {pending_count(page)}；"
+            f"{where}：`#pending` 在 5 秒内未达到 {expected}（实际原文 {page.inner_text('#pending')!r}；"
             f"界面提示 {page.inner_text('#offlineNote')!r}）"
         ) from None
     observed = pending_count(page)

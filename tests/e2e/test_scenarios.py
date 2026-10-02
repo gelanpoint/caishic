@@ -89,9 +89,17 @@ def test_scale_cash_flow_price_change_and_refund(live_server, browser, shots):
     assert "现金收款成功" in page.inner_text("body"), "现金收款后应提示成功"
     print("[秤端] 现金收款 OK")
 
-    # 退货（全额）
+    # 退货（全额）。**不用固定 sleep**：轮询等到"有结果"（toast 出现退货/冲正，或页面报错）为止，
+    # 上限 5 秒。固定 1200ms 是"机器快就过、机器慢就偶发红"的典型写法。
     page.click("#refund")
-    page.wait_for_timeout(1200)
+    page.wait_for_function(
+        "() => {"
+        "  const t = (document.querySelector('#toast') || {}).textContent || '';"
+        "  const e = (document.querySelector('#payErr') || {}).textContent || '';"
+        "  return t.includes('退货') || t.includes('冲正') || e.trim().length > 0;"
+        "}",
+        timeout=5000,
+    )
     toast = page.inner_text("#toast") if page.locator("#toast").count() else ""
     page_error = page.inner_text("#payErr").strip()
     assert ("退货" in toast) or ("冲正" in toast), (
@@ -141,8 +149,11 @@ def test_offline_toggle_stage_then_sync_clears_pending(live_server, browser, sho
     page.click("#defaultStall")
     page.wait_for_selector(".tile")
 
-    pending_before = pending_count(page)
-    assert pending_before == 0, f"前置：本次会话开始时不应有待补传，实际 {pending_before}"
+    # 前置：等 `#pending` 从初始的 `—` 变成真实数字**且为 0**（`refreshOffline()` 的 GET 落定）。
+    # 这里**不能**直接读 `pending_count(page)`：`#pending` 的初始值是 `—`，读早了会抛
+    # `ValueError: invalid literal for int() with base 10: '—'` —— 那正是本用例 2026-10-02
+    # 全量跑 4 次红 1 次的根因（机器过载时那次 GET 更慢，同一个竞态更容易撞上）。
+    pending_before = wait_pending(page, 0, "前置：本次会话开始时")
     page.click("#offlineToggle")
     assert "离线" in page.inner_text("#offlineBadge"), "切换后徽标应显示离线"
 

@@ -110,6 +110,7 @@ market-trade-mvp/
     │   ├── test_seed_reproducibility.py # 同 seed 逐字节一致（不同 seed 必不同）+ 加 agent 不影响他人 + 仅触碰 out-dir
     │   └── test_env_timing.py        # `T-SIM-02` 环境层：90 营业日基线 + 守恒/强度**由明细复算** + 与时序同轴（纯函数判据带合成负例）
     ├── e2e/                      # AC-001 ~ AC-024 的端到端验证
+    │   └── test_offline_wait_helpers.py # 秤端等待助手的**确定性**自检（假 page，无浏览器）：`#pending` 为 `—` 时必须带上下文报错、数值时必须解析正确、超时必须转成断言（`2026-10-02` 裁定③）
     └── perf/                     # 并发与响应时间压测脚本（NFR-001 与继承基线的验证）
 ```
 
