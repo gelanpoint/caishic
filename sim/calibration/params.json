@@ -218,6 +218,86 @@
       "unit": "比例",
       "value": 0.5
     },
+    "market_budget_adjust_kappa": {
+      "provenance": {
+        "calibration": "预算随考核缺口调整的强度 κ。无来源；与 growth_cap 一起决定收敛速度，不影响稳态方向（那由考核口径决定），故只在是否收敛上做敏感性。",
+        "kind": "assumed"
+      },
+      "range": [
+        0.05,
+        1.0
+      ],
+      "unit": "系数",
+      "value": 0.3
+    },
+    "market_budget_growth_cap": {
+      "provenance": {
+        "calibration": "单期预算最大调整幅度（±25%）。无来源；它是迟滞之外的第二个惯性来源，防止预算在单期内跳变到极端值。",
+        "kind": "assumed"
+      },
+      "range": [
+        0.05,
+        1.0
+      ],
+      "unit": "比例/期",
+      "value": 0.25
+    },
+    "market_budget_initial_cents": {
+      "provenance": {
+        "calibration": "市场方每期可支配的信息化运维预算（5 万元/期）。无来源，纯建模量；结论 19（银行 200 余万/3 年）与结论 25（网络改造 120.5 万）只给量级锚。它只影响能修几台，故按区间扫描。",
+        "kind": "assumed",
+        "ref": "结论 19 / 25（量级锚）"
+      },
+      "range": [
+        1000000,
+        50000000
+      ],
+      "unit": "分/期",
+      "value": 5000000
+    },
+    "market_budget_min_cents": {
+      "provenance": {
+        "calibration": "运维经费的**保底预算**（财政拨款不会归零）。它是为了避免一个建模伪影：纯乘法更新在预算为 0 时永远涨不回来（0×(1+adj)=0），模型会锁死在一个注定不修的状态里 —— 那是我第一版写出来的伪影，不是机制。无精确来源，只影响恢复速度，故按区间扫描。",
+        "kind": "assumed",
+        "ref": "结论 19（财政/银行资金有保底的性质）"
+      },
+      "range": [
+        0,
+        5000000
+      ],
+      "unit": "分/期",
+      "value": 600000
+    },
+    "market_decision_delay_periods": {
+      "provenance": {
+        "calibration": "【决策迟滞】：预算调整从决策到生效的期数。调研时间线是 2020 立项 → 2022 才被报道闲置，故迟滞必须存在，否则模型几期就自我纠正、【复现不出坏设备长期存在】。无精确来源，只作区间扫描（0 与 6 的对照是本项的关键判据）。",
+        "kind": "assumed",
+        "ref": "结论 4 / 5 / 6（时间线）"
+      },
+      "range": [
+        0,
+        12
+      ],
+      "unit": "期",
+      "value": 6
+    },
+    "market_kpi_metric": {
+      "provenance": {
+        "calibration": "考核口径是【制度选择】而非测得值，故本条不需要校准；需要校准的是它导致的行为差异。取值 installed = 装机量（装了就算达标）、usage = 使用率（设备停摆会拉低它）。默认取 installed，因为调研里的现象（绵阳可用但不用、武汉黑屏不可用，结论 6/4/5）与「考核装机量」的预测一致；usage 是对照组。",
+        "kind": "assumed",
+        "ref": "结论 6 / 4 / 5（现象）"
+      },
+      "unit": "枚举(installed/usage)",
+      "value": "installed"
+    },
+    "market_maintenance_floor_share": {
+      "provenance": {
+        "calibration": "维护预算的保底占比。取 0 是【判据定义】：只有取 0，「装机量口径 ⇒ 维护占比 = 0」才是一条可证伪的断言；取正数会把机制掩盖成「维护少了一点」。",
+        "kind": "assumed"
+      },
+      "unit": "比例",
+      "value": 0.0
+    },
     "market_stall_count": {
       "provenance": {
         "calibration": "10 摊来自本项目的演示规模（种子数据口径），**不是**调研得到的市场平均摊位规模。真实市场应按实际摊位规模扫描；区间下限 4（微型市场）到上限 60（大型农贸市场）。",
