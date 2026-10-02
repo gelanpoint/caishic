@@ -109,6 +109,8 @@ market-trade-mvp/
     │   ├── test_param_provenance.py  # 参数出处必填：sourced 须有 `结论 N`/`D-xx`，**`Q-xx` 一律归 assumed**；assumed 须有校准思路（带 4 个合成负例）
     │   ├── test_seed_reproducibility.py # 同 seed 逐字节一致（不同 seed 必不同）+ 加 agent 不影响他人 + 仅触碰 out-dir
     │   └── test_env_timing.py        # `T-SIM-02` 环境层：90 营业日基线 + 守恒/强度**由明细复算** + 与时序同轴（纯函数判据带合成负例）
+    │   ├── test_merchant_agent.py    # `T-SIM-03` 商户：分解恒等式 + 抽佣/检测率的**序关系**扫描 + 退出吸收态 + 灵敏度负例
+    │   └── test_consumer_agent.py    # `T-SIM-04` 消费者：解析半衰期 vs 仿真 + 陷阱序关系 + 不可恢复区（结论表述为**关于参数的命题**）+ 灵敏度负例
     ├── e2e/                      # AC-001 ~ AC-024 的端到端验证
     │   └── test_offline_wait_helpers.py # 秤端等待助手的**确定性**自检（假 page，无浏览器）：`#pending` 为 `—` 时必须带上下文报错、数值时必须解析正确、超时必须转成断言（`2026-10-02` 裁定③）
     └── perf/                     # 并发与响应时间压测脚本（NFR-001 与继承基线的验证）
@@ -131,6 +133,10 @@ market-trade-mvp/
 > │   ├── events.py      # 只增不改的事件日志（JSONL，键序与空白由格式固定，否则复现判据会假红）
 > │   ├── params.py      # 参数与**出处**的加载与校验（`provenance_problems` 是纯函数，故灵敏度负例可直接喂它）
 > │   └── registry.py    # agent 注册与 id 映射（同名重复登记直接报错：id 撞车会让两条流合并）
+> ├── agents/            # `T-SIM-03`/`T-SIM-04`：决策机制层（**环境事实**与**决策机制**分开，便于"只换策略不换环境"做单因子对照）
+> │   ├── __init__.py    # 包标识
+> │   ├── merchant.py    # 商户：效用四项分解 + `comply`/`evade`/`exit` 三动作（Q 学习 + EWMA 退出），三路径占比可单独观测
+> │   └── consumer.py    # 消费者：信任更新 + 扫码率耦合（正反馈陷阱）+ 恢复半衰期解析式 + 不可恢复区扫描
 > ├── env/
 > │   ├── __init__.py    # 包标识
 > │   ├── market.py      # 市场 / 摊位 / 品类 / 商品 / 基准价 / 价目表（`T-SIM-02`）

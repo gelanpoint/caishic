@@ -1,303 +1,599 @@
 {
-  "schema_version": 1,
-  "note": "鸟市仿真参数与出处。规则：sourced = 仓库内可核出处（结论 N / D-xx）；assumed = 假设，必须写 calibration。Q-xx 属项目自认的待确认假设，一律归 assumed（见 sim/core/params.py）。本文件由 tests/sim/test_param_provenance.py 强制校验。",
   "blocks": [
     {
-      "name": "开市准备",
-      "start": "05:30",
       "intensity": 0.0,
+      "name": "开市准备",
       "provenance": {
+        "calibration": "Q-9 是项目自己标注的『待确认假设（行业常识，未经调研验证）』，故不归 sourced。校准思路：现场计数 3 个营业日的分时客流后替换强度。",
         "kind": "assumed",
-        "ref": "Q-9",
-        "calibration": "Q-9 是项目自己标注的『待确认假设（行业常识，未经调研验证）』，故不归 sourced。校准思路：现场计数 3 个营业日的分时客流后替换强度。"
-      }
+        "ref": "Q-9"
+      },
+      "start": "05:30"
     },
     {
-      "name": "主峰",
-      "start": "06:00",
       "intensity": 3.0,
+      "name": "主峰",
       "provenance": {
+        "calibration": "主峰时段 06:00-09:00 出自 Q-9（待确认假设）；强度 3.0 无任何出处，全域敏感性扫描，结论不得依赖其点值。",
         "kind": "assumed",
-        "ref": "Q-9",
-        "calibration": "主峰时段 06:00-09:00 出自 Q-9（待确认假设）；强度 3.0 无任何出处，全域敏感性扫描，结论不得依赖其点值。"
-      }
+        "ref": "Q-9"
+      },
+      "start": "06:00"
     },
     {
-      "name": "平峰",
-      "start": "09:00",
       "intensity": 1.0,
+      "name": "平峰",
       "provenance": {
+        "calibration": "作为相对强度的基准 1.0（无量纲），仅相对关系参与计算，故不需要绝对标定。",
         "kind": "assumed",
-        "ref": "Q-9",
-        "calibration": "作为相对强度的基准 1.0（无量纲），仅相对关系参与计算，故不需要绝对标定。"
-      }
+        "ref": "Q-9"
+      },
+      "start": "09:00"
     },
     {
-      "name": "次峰",
-      "start": "17:00",
       "intensity": 2.0,
+      "name": "次峰",
       "provenance": {
+        "calibration": "次峰时段 17:00-19:00 出自 Q-9（待确认假设）；强度 2.0 无出处，纳入敏感性。",
         "kind": "assumed",
-        "ref": "Q-9",
-        "calibration": "次峰时段 17:00-19:00 出自 Q-9（待确认假设）；强度 2.0 无出处，纳入敏感性。"
-      }
+        "ref": "Q-9"
+      },
+      "start": "17:00"
     }
   ],
+  "note": "鸟市仿真参数与出处。规则：sourced = 仓库内可核出处（结论 N / D-xx）；assumed = 假设，必须写 calibration。Q-xx 属项目自认的待确认假设，一律归 assumed（见 sim/core/params.py）。本文件由 tests/sim/test_param_provenance.py 强制校验。",
   "parameters": {
-    "scale_unit_price_cents": {
-      "value": 135000,
-      "range": [135000, 256600],
-      "unit": "分/台",
-      "provenance": {
-        "kind": "sourced",
-        "ref": "结论 23",
-        "quote": "普通溯源秤 1350 元/台、2145 元/台、2566 元/台（苏州公开中标价，5 个独立项目）"
-      }
-    },
-    "device_screen_unit_price_cents": {
-      "value": 110000,
-      "unit": "分/台",
-      "provenance": {
-        "kind": "sourced",
-        "ref": "结论 24",
-        "quote": "摊位小屏 1100 元/台（同项目 141 台；300 摊 = 33 万元）"
-      }
-    },
-    "network_refit_cents_per_market": {
-      "value": 12050000,
-      "unit": "分/市场",
-      "provenance": {
-        "kind": "sourced",
-        "ref": "结论 25",
-        "quote": "WiFi 综合覆盖布线 88 万 + 互联网专线 32.5 万 = 120.5 万（占 366.9 万标的 33%）；单例，不出区间"
-      }
-    },
-    "subsidy_ratio_bp": {
-      "value": 5000,
-      "range": [0, 5000],
-      "unit": "万分比",
-      "provenance": {
-        "kind": "sourced",
-        "ref": "结论 3",
-        "quote": "上海宝山：按审计实际投入的 50% 补贴，单项目上限 200 万元"
-      }
-    },
-    "channel_fee_rate_bp_range": {
-      "range": [38, 60],
-      "unit": "万分比",
-      "provenance": {
-        "kind": "sourced",
-        "ref": "结论 21",
-        "quote": "微信支付小微商户 0.38%-0.6%；个体户餐饮/零售/食品生鲜 0.6%、T+1"
-      }
-    },
-    "wenzhou_buyer_rate_bp_range": {
-      "range": [50, 600],
-      "unit": "万分比",
-      "provenance": {
-        "kind": "sourced",
-        "ref": "结论 12",
-        "quote": "温州菜篮子：按品种向采购方收取 0.5%-6%，且不再另收经营户租金水电费；2001 年物价局批复，运行至今"
-      }
-    },
-    "merchant_self_funded_scale_cents": {
-      "value": 375000,
-      "range": [375000, 460000],
-      "unit": "分/台",
-      "provenance": {
-        "kind": "sourced",
-        "ref": "结论 26",
-        "quote": "上海口径：智慧电子秤 3750 元/台、AI 秤 4600 元/台由商户承担；云软件 5000 元/年由业主承担"
-      }
-    },
-    "verification_sampling_bp": {
-      "value": 1000,
-      "unit": "万分比",
-      "provenance": {
-        "kind": "sourced",
-        "ref": "结论 4",
-        "quote": "武汉：区级验收后，市里按照 10% 的比例抽检验收（注：是验收抽检，不是日常计量抽检）"
-      }
-    },
     "admin_fine_market_operator_cents": {
-      "value": 2000000,
+      "provenance": {
+        "kind": "sourced",
+        "quote": "儋州某市场开办者因场内商户屡次未明码标价被罚 2 万元（罚的是市场开办者、事由是明码标价，非商户短秤）",
+        "ref": "结论 2"
+      },
       "unit": "分/次",
-      "provenance": {
-        "kind": "sourced",
-        "ref": "结论 2",
-        "quote": "儋州某市场开办者因场内商户屡次未明码标价被罚 2 万元（罚的是市场开办者、事由是明码标价，非商户短秤）"
-      }
-    },
-    "short_weight_ratio": {
-      "value": 0.2,
-      "range": [0.0, 0.2],
-      "unit": "比例",
-      "provenance": {
-        "kind": "sourced",
-        "ref": "结论 13",
-        "quote": "南宁商务局原话把这类行为直接称为『八两秤』（8 两 / 1 斤 = 0.8）→ 短秤幅度 0.2；分布与比例无出处"
-      }
+      "value": 2000000
     },
     "bank_funding_cents_3y": {
-      "value": 200000000,
-      "unit": "分/3年",
       "provenance": {
         "kind": "sourced",
-        "ref": "结论 19",
-        "quote": "达川：交通银行达州支行三年期 200 余万元资金支持；未交代覆盖几个市场，只能作量级锚"
-      }
+        "quote": "达川：交通银行达州支行三年期 200 余万元资金支持；未交代覆盖几个市场，只能作量级锚",
+        "ref": "结论 19"
+      },
+      "unit": "分/3年",
+      "value": 200000000
     },
-    "device_count": {
-      "value": 10,
-      "range": [4, 60],
-      "unit": "台",
+    "channel_fee_rate_bp_range": {
       "provenance": {
-        "kind": "assumed",
-        "ref": "spec.md 演示规模口径",
-        "calibration": "按「一摊一秤」建模（与 market_stall_count 同值）。这是**建模假设**，不是实测装机数；真实场景存在一摊多秤或一秤多摊，故纳入敏感性并与 market_stall_count 解耦。"
-      }
+        "kind": "sourced",
+        "quote": "微信支付小微商户 0.38%-0.6%；个体户餐饮/零售/食品生鲜 0.6%、T+1",
+        "ref": "结论 21"
+      },
+      "range": [
+        38,
+        60
+      ],
+      "unit": "万分比"
     },
-    "market_stall_count": {
-      "value": 10,
-      "range": [4, 60],
-      "unit": "摊",
+    "commission_charged_to_merchant": {
       "provenance": {
+        "calibration": "『向商户收还是向买方收』是**政策选项**而非测得事实：温州式（结论 12）是向买方收 0.5%-6% 且免摊位费。本参数用来做**单因子对照**（同费率、换收取对象），故取值本身不需要校准，需要校准的是费率。",
         "kind": "assumed",
-        "ref": "spec.md 演示规模口径",
-        "calibration": "10 摊来自本项目的演示规模（种子数据口径），**不是**调研得到的市场平均摊位规模。真实市场应按实际摊位规模扫描；区间下限 4（微型市场）到上限 60（大型农贸市场）。"
-      }
+        "ref": "结论 12（温州式向买方收的反面）"
+      },
+      "unit": "布尔",
+      "value": true
     },
-    "product_base_price_cents_range": {
-      "range": [200, 2000],
-      "unit": "分/500g",
+    "commission_rate_bp": {
       "provenance": {
+        "calibration": "2% 这个数字**不是任何实测费率**：它只出现在结论 21 的标题对照口径里（那是微信通道费 0.38%-0.6% 的语境），本项目把它当『被考察的政策变量』而非事实。故必须**全域扫描**，且 Q1 结论只能表述为『关于费率参数的命题』。",
         "kind": "assumed",
-        "calibration": "《报告》给的是设备与费率，没有菜价。区间对应 2-20 元/500g 的常见菜价区间；派生的只是「流水×费率」型指标，故对结论的影响是比例性的，必须纳入敏感性。"
-      }
-    },
-    "daily_arrivals_per_market": {
-      "value": 1000,
-      "range": [800, 1500],
-      "unit": "笔/日·市场",
-      "provenance": {
-        "kind": "assumed",
-        "ref": "Q-9",
-        "calibration": "Q-9 是项目自己标注的待确认假设（80-150 笔/摊·日 × 10 摊 = 800-1500 笔/日），故不归 sourced。校准思路：现场闸机/秤端计数 3 个营业日。"
-      }
-    },
-    "scale_use_baseline_rate": {
-      "value": 0.6,
-      "range": [0.2, 0.95],
-      "unit": "比例",
-      "provenance": {
-        "kind": "assumed",
-        "calibration": "零决策基线下的「走秤比例」，**没有任何来源**：它正是 Q1/Q2 要研究的对象（抽佣会把它压低）。校准思路：与结论 17 的「扫码比例缺统计」同源缺口；只做全域扫描，结论表述为关于该参数的命题。"
-      }
-    },
-    "repair_mean_days": {
-      "value": 3,
-      "range": [1, 15],
-      "unit": "天",
-      "provenance": {
-        "kind": "assumed",
-        "ref": "《报告》第九节（自认数据缺口）",
-        "calibration": "同 device_mtbf_days / repair_cost_cents：《报告》第九节明确承认没有公开数据。它决定「坏一台设备损失多少营业日」，是设备闲置结论的直接输入，必须全域扫描。"
-      }
-    },
-    "gross_margin_rate": {
-      "value": 0.25,
-      "range": [0.15, 0.35],
-      "unit": "比例",
-      "provenance": {
-        "kind": "assumed",
-        "calibration": "《报告》只给硬件价格与费率，没有任何成本/毛利数据。校准思路：用结论 18 的单摊流水量级做一致性检验；最终必须实地采集。先做全域敏感性。"
-      }
-    },
-    "short_weight_detect_rate": {
-      "value": 0.05,
-      "range": [0.0, 0.3],
-      "unit": "比例",
-      "provenance": {
-        "kind": "assumed",
-        "calibration": "无任何来源。它决定『客流反噬』项的强度（越狠越容易被老顾客发现）；必须报告结论对它是否敏感。"
-      }
-    },
-    "trust_update_eta_pos": {
-      "value": 0.35,
-      "range": [0.1, 0.6],
-      "unit": "比例",
-      "provenance": {
-        "kind": "assumed",
-        "calibration": "完全无来源。结论 16 只给定性语义（『再也不信』）。只给区间不给点值；结论须表述为关于参数的命题。"
-      }
-    },
-    "trust_update_eta_neg": {
-      "value": 0.8,
-      "range": [0.4, 1.0],
-      "unit": "比例",
-      "provenance": {
-        "kind": "assumed",
-        "calibration": "同上。用『再也不信』这一措辞约束 eta_neg/eta_pos 的**下界**（语义推断，非测量）。这是全设计最弱的一环。"
-      }
-    },
-    "trust_decay_delta": {
-      "value": 0.02,
-      "range": [0.0, 0.1],
-      "unit": "比例/期",
-      "provenance": {
-        "kind": "assumed",
-        "calibration": "无来源。与 eta 一起决定恢复半衰期；纳入敏感性。"
-      }
+        "ref": "结论 21（仅作对照口径）"
+      },
+      "range": [
+        0,
+        1000
+      ],
+      "unit": "万分比",
+      "value": 200
     },
     "consumer_scan_baseline_rate": {
-      "value": 0.15,
-      "range": [0.02, 0.5],
-      "unit": "比例",
       "provenance": {
+        "calibration": "**本参数不是代理内部用的量，而是『不耦合』对照组的扫码率**：代理自身的扫码率是 `p_scan(T) = consumer_scan_floor + consumer_scan_trust_gain·T`（见 sim/agents/consumer.py）。本参数用作**固定扫码率对照组**，用来把『陷阱』隔离出来（同一条冲击下，耦合 vs 不耦合的恢复期数对比）。结论 17 明确承认『主动扫码评价的比例仍缺乏统计』—— 这是**已知的数据缺口**，全域扫描，答辩时直说。",
         "kind": "assumed",
-        "ref": "结论 17",
-        "calibration": "结论 17 明确承认『主动扫码评价的比例仍缺乏统计』—— 这是**已知的数据缺口**，不是我方疏漏。全域扫描，答辩时直说。"
-      }
+        "ref": "结论 17（自认缺口）"
+      },
+      "range": [
+        0.02,
+        0.5
+      ],
+      "unit": "比例",
+      "value": 0.15
+    },
+    "consumer_scan_floor": {
+      "provenance": {
+        "calibration": "信任为 0 时的扫码率下限。**它是『正反馈陷阱能不能成立』的开关**：只要下限 > 0，信任崩到底也还有人扫，采样机会不枯竭，陷阱就不成立。我第一版写成 clip(base + gain·T)（隐含下限 = base = 0.15），实测**耦合版比不耦合版恢复更快**（9 期 vs 23 期）—— 与 Q3 要研究的现象方向相反。故取 0（可为 0 才可能枯竭），并对 [0, 0.5] 全域做区域扫描（这正是『不可恢复区』的边界所在）。",
+        "kind": "assumed"
+      },
+      "range": [
+        0.0,
+        0.5
+      ],
+      "unit": "比例",
+      "value": 0.0
+    },
+    "consumer_scan_trust_gain": {
+      "provenance": {
+        "calibration": "扫码率随信任的增益（T=1 时扫码率 = base + gain，截顶到 1）。**完全无来源**：它正是 Q3 正反馈陷阱的耦合强度。只做区间扫描；Q3 结论表述为关于参数的命题。",
+        "kind": "assumed"
+      },
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": "比例",
+      "value": 0.6
+    },
+    "daily_arrivals_per_market": {
+      "provenance": {
+        "calibration": "Q-9 是项目自己标注的待确认假设（80-150 笔/摊·日 × 10 摊 = 800-1500 笔/日），故不归 sourced。校准思路：现场闸机/秤端计数 3 个营业日。",
+        "kind": "assumed",
+        "ref": "Q-9"
+      },
+      "range": [
+        800,
+        1500
+      ],
+      "unit": "笔/日·市场",
+      "value": 1000
+    },
+    "daily_inspection_rate": {
+      "provenance": {
+        "calibration": "**不要拿结论 4 的 10% 当日常计量抽检率**：结论 4 原文是『区级验收后，市里按照 10% 的比例抽检验收』—— 那是**项目验收**环节的一次性抽检，与『日常会不会被查到短秤』不是同一个量。日常抽检率无任何公开数据，故按 5% 建模并全域扫描。",
+        "kind": "assumed",
+        "ref": "结论 4（口径需区分：那是**验收**抽检，不是日常计量抽检）"
+      },
+      "range": [
+        0.0,
+        0.3
+      ],
+      "unit": "比例",
+      "value": 0.05
+    },
+    "device_count": {
+      "provenance": {
+        "calibration": "按「一摊一秤」建模（与 market_stall_count 同值）。这是**建模假设**，不是实测装机数；真实场景存在一摊多秤或一秤多摊，故纳入敏感性并与 market_stall_count 解耦。",
+        "kind": "assumed",
+        "ref": "spec.md 演示规模口径"
+      },
+      "range": [
+        4,
+        60
+      ],
+      "unit": "台",
+      "value": 10
     },
     "device_mtbf_days": {
-      "value": 540,
-      "range": [180, 1095],
+      "provenance": {
+        "calibration": "《报告》第九节原文承认『设备每年坏多少、修一次多少钱，没有公开数据』。故只做区间敏感性，**禁止**把点值当事实。",
+        "kind": "assumed",
+        "ref": "《报告》第九节（自认数据缺口）"
+      },
+      "range": [
+        180,
+        1095
+      ],
       "unit": "天",
-      "provenance": {
-        "kind": "assumed",
-        "ref": "《报告》第九节（自认数据缺口）",
-        "calibration": "《报告》第九节原文承认『设备每年坏多少、修一次多少钱，没有公开数据』。故只做区间敏感性，**禁止**把点值当事实。"
-      }
+      "value": 540
     },
-    "repair_cost_cents": {
-      "value": 30000,
-      "range": [10000, 100000],
-      "unit": "分/次",
+    "device_screen_unit_price_cents": {
       "provenance": {
+        "kind": "sourced",
+        "quote": "摊位小屏 1100 元/台（同项目 141 台；300 摊 = 33 万元）",
+        "ref": "结论 24"
+      },
+      "unit": "分/台",
+      "value": 110000
+    },
+    "gross_margin_rate": {
+      "provenance": {
+        "calibration": "《报告》只给硬件价格与费率，没有任何成本/毛利数据。校准思路：用结论 18 的单摊流水量级做一致性检验；最终必须实地采集。先做全域敏感性。",
+        "kind": "assumed"
+      },
+      "range": [
+        0.15,
+        0.35
+      ],
+      "unit": "比例",
+      "value": 0.25
+    },
+    "info_real_share": {
+      "provenance": {
+        "calibration": "扫码后拿到『有真实来源信息』的比例（其余为结论 16 的『空壳信息』）。结论 16 只给定性语义（『扫过好几次空码…再也不信』），没有比例。全域扫描。",
         "kind": "assumed",
-        "ref": "《报告》第九节（自认数据缺口）",
-        "calibration": "同 device_mtbf_days。维修预算 B 与服务台数的换算依赖它，故必须做全域扫描并在报告里标注依赖强度。"
-      }
+        "ref": "结论 16（定性）"
+      },
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": "比例",
+      "value": 0.5
+    },
+    "market_stall_count": {
+      "provenance": {
+        "calibration": "10 摊来自本项目的演示规模（种子数据口径），**不是**调研得到的市场平均摊位规模。真实市场应按实际摊位规模扫描；区间下限 4（微型市场）到上限 60（大型农贸市场）。",
+        "kind": "assumed",
+        "ref": "spec.md 演示规模口径"
+      },
+      "range": [
+        4,
+        60
+      ],
+      "unit": "摊",
+      "value": 10
+    },
+    "merchant_detect_coef": {
+      "provenance": {
+        "calibration": "客流反噬系数 κ_detect（无量纲）。**完全无来源**：它决定『短秤被顾客/监管发现后声誉受损』的强度。只做区间扫描；结论不得依赖其点值。",
+        "kind": "assumed"
+      },
+      "range": [
+        0.0,
+        5.0
+      ],
+      "unit": "系数",
+      "value": 1.0
+    },
+    "merchant_device_share_cents": {
+      "provenance": {
+        "calibration": "设备分摊（每摊每期约 300 元）。它来自『装机即分摊』的建模选择，不是实测财务数据；关键性质是**合规与转暗都承担它**（设备已装），所以它不改变两条路径的相对优劣，只抬高水平。",
+        "kind": "assumed"
+      },
+      "range": [
+        0,
+        100000
+      ],
+      "unit": "分/期·摊",
+      "value": 30000
+    },
+    "merchant_exit_breach_periods": {
+      "provenance": {
+        "calibration": "连续亏损达到多少期触发退出（2 期）。无来源；设计文档 A-θ_exit/n_breach 一族；结论对该参数只作**序关系**陈述（越长越不容易出现退出）。",
+        "kind": "assumed"
+      },
+      "range": [
+        1,
+        6
+      ],
+      "unit": "期",
+      "value": 2
     },
     "merchant_exit_breakeven_months": {
-      "value": 6,
-      "range": [3, 12],
-      "unit": "月",
       "provenance": {
+        "calibration": "无经营损益数据。校准锚：结论 8 成都青羊『2024-10 开始运营、数月即垮』给出时间量级；结论 10 龙南只约束方向（有手续费组必须出现非零流失）。",
         "kind": "assumed",
-        "ref": "结论 8",
-        "calibration": "无经营损益数据。校准锚：结论 8 成都青羊『2024-10 开始运营、数月即垮』给出时间量级；结论 10 龙南只约束方向（有手续费组必须出现非零流失）。"
-      }
+        "ref": "结论 8"
+      },
+      "range": [
+        3,
+        12
+      ],
+      "unit": "月",
+      "value": 6
+    },
+    "merchant_exit_cost_cents": {
+      "provenance": {
+        "calibration": "退出的一次性代价 Σ_exit（1000 元，含押金/迁移/客源损失）。无来源；它只影响退出的门槛，不影响合规与转暗的相对优劣。",
+        "kind": "assumed"
+      },
+      "range": [
+        0,
+        2000000
+      ],
+      "unit": "分",
+      "value": 100000
+    },
+    "merchant_exit_reference_point": {
+      "provenance": {
+        "calibration": "**最低可接受收益（生存线）**，不是 0：商户退出的触发条件不是『经营利润为负』，而是『赚得不够活下去』（摊位费 + 生活成本 + 机会成本）。无任何公开数据。**第一版我把它设成 0，结果是三条路径退化成两条**（两种动作的效用都远大于 0 ⇒ 永远不触发退出）—— 那等于把 Q1 要研究的『流失』藏起来。校准锚：结论 8 成都青羊『数月即垮』与结论 15『担忧涨租』都给的是定性方向，故本参数只作区间扫描，Q1 结论表述为『在什么保证金/费率组合下出现退出』。",
+        "kind": "assumed",
+        "ref": "结论 8 / 结论 15（定性）"
+      },
+      "range": [
+        0,
+        4000000
+      ],
+      "unit": "分/期",
+      "value": 1000000
+    },
+    "merchant_fine_short_cents": {
+      "provenance": {
+        "calibration": "短秤被抓的罚款。**量级类比**而非本情形实测：结论 2 罚的是市场开办者、事由是明码标价，与『商户短秤』不是同一情形；只能借其量级（2 万元）。必须做区间敏感性。",
+        "kind": "assumed",
+        "ref": "结论 2（量级类比，非本情形）"
+      },
+      "range": [
+        0,
+        8000000
+      ],
+      "unit": "分/次",
+      "value": 2000000
+    },
+    "merchant_loss_rep_cents": {
+      "provenance": {
+        "calibration": "被抓后的赔付/退货损失（每摊 500 元）。无任何来源，纯建模项；与罚款一起决定 Ψ 的量级。",
+        "kind": "assumed"
+      },
+      "range": [
+        0,
+        500000
+      ],
+      "unit": "分/次",
+      "value": 50000
+    },
+    "merchant_loss_share": {
+      "provenance": {
+        "calibration": "声誉损失中折算为效用的比例 loss_share。无来源；与 κ_detect 是乘积关系，故二者只需其中一个做扫描即可覆盖（会说明这一点，避免假装两条独立敏感性）。",
+        "kind": "assumed"
+      },
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": "比例",
+      "value": 0.3
+    },
+    "merchant_op_fee_cents_per_txn": {
+      "provenance": {
+        "calibration": "单笔运营费（每笔 5 分）。无来源；它只按**走秤笔数**计，故与佣金同向放大『合规更贵』。",
+        "kind": "assumed"
+      },
+      "range": [
+        0,
+        50
+      ],
+      "unit": "分/笔",
+      "value": 5
+    },
+    "merchant_q_phi": {
+      "provenance": {
+        "calibration": "Q 值惯性 φ（对历史效用记忆的权重）。无来源；取值影响收敛速度而非稳态，故只在『是否收敛』这一点上做敏感性。",
+        "kind": "assumed"
+      },
+      "range": [
+        0.0,
+        0.95
+      ],
+      "unit": "比例",
+      "value": 0.6
+    },
+    "merchant_q_rho": {
+      "provenance": {
+        "calibration": "同伴影响 ρ（同群平均 Q 的权重）。无来源；它产生从众效应，是**异质性的来源之一**。",
+        "kind": "assumed"
+      },
+      "range": [
+        0.0,
+        0.9
+      ],
+      "unit": "比例",
+      "value": 0.2
+    },
+    "merchant_q_temperature": {
+      "provenance": {
+        "calibration": "softmax 温度（越小越确定）。无来源；温度→0 时退化为贪心。只作区间扫描。",
+        "kind": "assumed"
+      },
+      "range": [
+        0.005,
+        0.5
+      ],
+      "unit": "/元",
+      "value": 0.05
+    },
+    "merchant_self_funded_scale_cents": {
+      "provenance": {
+        "kind": "sourced",
+        "quote": "上海口径：智慧电子秤 3750 元/台、AI 秤 4600 元/台由商户承担；云软件 5000 元/年由业主承担",
+        "ref": "结论 26"
+      },
+      "range": [
+        375000,
+        460000
+      ],
+      "unit": "分/台",
+      "value": 375000
+    },
+    "network_refit_cents_per_market": {
+      "provenance": {
+        "kind": "sourced",
+        "quote": "WiFi 综合覆盖布线 88 万 + 互联网专线 32.5 万 = 120.5 万（占 366.9 万标的 33%）；单例，不出区间",
+        "ref": "结论 25"
+      },
+      "unit": "分/市场",
+      "value": 12050000
+    },
+    "product_base_price_cents_range": {
+      "provenance": {
+        "calibration": "《报告》给的是设备与费率，没有菜价。区间对应 2-20 元/500g 的常见菜价区间；派生的只是「流水×费率」型指标，故对结论的影响是比例性的，必须纳入敏感性。",
+        "kind": "assumed"
+      },
+      "range": [
+        200,
+        2000
+      ],
+      "unit": "分/500g"
+    },
+    "repair_cost_cents": {
+      "provenance": {
+        "calibration": "同 device_mtbf_days。维修预算 B 与服务台数的换算依赖它，故必须做全域扫描并在报告里标注依赖强度。",
+        "kind": "assumed",
+        "ref": "《报告》第九节（自认数据缺口）"
+      },
+      "range": [
+        10000,
+        100000
+      ],
+      "unit": "分/次",
+      "value": 30000
+    },
+    "repair_mean_days": {
+      "provenance": {
+        "calibration": "同 device_mtbf_days / repair_cost_cents：《报告》第九节明确承认没有公开数据。它决定「坏一台设备损失多少营业日」，是设备闲置结论的直接输入，必须全域扫描。",
+        "kind": "assumed",
+        "ref": "《报告》第九节（自认数据缺口）"
+      },
+      "range": [
+        1,
+        15
+      ],
+      "unit": "天",
+      "value": 3
+    },
+    "scale_unit_price_cents": {
+      "provenance": {
+        "kind": "sourced",
+        "quote": "普通溯源秤 1350 元/台、2145 元/台、2566 元/台（苏州公开中标价，5 个独立项目）",
+        "ref": "结论 23"
+      },
+      "range": [
+        135000,
+        256600
+      ],
+      "unit": "分/台",
+      "value": 135000
+    },
+    "scale_use_baseline_rate": {
+      "provenance": {
+        "calibration": "零决策基线下的「走秤比例」，**没有任何来源**：它正是 Q1/Q2 要研究的对象（抽佣会把它压低）。校准思路：与结论 17 的「扫码比例缺统计」同源缺口；只做全域扫描，结论表述为关于该参数的命题。",
+        "kind": "assumed"
+      },
+      "range": [
+        0.2,
+        0.95
+      ],
+      "unit": "比例",
+      "value": 0.6
+    },
+    "short_weight_detect_rate": {
+      "provenance": {
+        "calibration": "无任何来源。它决定『客流反噬』项的强度（越狠越容易被老顾客发现）；必须报告结论对它是否敏感。",
+        "kind": "assumed"
+      },
+      "range": [
+        0.0,
+        0.3
+      ],
+      "unit": "比例",
+      "value": 0.05
+    },
+    "short_weight_ratio": {
+      "provenance": {
+        "kind": "sourced",
+        "quote": "南宁商务局原话把这类行为直接称为『八两秤』（8 两 / 1 斤 = 0.8）→ 短秤幅度 0.2；分布与比例无出处",
+        "ref": "结论 13"
+      },
+      "range": [
+        0.0,
+        0.2
+      ],
+      "unit": "比例",
+      "value": 0.2
+    },
+    "subsidy_ratio_bp": {
+      "provenance": {
+        "kind": "sourced",
+        "quote": "上海宝山：按审计实际投入的 50% 补贴，单项目上限 200 万元",
+        "ref": "结论 3"
+      },
+      "range": [
+        0,
+        5000
+      ],
+      "unit": "万分比",
+      "value": 5000
+    },
+    "trust_decay_delta": {
+      "provenance": {
+        "calibration": "无来源。与 eta 一起决定恢复半衰期；纳入敏感性。",
+        "kind": "assumed"
+      },
+      "range": [
+        0.0,
+        0.1
+      ],
+      "unit": "比例/期",
+      "value": 0.02
+    },
+    "trust_recovery_target": {
+      "provenance": {
+        "calibration": "『已恢复』的判定阈值（信任回到 0.6 以上）。它是**判据定义**而非观测值；设计文档要求同时报告阈值取 0.5/0.6/0.7 时区域是否变化（避免结论依赖判据阈值）。",
+        "kind": "assumed"
+      },
+      "range": [
+        0.4,
+        0.9
+      ],
+      "unit": "信任值",
+      "value": 0.6
+    },
+    "trust_update_eta_neg": {
+      "provenance": {
+        "calibration": "同上。用『再也不信』这一措辞约束 eta_neg/eta_pos 的**下界**（语义推断，非测量）。这是全设计最弱的一环。",
+        "kind": "assumed"
+      },
+      "range": [
+        0.4,
+        1.0
+      ],
+      "unit": "比例",
+      "value": 0.8
+    },
+    "trust_update_eta_pos": {
+      "provenance": {
+        "calibration": "完全无来源。结论 16 只给定性语义（『再也不信』）。只给区间不给点值；结论须表述为关于参数的命题。",
+        "kind": "assumed"
+      },
+      "range": [
+        0.1,
+        0.6
+      ],
+      "unit": "比例",
+      "value": 0.35
+    },
+    "verification_sampling_bp": {
+      "provenance": {
+        "kind": "sourced",
+        "quote": "武汉：区级验收后，市里按照 10% 的比例抽检验收（注：是验收抽检，不是日常计量抽检）",
+        "ref": "结论 4"
+      },
+      "unit": "万分比",
+      "value": 1000
+    },
+    "wenzhou_buyer_rate_bp_range": {
+      "provenance": {
+        "kind": "sourced",
+        "quote": "温州菜篮子：按品种向采购方收取 0.5%-6%，且不再另收经营户租金水电费；2001 年物价局批复，运行至今",
+        "ref": "结论 12"
+      },
+      "range": [
+        50,
+        600
+      ],
+      "unit": "万分比"
     },
     "zhengzhou_flow_per_stall_cents_per_month": {
-      "value": 14000000,
-      "range": [7000000, 28000000],
-      "unit": "分/摊·月",
       "provenance": {
+        "calibration": "由结论 18 的 1.4 亿元现金流水 ÷ 1000 余商户 ≈ 14 万元/户**推算**，而该报道**未交代统计期间** —— 故只能作量级锚，必须标为推算而非观测。",
         "kind": "assumed",
-        "ref": "结论 18",
-        "calibration": "由结论 18 的 1.4 亿元现金流水 ÷ 1000 余商户 ≈ 14 万元/户**推算**，而该报道**未交代统计期间** —— 故只能作量级锚，必须标为推算而非观测。"
-      }
+        "ref": "结论 18"
+      },
+      "range": [
+        7000000,
+        28000000
+      ],
+      "unit": "分/摊·月",
+      "value": 14000000
     }
-  }
+  },
+  "schema_version": 1
 }
