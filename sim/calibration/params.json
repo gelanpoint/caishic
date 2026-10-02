@@ -147,6 +147,63 @@
         "quote": "达川：交通银行达州支行三年期 200 余万元资金支持；未交代覆盖几个市场，只能作量级锚"
       }
     },
+    "device_count": {
+      "value": 10,
+      "range": [4, 60],
+      "unit": "台",
+      "provenance": {
+        "kind": "assumed",
+        "ref": "spec.md 演示规模口径",
+        "calibration": "按「一摊一秤」建模（与 market_stall_count 同值）。这是**建模假设**，不是实测装机数；真实场景存在一摊多秤或一秤多摊，故纳入敏感性并与 market_stall_count 解耦。"
+      }
+    },
+    "market_stall_count": {
+      "value": 10,
+      "range": [4, 60],
+      "unit": "摊",
+      "provenance": {
+        "kind": "assumed",
+        "ref": "spec.md 演示规模口径",
+        "calibration": "10 摊来自本项目的演示规模（种子数据口径），**不是**调研得到的市场平均摊位规模。真实市场应按实际摊位规模扫描；区间下限 4（微型市场）到上限 60（大型农贸市场）。"
+      }
+    },
+    "product_base_price_cents_range": {
+      "range": [200, 2000],
+      "unit": "分/500g",
+      "provenance": {
+        "kind": "assumed",
+        "calibration": "《报告》给的是设备与费率，没有菜价。区间对应 2-20 元/500g 的常见菜价区间；派生的只是「流水×费率」型指标，故对结论的影响是比例性的，必须纳入敏感性。"
+      }
+    },
+    "daily_arrivals_per_market": {
+      "value": 1000,
+      "range": [800, 1500],
+      "unit": "笔/日·市场",
+      "provenance": {
+        "kind": "assumed",
+        "ref": "Q-9",
+        "calibration": "Q-9 是项目自己标注的待确认假设（80-150 笔/摊·日 × 10 摊 = 800-1500 笔/日），故不归 sourced。校准思路：现场闸机/秤端计数 3 个营业日。"
+      }
+    },
+    "scale_use_baseline_rate": {
+      "value": 0.6,
+      "range": [0.2, 0.95],
+      "unit": "比例",
+      "provenance": {
+        "kind": "assumed",
+        "calibration": "零决策基线下的「走秤比例」，**没有任何来源**：它正是 Q1/Q2 要研究的对象（抽佣会把它压低）。校准思路：与结论 17 的「扫码比例缺统计」同源缺口；只做全域扫描，结论表述为关于该参数的命题。"
+      }
+    },
+    "repair_mean_days": {
+      "value": 3,
+      "range": [1, 15],
+      "unit": "天",
+      "provenance": {
+        "kind": "assumed",
+        "ref": "《报告》第九节（自认数据缺口）",
+        "calibration": "同 device_mtbf_days / repair_cost_cents：《报告》第九节明确承认没有公开数据。它决定「坏一台设备损失多少营业日」，是设备闲置结论的直接输入，必须全域扫描。"
+      }
+    },
     "gross_margin_rate": {
       "value": 0.25,
       "range": [0.15, 0.35],

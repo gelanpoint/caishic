@@ -107,7 +107,8 @@ market-trade-mvp/
     │   ├── test_sim_no_app_import.py # 隔离闸门一：`sim/**` 不得 `import app`；反向：`run.py`/`app/**` 不得 `import sim`（各带合成负例）
     │   ├── test_sim_deps_isolation.py# 隔离闸门二：`sim/**` 只依赖标准库；`requirements.txt` 运行期仍只有 `Flask`（带 numpy/pandas 负例）
     │   ├── test_param_provenance.py  # 参数出处必填：sourced 须有 `结论 N`/`D-xx`，**`Q-xx` 一律归 assumed**；assumed 须有校准思路（带 4 个合成负例）
-    │   └── test_seed_reproducibility.py # 同 seed 逐字节一致（不同 seed 必不同）+ 加 agent 不影响他人 + 演示库哈希不变
+    │   ├── test_seed_reproducibility.py # 同 seed 逐字节一致（不同 seed 必不同）+ 加 agent 不影响他人 + 仅触碰 out-dir
+    │   └── test_env_timing.py        # `T-SIM-02` 环境层：90 营业日基线 + 守恒/强度**由明细复算** + 与时序同轴（纯函数判据带合成负例）
     ├── e2e/                      # AC-001 ~ AC-024 的端到端验证
     └── perf/                     # 并发与响应时间压测脚本（NFR-001 与继承基线的验证）
 ```
@@ -130,9 +131,10 @@ market-trade-mvp/
 > │   ├── params.py      # 参数与**出处**的加载与校验（`provenance_problems` 是纯函数，故灵敏度负例可直接喂它）
 > │   └── registry.py    # agent 注册与 id 映射（同名重复登记直接报错：id 撞车会让两条流合并）
 > ├── env/
+> │   ├── __init__.py    # 包标识
 > │   ├── market.py      # 市场 / 摊位 / 品类 / 商品 / 基准价 / 价目表（`T-SIM-02`）
-> │   ├── demand.py      # 客流到达过程（按时段块）（`T-SIM-02`）
-> │   └── devices.py     # 设备机队 / 故障 / 报修队列 / 维修工台（`T-SIM-02`）
+> │   ├── demand.py      # 客流到达过程（按时段块；`lam` 按总强度归一，故改块结构≠偷改客流总量）（`T-SIM-02`）
+> │   └── devices.py     # 设备机队 / 故障 / 报修队列 / 维修工台（三态守恒，逐日自检并可由明细复算）（`T-SIM-02`）
 > └── calibration/
 >     └── params.json     # **全部参数 + 出处字段**（`provenance.kind ∈ {sourced, assumed}`，由 tests/sim 强制）
 > ```

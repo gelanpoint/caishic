@@ -18,15 +18,18 @@ import hashlib
 import random
 from dataclasses import dataclass, field
 
-#: 用途标签（分开取流，避免"多加一次抽样就改变别人结果"）
+#: 用途标签（分开取流，避免"多加一次抽样就改变别人结果"）。
+#: **闭合白名单是刻意的**：新起一条流必须在这里登记 —— 否则"随手 `stream(x, "foo")`"
+#: 会让同一条随机性被两处消费，而这类错误不会报错、只会让结论悄悄漂移。
 PURPOSES = (
     "arrival",  # 客流到达
-    "choice",  # 消费者选摊
+    "choice",  # 消费者选摊 / 走秤与私下的分流
     "cheat",  # 商户作弊/短秤决策
     "trust",  # 消费者信任更新
     "breakdown",  # 设备故障
     "repair",  # 维修时长
     "adapt",  # 学习/探索噪声
+    "price",  # 市场结构：商品基准价（agent_id 为商品 id）
 )
 
 
