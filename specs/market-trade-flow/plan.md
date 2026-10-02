@@ -105,14 +105,20 @@ market-trade-mvp/
     │   ├── test_clock_injection.py   # 接缝**行为面**：默认逐字段不变 + 注入生效（全链路营业日）+ 报错响亮 + 每次重读
     │   └── test_clock_guard.py       # 接缝**检查面**：墙钟直读的 ast 守卫（含 4 个合成负例）+ SQL 列默认值缺口枚举（钉住 12 列）
     ├── sim/                      # 多智能体仿真的检查类用例（**与 tests/contract 分开**，不改后者的收集数与红绿分布；`T-SIM-01`/`T-SIM-02` 于 `2026-10-02` 新增）
-    │   ├── sim_support.py            # 共用支撑：把仓库根放进 `sys.path` + ast 导入解析纯函数（**不含夹具**，理由同 `clock_support.py`）
+    │   ├── sim_support.py            # 共用支撑：把仓库根放进 `sys.path` + ast 导入解析纯函数 + **`T-SIM-06` 的极小规模集成运行入口 `tiny_run()`**（30 营业日 = 1 个完整仿真月；**不含夹具**，理由同 `clock_support.py`）
     │   ├── test_sim_no_app_import.py # 隔离闸门一：`sim/**` 不得 `import app`；反向：`run.py`/`app/**` 不得 `import sim`（各带合成负例）
     │   ├── test_sim_deps_isolation.py# 隔离闸门二：`sim/**` 只依赖标准库；`requirements.txt` 运行期仍只有 `Flask`（带 numpy/pandas 负例）
     │   ├── test_param_provenance.py  # 参数出处必填：sourced 须有 `结论 N`/`D-xx`，**`Q-xx` 一律归 assumed**；assumed 须有校准思路（带 4 个合成负例）
     │   ├── test_seed_reproducibility.py # 同 seed 逐字节一致（不同 seed 必不同）+ 加 agent 不影响他人 + 仅触碰 out-dir
     │   └── test_env_timing.py        # `T-SIM-02` 环境层：90 营业日基线 + 守恒/强度**由明细复算** + 与时序同轴（纯函数判据带合成负例）
     │   ├── test_merchant_agent.py    # `T-SIM-03` 商户：分解恒等式 + 抽佣/检测率的**序关系**扫描 + 退出吸收态 + 灵敏度负例
-    │   └── test_consumer_agent.py    # `T-SIM-04` 消费者：解析半衰期 vs 仿真 + 陷阱序关系 + 不可恢复区（结论表述为**关于参数的命题**）+ 灵敏度负例
+    │   ├── test_consumer_agent.py    # `T-SIM-04` 消费者：解析半衰期 vs 仿真 + 陷阱序关系 + 不可恢复区（结论表述为**关于参数的命题**）+ 灵敏度负例
+    │   ├── test_market_admin.py      # `T-SIM-05` 市场方：激励错配（维护占比 0 vs >0）+ 决策迟滞**位移量** + 队列长期不消化
+    │   ├── test_regulator.py         # `T-SIM-05` 监管：抽检率↑ ⇒ 发现数不降（只给序关系）+ 灵敏度负例
+    │   ├── test_model_adapter.py     # `T-SIM-06` 集成运行：四类 Agent 都被真跑到（事件里四类 `kind` 齐备）+ 同 seed 可复现 + 守恒
+    │   ├── test_metrics_recomputable.py # `T-SIM-06` §6 的 22 个指标：**分子分母由 `events.jsonl` 逐条复算** + **非退化（抗写死）自检** + 负例
+    │   ├── test_scenarios_and_r6.py  # `T-SIM-06` 7 个场景：对照只差声明变量 + 每个声明变量都必须真的被 sim 源码读到 + **`R6` 反例必须被执行**（自费组结果如实报告，三态判定不许写死）。**改名来历**：原名 `test_scenarios.py` 与 `tests/e2e/test_scenarios.py` **同名撞车**（pytest 无 `__init__.py` 时按 basename 认模块 ⇒ 全量收集直接 ERROR，与 `T-031` 那次 `conftest` 撞车同类），故按"避免同名"改名登记
+    │   └── test_verify_sensitivity.py # `T-SIM-06` 敏感性：自写 Spearman（含并列秩）+ LHS 分层不退化 + OAT 单因子可辨（均带负例）
     ├── e2e/                      # AC-001 ~ AC-024 的端到端验证
     │   └── test_offline_wait_helpers.py # 秤端等待助手的**确定性**自检（假 page，无浏览器）：`#pending` 为 `—` 时必须带上下文报错、数值时必须解析正确、超时必须转成断言（`2026-10-02` 裁定③）
     └── perf/                     # 并发与响应时间压测脚本（NFR-001 与继承基线的验证）
@@ -138,12 +144,36 @@ market-trade-mvp/
 > ├── agents/            # `T-SIM-03`/`T-SIM-04`：决策机制层（**环境事实**与**决策机制**分开，便于"只换策略不换环境"做单因子对照）
 > │   ├── __init__.py    # 包标识
 > │   ├── merchant.py    # 商户：效用四项分解 + `comply`/`evade`/`exit` 三动作（Q 学习 + EWMA 退出），三路径占比可单独观测
-> │   └── consumer.py    # 消费者：信任更新 + 扫码率耦合（正反馈陷阱）+ 恢复半衰期解析式 + 不可恢复区扫描
+> │   ├── consumer.py    # 消费者：信任更新 + 扫码率耦合（正反馈陷阱）+ 恢复半衰期解析式 + 不可恢复区扫描
+> │   ├── market_admin.py # 市场方：考核口径 → 边际 KPI 产出 → 预算分配（带决策迟滞）；维护预算 → 工台产能
+> │   └── regulator.py   # 监管：抽检（不放回）→ 发现 → 罚金；只给序关系
 > ├── env/
 > │   ├── __init__.py    # 包标识
 > │   ├── market.py      # 市场 / 摊位 / 品类 / 商品 / 基准价 / 价目表（`T-SIM-02`）
 > │   ├── demand.py      # 客流到达过程（按时段块；`lam` 按总强度归一，故改块结构≠偷改客流总量）（`T-SIM-02`）
 > │   └── devices.py     # 设备机队 / 故障 / 报修队列 / 维修工台（三态守恒，逐日自检并可由明细复算）（`T-SIM-02`）
+> ├── bridge/
+> │   ├── __init__.py    # 包标识
+> │   ├── model_adapter.py  # `T-SIM-06`：进程内"记账世界" —— **真跑四个 Agent**（商户/消费者/市场方/监管）并把全部事实落进事件流；指标不另存一份状态
+> │   ├── day_loop.py    # `T-SIM-06`：**日频**事实生产（到达 → 选摊 → 一笔成交 → 私下可行性闸门 → 信任更新 → 设备推进）；拆出原因 = 400 行门禁（`Q-16` 裁定：按语义拆分）
+> │   ├── month_loop.py  # `T-SIM-06`：**月频**结构决策（商户动作与 Q/EWMA、市场方预算与迟滞、监管抽检、市场方现金流、消费者信任汇总）
+> │   ├── scenario.py    # `T-SIM-06`：场景装载与**"对照实验只差声明变量"的机械校验**（`scenario_problems` 是纯函数，负例可直接喂）
+> │   └── study.py       # `T-SIM-06`：7 个场景 × 臂的驱动器 + 全局 OAT / 每个场景**本场景指标**的 OAT / LHS 秩相关 / 结论稳健性 → 报告
+> ├── observe/
+> │   ├── __init__.py    # 包标识
+> │   ├── metric_specs.py # `T-SIM-06`：22 个指标的**目录**（分子/分母口径、来源事件、**适用条件**）——只描述"是什么"，不含复算逻辑
+> │   ├── metric_util.py # `T-SIM-06`：复算共用小工具（`ratio_row` / `unavailable` / 分位数 / 设备停摆段折取）；**不定义任何指标**
+> │   ├── metrics.py     # `T-SIM-06`：`M-01`~`M-14`（交易与设备类）**逐条由 `events.jsonl` 明细复算** + 存活判据 `S`（四条分别给）
+> │   ├── metrics_trust_cash.py # `T-SIM-06`：`M-15`~`M-22`（信任、现金流与一致性类），含 `M-20` 的两条路径对账
+> │   ├── metrics_check.py # `T-SIM-06`：复算自检三层（两条路径对账 / 非退化扰动法**抗写死** / 产物↔事件流对账）
+> │   └── report.py      # `T-SIM-06`：场景结果 → `report.md` 与 `metrics.json`/`scenarios.json`/`sensitivity.json`（纯文本，零外部资源；**2% 免责声明放显眼位置**、`R6` 三段证据、稳健与不稳健分区）
+> ├── verify/
+> │   ├── __init__.py    # 包标识
+> │   └── sensitivity.py # `T-SIM-06`：OAT（一次一参数）+ **自写 Spearman**（含并列秩）+ 分层拉丁超立方与覆盖度检验 + 结论稳健性 + 存活区域形状
+> ├── scenarios/
+> │   ├── S0_baseline.json · S1_commission.json · S2_enforcement.json · S3_maintenance.json ·
+> │   │   S4_price_disclosure.json · S5_device_funding.json · S6_short_weight_feasibility.json
+> │   └── （`T-SIM-06`：7 个场景含基线；每臂只差本场景声明的对照变量，且**每个声明变量都必须真的被 `sim/**` 读到**，由 `tests/sim/test_scenarios_and_r6.py` 机械校验）
 > └── calibration/
 >     └── params.json     # **全部参数 + 出处字段**（`provenance.kind ∈ {sourced, assumed}`，由 tests/sim 强制）
 > ```

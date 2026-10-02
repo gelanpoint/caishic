@@ -133,6 +133,21 @@ data/sim/<run_id>/                    ← 产物（`.gitignore` 已忽略 data/�
 ├── backtest.json · sensitivity.json · consistency.json · report.html
 ```
 
+> **落地实况（`T-SIM-06` 收口时同步，2026-10-02）** —— 上面这棵树是**设计目标**，实际落地有两处偏离，
+> 按"文档写一套、代码另一套就是漂移源"的规矩在这里如实登记：
+>
+> | 偏离 | 实际形态 | 理由 |
+> | --- | --- | --- |
+> | `rules/` 未拆出 | 效用四项、`logit`/`softmax`、EWA、信任更新与半衰期**留在 `agents/merchant.py` / `agents/consumer.py` 内**（`T-SIM-03/04` 已如此落地并验收） | 这些机制与 agent 自身状态（Q 表 / EWMA / 破线计数 / 信任矩阵）一一耦合；强行拆成"纯函数模块"会让每个函数都要把状态整包传进去，只得到形式上的"纯"，拿不到"可单测"的实际收益 |
+> | `bridge`/`observe` 各拆成多文件 | `bridge/` = `model_adapter.py` + `day_loop.py`（日频事实）+ `month_loop.py`（月频结构决策）+ `scenario.py`（场景装载与对照校验）+ `study.py`（场景驱动器与敏感性编排）；`observe/` = `metric_specs.py`（指标目录）+ `metric_util.py`（共用工具）+ `metrics.py`（`M-01`~`M-14`）+ `metrics_trust_cash.py`（`M-15`~`M-22`）+ `metrics_check.py`（复算自检）+ `report.py`（报告） | `docs/standards/quality-gates.md` §1.2 的**单文件 ≤ 400 行**（`Q-16` 裁定：按语义拆分、不放宽阈值）。语义边界写在各模块 docstring 里：**日频事实 / 月频决策 / 指标目录 / 指标复算 / 复算自检 / 报告渲染** |
+>
+> `T-SIM-06` 已落地的 `tests/sim/` 新用例（各带合成负例）：
+> `test_model_adapter.py`（四类 Agent 真跑到 + 同 seed 逐字节 + 守恒 + `R6`/`S6` 机制接线）、
+> `test_metrics_recomputable.py`（22 指标 + 独立朴素复算 + 抗写死 + 存活判据③口径守卫）、
+> `test_scenarios_and_r6.py`（7 场景结构 + **对照变量必须真的被 `sim/**` 读到** + `R6` 三态判定不许写死；**注意文件名**：
+> 原名 `test_scenarios.py` 与 `tests/e2e/test_scenarios.py` 同名撞车，见 §2.2 下方纪律①）、
+> `test_verify_sensitivity.py`（自写 Spearman 并列秩 + LHS 分层 + OAT + 稳健性）。
+
 > **`tests/sim/` 的两条实现纪律**（都是项目已经踩过的坑，不要重踩）：
 > ① **用例一律用唯一模块名导入**（`sim_support` 之类的专名），不要新增与 `tests/conftest.py` / `tests/contract/conftest.py` 同名的 `conftest.py` —— 项目曾因"同名 conftest 撞车"导致 10 个文件收不起来（提交 `cabe4e1`）。
 > ② **sim 侧不得复用 `tests/contract/contract_support.py` 的 HTTP 助手**（`bind_stall_session` / `create_priced_transaction` / `session_headers` 等）：它们会让"唯一耦合面 = HTTP 契约"这条纪律变成"复用测试夹具"，而夹具本身可以绕过契约。sim 的 live 适配器**自己实现** HTTP 调用（stdlib `http.client`），这正是它作为契约压测的价值所在。
