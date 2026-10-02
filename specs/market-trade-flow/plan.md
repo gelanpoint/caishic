@@ -62,6 +62,7 @@ market-trade-mvp/
 │   ├── __init__.py               # Flask 应用工厂：注册蓝图、静态目录、统一错误处理
 │   ├── config.py                 # 配置：端口、数据文件路径、暂存告警阈值（数值来源引用 spec.md，不在代码里另立一套）
 │   ├── clock.py                  # **时钟来源的唯一落点**（`REQ-033`/`AC-024`）：默认本机墙钟；`MT_CLOCK_FILE` 指向本地时钟文件时业务日与时间戳一律取自该值。全部业务日/时间戳取样必须经此模块，**不得在别处再写一份 `date.today()`/`datetime.now()`**（`T-SIM-00` 于 `2026-10-02` 新增）
+│   ├── console.py                # **输出编码的唯一落点**：被重定向时强制 UTF-8、接真控制台时沿用控制台编码；**不依赖 `PYTHONUTF8`/`PYTHONIOENCODING`/locale**（`CP-D` 现场验收后新增，`run.py` 与 `scripts/launch.py` 共用）
 │   ├── db.py                     # sqlite3 连接与 PRAGMA(WAL/foreign_keys)、事务辅助、建表执行入口
 │   ├── migrations/               # 顺序 SQL 建表与变更脚本（0001_init.sql …），字段以 ./data-model.md 为准
 │   ├── seed.py                   # 种子数据导入（只读本地文件，不依赖外网；REQ-025）

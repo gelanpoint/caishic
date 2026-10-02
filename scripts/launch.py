@@ -34,6 +34,8 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from app.console import force_utf8_stdio  # noqa: E402  （轻量、无副作用：先把输出编码定下来）
+
 _LINE = "-" * 68
 
 
@@ -102,6 +104,10 @@ def print_failure_hint(code: int, argv: list[str]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # 输出编码自己定，**不依赖 PYTHONUTF8 / PYTHONIOENCODING / locale**：
+    # 被重定向时强制 UTF-8（捕获方按 UTF-8 读），接真控制台时沿用控制台编码（中文才显示得对）。
+    force_utf8_stdio()
+
     argv = list(sys.argv[1:] if argv is None else argv)
     data_dir = apply_demo_data_dir()
 

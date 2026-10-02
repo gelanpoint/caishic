@@ -67,6 +67,69 @@ def test_demo_launcher_starts_a_real_service(tmp_path):
         server.stop()
 
 
+#: 与编码有关的、**不许依赖**的环境变量（`CP-D` 现场验收的第二个缺陷就出在这里）：
+#: 开发机上设了它们，输出就是 UTF-8；干净环境/现场没有它们，Windows 中文系统的 locale 是 `cp936`，
+#: 输出变成 GBK 字节，而捕获方按 UTF-8 解码 ⇒ 满屏 `\ufffd` ⇒ 断言失败。
+#: **验收基线 = 清掉它们之后仍然绿。**
+ENCODING_ENV_VARS = ("PYTHONUTF8", "PYTHONIOENCODING")
+
+
+def test_banner_is_intact_utf8_without_encoding_env_vars(tmp_path):
+    """**清掉 `PYTHONUTF8` / `PYTHONIOENCODING` 后，横幅中文必须仍是完整 UTF-8。**
+
+    这条是对"输出编码不许依赖环境变量"的回归：修复前它会红（子进程按 `cp936` 写出 GBK 字节，
+    读成 UTF-8 就是满屏 `\ufffd`）；修复后 `run.py` / `scripts/launch.py` 在被重定向时
+    自己强制 UTF-8（见 `app/console.py`），与本机开什么变量无关。
+    """
+    server = start_live_server(tmp_path / "no-encoding-env", entry="scripts/launch.py",
+                               env_drop=set(ENCODING_ENV_VARS))
+    try:
+        log = server.log_path.read_text(encoding="utf-8", errors="replace")
+        assert "\ufffd" not in log, (
+            "横幅里出现替换字符 `\\ufffd` ⇒ 子进程没有用 UTF-8 输出（输出编码依赖了环境变量/locale）。"
+            f"\n本机清掉 {ENCODING_ENV_VARS} 后的输出片段：\n{log[:600]}"
+        )
+        for expected in ("已启动", "入口 1 · 操作端", "本机 IP", "数据文件"):
+            assert expected in log, f"清掉编码变量后横幅缺少 `{expected}`：\n{log[:1200]}"
+    finally:
+        server.stop()
+
+
+def test_startup_failure_hint_is_intact_utf8_without_encoding_env_vars(tmp_path):
+    """同一件事的快速变体：端口被占用时，**两条中文提示**都要完整可读（无 `\ufffd`）。
+
+    走"端口被占用"这条短路，不必起服务，几秒内跑完；同时覆盖两处中文来源：
+    `run.py`（stderr 的占用提示）与 `scripts/launch.py`（stdout 的失败说明）。
+    """
+    blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    blocker.bind(("127.0.0.1", 0))
+    blocker.listen(4)
+    busy_port = blocker.getsockname()[1]
+    env = {name: value for name, value in os.environ.items() if name not in ENCODING_ENV_VARS}
+    env["MT_DATA_DIR"] = str(tmp_path / "busy-clean-env")
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(LAUNCHER), "--port", str(busy_port)],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",  # 显式指定：**不许**依赖 locale / PYTHONUTF8
+            errors="replace",
+            timeout=90,
+            env=env,
+        )
+    finally:
+        blocker.close()
+
+    output = (proc.stdout or "") + (proc.stderr or "")
+    assert proc.returncode != 0, f"端口被占用时不应返回 0：\n{output}"
+    assert "\ufffd" not in output, f"提示里出现替换字符 ⇒ 输出编码依赖了环境变量：\n{output}"
+    assert f"端口 {busy_port} 已被占用" in output, f"run.py 的中文占用提示不完整：\n{output}"
+    assert "启动失败" in output and f"start.bat --port {busy_port + 1}" in output, (
+        f"launch.py 的中文失败说明不完整：\n{output}"
+    )
+
+
 def test_port_conflict_shows_chinese_hint_not_parse_errors(tmp_path):
     """端口被占用时必须看到**清晰中文提示**，而不是一串"不是内部或外部命令"。
 

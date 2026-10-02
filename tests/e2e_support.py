@@ -94,7 +94,7 @@ class LiveServer:
 
 def start_live_server(data_dir: Path, *, port: int | None = None,
                       env_extra: dict | None = None, wait: bool = True,
-                      entry: str = "run.py") -> LiveServer:
+                      entry: str = "run.py", env_drop: set[str] | None = None) -> LiveServer:
     """起一个真服务（`python <entry> --port N`），等它 `/healthz` 通了再返回。
 
     `wait=False` 用于**故意制造启动失败**的场景（如 `T-033` 的端口占用检测），
@@ -103,10 +103,15 @@ def start_live_server(data_dir: Path, *, port: int | None = None,
     `entry` 默认是 `run.py`；`CP-D` 现场验收后新增 `scripts/launch.py` 这条**演示启动路径**
     （`start.bat` / `start.sh` 实际调的就是它），故它也要能被当作真服务起起来测 ——
     否则"双击能起来"这件事又只剩人工走查。
+
+    `env_drop` 用于**先清掉指定环境变量再起服务**（如 `{"PYTHONUTF8", "PYTHONIOENCODING"}`）：
+    验收基线必须是"没有任何编码相关变量"的环境，否则又是"靠环境变量才通过"（`CP-D` 教训）。
     """
     data_dir.mkdir(parents=True, exist_ok=True)
     port = port or free_port()
     env = {**os.environ, "MT_DATA_DIR": str(data_dir), **(env_extra or {})}
+    for name in (env_drop or set()):
+        env.pop(name, None)
     log_path = data_dir / "server.log"
     handle = log_path.open("w", encoding="utf-8", errors="replace")
     proc = subprocess.Popen(

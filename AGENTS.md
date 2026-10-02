@@ -76,8 +76,9 @@ python run.py
 - **双击 `start.bat`**：数据目录默认落在**用户数据目录**（`%LOCALAPPDATA%\MarketTradeDemo\data`，通常属 `C:` 这类快盘），启动时打印实际路径；**已显式设置 `MT_DATA_DIR` 时不覆盖**。`start.sh` 同规则 —— 两个脚本调用**同一个** `scripts/launch.py`，规则与全部中文提示都只在那**一处**实现。
 - **`python run.py` 的默认值未变**（仍是仓库内 `data/`）：开发与测试照旧，不设置时行为与从前完全一致。
 - **`start.bat` 必须保持纯 ASCII**（`CP-D` 现场验收发现）：`cmd.exe` 按**控制台代码页**解析 `.bat` 的**字节**，中文会被拆断成 `'…' 不是内部或外部命令` / `" was unexpected at this time.`；出现在 `if ( )` 块里时，还会把真正该看的提示（如"端口已被占用"）顶掉。故**所有中文一律由 `scripts/launch.py` 打印**，`tests/e2e/test_demo_launcher.py` 盯着这条（加一个中文字符即变红）。
-- **为什么要这样**：实测接口响应时间受**磁盘 fsync 成本**支配 —— 「点按口径」下 `C:` 为 p50 43ms/p95 73ms，仓库所在 `D:` 为 p50 297~354ms/p95 683~770ms（256KB 写 + fsync 的 p50：`C:` 2ms vs `D:` 37ms，仓库内外一样慢）。依据与已知边界见 `docs/standards/quality-gates.md` §1.1。
+- **输出编码不许依赖环境变量**（同一次验收暴露的第二条，与上一条同类）：`run.py` / `scripts/launch.py` 一律经 `app/console.py` 定编码 —— **被重定向时强制 UTF-8**（写给机器看的必须与 locale 无关），**接真控制台时沿用控制台编码**（中文才显示得对）。**不要靠 `PYTHONUTF8` / `PYTHONIOENCODING` / 系统 locale 才通过**：那会变成"我这台绿、你那台满屏 `\ufffd`"。测试里**捕获子进程输出一律显式 `encoding="utf-8", errors="replace"`**。**验收基线 = 清掉这两个变量后仍然绿**（`tests/e2e/test_demo_launcher.py` 有两条回归盯着）。
 - **换盘/换目录**：设 `MT_DATA_DIR` 即可（如 `set MT_DATA_DIR=E:\demo-data`）；若现场实测（含 `C:`）仍不达标，**按 `specs/market-trade-flow/spec.md` §4.1 记一次放宽并写明根因是磁盘** —— 先实测再决定。
+- **为什么数据目录要放快盘**：实测接口响应时间受**磁盘 fsync 成本**支配 —— 「点按口径」下 `C:` 为 p50 43ms/p95 73ms，仓库所在 `D:` 为 p50 297~354ms/p95 683~770ms（256KB 写 + fsync 的 p50：`C:` 2ms vs `D:` 37ms，仓库内外一样慢）。依据与已知边界见 `docs/standards/quality-gates.md` §1.1。
 
 **现场演示硬要求（启动形态约定，实现环节必须逐条满足）**
 

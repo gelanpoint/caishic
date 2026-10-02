@@ -26,6 +26,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from app import config  # noqa: E402  （必须在 sys.path 处理之后导入）
 from app import create_app  # noqa: E402
+from app.console import force_utf8_stdio  # noqa: E402
 from app.db import init_database  # noqa: E402
 from app.seed import import_seed, summary_line  # noqa: E402
 
@@ -97,6 +98,10 @@ def print_startup_banner(host: str, port: int, lan_ip: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # 输出编码自己定：被重定向时强制 UTF-8，接真控制台时沿用控制台编码（见 app/console.py）。
+    # **不依赖 PYTHONUTF8 / PYTHONIOENCODING / locale** —— 靠环境变量的"通过"在别人机器上会变成乱码。
+    force_utf8_stdio()
+
     parser = argparse.ArgumentParser(
         description="菜市场数字化交易与佣金系统 MVP —— 启动入口",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,

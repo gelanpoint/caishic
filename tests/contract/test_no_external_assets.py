@@ -180,6 +180,11 @@ def test_js_files_parse_as_javascript():
             [node, "--check", str(STATIC_DIR / "js" / name)],
             capture_output=True,
             text=True,
+            # 显式编码：**不要依赖 locale 或 PYTHONUTF8**（`CP-D` 现场教训：靠环境变量的
+            # 捕获在一台机器上绿、在另一台上变 `\ufffd`）。本文件里 node 的输出是 ASCII，
+            # 但规则要一致 —— 捕获子进程输出一律显式 UTF-8。
+            encoding="utf-8",
+            errors="replace",
         )
         assert result.returncode == 0, f"{name} 语法错误：\n{result.stdout}\n{result.stderr}"
 
