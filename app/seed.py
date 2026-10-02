@@ -94,7 +94,7 @@ import sqlite3
 from datetime import date, timedelta
 from pathlib import Path
 
-from . import config
+from . import clock, config
 from .db import connect
 
 # 价目表写入的 source 取值（`data-model.md` §2.7 枚举）
@@ -343,7 +343,7 @@ def _aliases_of(data: dict, code: str) -> list[str]:
 
 def _resolve_business_dates(data: dict, today: date | None) -> dict:
     offsets = data.get("business_date_offsets") or {}
-    base = today or date.today()
+    base = today or clock.today()
     resolved = {}
     for label, default in (("previous_day", -1), ("current_day", 0)):
         try:

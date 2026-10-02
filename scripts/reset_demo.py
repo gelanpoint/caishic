@@ -27,14 +27,13 @@ from __future__ import annotations
 import argparse
 import sqlite3
 import sys
-from datetime import date
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from app import config  # noqa: E402  （必须在 sys.path 处理之后导入）
+from app import clock, config  # noqa: E402  （必须在 sys.path 处理之后导入）
 from app.db import connect, init_database  # noqa: E402
 from app.seed import import_seed, summary_line  # noqa: E402
 
@@ -123,7 +122,9 @@ def verify_reset(conn: sqlite3.Connection) -> tuple[bool, list[str]]:
     ok &= active_stalls > 0 and categories > 0 and products > 0 and aliases > 0
 
     # 计价前置条件：每个在营摊位的每个在营商品，当日都要有 ≥1 分的单价
-    today = date.today().strftime("%Y-%m-%d")
+    # 「当日」必须与播种用的是同一个时钟来源（`app/clock.py`，`REQ-033`/`AC-024`）：
+    # 若这里读墙钟而种子落在注入业务日，本检查会**误报"缺价"** —— 检查本身必须先站在同一个时钟上。
+    today = clock.today_iso()
     missing_price = conn.execute(
         "SELECT COUNT(*) FROM product p JOIN stall s ON s.id = p.stall_id"
         " WHERE p.status = 'active' AND s.status = 'active'"

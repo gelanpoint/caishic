@@ -28,9 +28,8 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import date
 
-from .. import TradeError
+from .. import TradeError, clock
 from ..db import now_iso
 from .catalog import parse_business_date
 from .commission import commission_of, find_effective_rule
@@ -79,7 +78,7 @@ def stall_daily_dashboard(
     **调用同一个 `stall_day_facts()`** —— 两条路径不可能算出两个数。
     无生效口径时看板给 0（契约 §3.12 未声明 `MT-1013`，**不得报错**，见模块 docstring 第 1 条）。
     """
-    day = parse_business_date(business_date if business_date is not None else date.today().isoformat())
+    day = parse_business_date(business_date if business_date is not None else clock.today_iso())
     facts = stall_day_facts(conn, stall_id, day)
     return {
         "business_date": day,
@@ -207,7 +206,7 @@ def customer_stall_profile(conn: sqlite3.Connection, stall_no: str) -> dict:
         "stall_no": stall["stall_no"],
         "stall_name": stall["name"] or stall["stall_no"],
         "in_business": stall["status"] == "active",
-        "price_consistency_bp": price_consistency_bp(conn, int(stall["id"]), date.today().isoformat()),
+        "price_consistency_bp": price_consistency_bp(conn, int(stall["id"]), clock.today_iso()),
         "computed_at": now_iso(),
     }
 
@@ -281,7 +280,7 @@ def market_dashboard(conn: sqlite3.Connection, business_date: str | None = None)
     - 覆盖**全部在营摊位**（含当日零交易者）：市场方要看的正是"谁没开秤"，只列有数据的摊位
       会把"整摊没营业"这个最重要的事实藏起来。
     """
-    day = parse_business_date(business_date if business_date is not None else date.today().isoformat())
+    day = parse_business_date(business_date if business_date is not None else clock.today_iso())
     stalls = conn.execute("SELECT id, stall_no FROM stall WHERE status = 'active' ORDER BY stall_no").fetchall()
 
     rows: list[dict] = []

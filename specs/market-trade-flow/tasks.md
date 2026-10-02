@@ -80,6 +80,9 @@
 | T-034 | 并发与响应时间压测：多摊位并发写入不覆盖、交易号唯一、接口响应时间采样 | T-016、T-022 | | REQ-031；NFR-001；AC-020 | 并发写入后**条数与交易号唯一性均可核验**；响应时间采样结果与 `docs/standards/quality-gates.md` 的阈值比对 | tests/perf/test_concurrency.py（并发**正确性**：`AC-020` 逐笔核对 + 离线并发零丢弃）、tests/perf/test_latency.py（响应时间门禁 + 突发时延的磁盘归因**对照实验**） |
 | T-035 | 收尾核对：质量门禁逐项核对、**干净环境实证（只安装 `requirements.txt` → `python run.py` 必须能启动）**、`scripts/reset_demo.py` 从零重建演练、依赖清单锁定、把核对结果追加进项目状态 | T-029、T-031、T-032、T-033、T-034 | | —(收尾)；NFR-003、NFR-004 | CP-D 四项逐条核对；**干净环境实证须留实测输出**（依据 `docs/adr/0004-依赖范围界定-运行期与开发期.md` §3 第 4 条）；核对记录写入 `docs/PROJECT-STATE.md` | docs/PROJECT-STATE.md（追加核对记录） |
 | T-036 | **检查灵敏度验证（自动化负例，收口入口）**：① 路由表 ↔ 契约 §2 比对——**故意注册一个契约里没有的端点，比对必须变红**；② 敏感字段扫描——**故意加一个 `id_card` 字段，扫描必须命中**；③ 运行期隔离检查——**故意在 `run.py` 里 `import pytest`，检查必须变红**；④ 移除故意破坏物后必须恢复绿。四条缺一即判定对应检查不成立 | T-007、T-015 | | REQ-024；NFR-009；AC-012 | 四条负例各自的实际输出留痕（红 → 恢复绿）；作为 CP-C 第④项 | tests/contract/test_check_sensitivity.py（**七个家族的收口入口**：`T-007` 四条 + `T-029` 六形态 + `Q-19` 指标差分 + `T-034` 的 `MT-1014` 兜底；一键复跑 `python -m pytest tests/contract/test_check_sensitivity.py -q -s`） |
+| T-SIM-00 | **业务日时钟接缝**（`2026-10-02` 新增；**唯一触碰已验收主系统的改动**，按 `RL-2` 已先改 `spec.md` 增设 `REQ-033`/`AC-024` 并在 `discovery.md` 记 `D-15`）：新增 `app/clock.py` 作为**时钟来源的唯一落点**；把**实测 7 处**业务日/时间戳取样全部改为经它（`pricing.py:152`、`metrics.py:82/210/284`、`offline.py:152`、`payment.py:65`、`seed.py:346`）；`db.now_iso()` 委托给它（覆盖全部时间戳调用点）；`MT_CLOCK_FILE` 未设置时取本机墙钟。**实测得出两处计划外发现并如实登记**：① 第 8 处 Python 取样点 `scripts/reset_demo.py:126`（检查脚本读墙钟 → 若种子落在注入业务日会**误报"缺价"**），已一并修正；② 迁移里 **23 处 `DEFAULT (datetime('now','localtime'))`** 由 **SQLite 求值**、`MT_CLOCK_FILE` 管不到，其中**应用层未显式赋值的 12 列**（`transaction.created_at`、`transaction_item.created_at`、`payment.created_at`、`stall_session.created_at` 及 6 张档案表的列）**仍取墙钟** —— **本批不修**（改法要么重建表、要么让每个 INSERT 显式赋值，且既有库不会拾取新 DDL，属 `Q-17` 同类风险），已由 `test_clock_guard.py` **枚举并钉死**，并在 `spec.md` §5 声明为已知边界 | T-036 | | REQ-033；AC-024 | ① **未注入时业务日与时间戳逐字段不变**（负例：不注入 → 与改动前一致；注入 → 才走注入值）；② 注入营业日 `D` → 交易、日聚合、结算单、三个使用率指标、审计留痕的业务日**全部**为 `D`；③ **墙钟直读的 ast 守卫带 4 个合成负例**，并给出"**漏改一处会怎样**"的实测证据（临时把一处改回 `date.today()` → 守卫必红）；④ 全量 `pytest -q` 与改动前**同结果**（除已知的 `D:` 卷磁盘那条与 2 条既有 mojibake 失败）；⑤ 路由表双向比对仍 `contract=31/missing=0/extra=0`；⑥ `MT_CLOCK_FILE` 指向不存在/非法文件 → **明确报错**，不静默退回墙钟；⑦ **SQL 默认值缺口被枚举钉住**（12 列），修掉任意一列都会用例变红 | app/clock.py、app/db.py、app/seed.py、app/domain/pricing.py、app/domain/metrics.py、app/domain/offline.py、app/domain/payment.py、tests/unit/clock_support.py、tests/unit/test_clock_injection.py、tests/unit/test_clock_guard.py |
+| T-SIM-01 | **仿真骨架**：CLI、仿真时钟、**每 agent 独立确定性随机流**、只增不改事件日志、运行目录与"不改演示库"闸门；**隔离闸门两条**（`sim/**` 不得 `import app`；`run.py`/`app/**` 不得 `import sim`）**均带灵敏度负例**；**参数出处约束**（`calibration/params.json` 的 `provenance` 必填）**带灵敏度负例** | T-SIM-00 | | REQ-033；AC-024 | ① **同 seed 两次运行的 `metrics.json` + `events.jsonl` SHA-256 逐字节相同**；不同 seed 必须不同；② 隔离闸门故意 `import app` → **必红**，还原复绿；③ `provenance.kind=sourced` 缺 `ref`、或 `kind=assumed` 缺 `calibration` → **必红**，还原复绿；④ 运行前后演示库哈希不变；⑤ `sim/**` 只 import 标准库（故意 `import numpy` 必红） | sim/__init__.py、sim/__main__.py、sim/cli.py、sim/core/clock.py、sim/core/streams.py、sim/core/events.py、sim/core/registry.py、sim/calibration/params.json、tests/sim/test_sim_no_app_import.py、tests/sim/test_sim_deps_isolation.py、tests/sim/test_param_provenance.py、tests/sim/test_seed_reproducibility.py |
+| T-SIM-02 | **仿真环境层与时序**：市场/摊位/品类/商品/价目表、客流到达过程（营业日 → 时段块 → 周 → 月）、设备机队与故障-报修-维修队列 | T-SIM-01 | | REQ-033；AC-024 | ① 零决策基线跑 **90 营业日**无异常；② **守恒断言**（设备数守恒；成交笔数 = 走秤 + 私下）；③ 时序与系统 `business_date` **同轴**（注入 `D` → 该日全部落在 `D`）；④ 到达过程的强度与时段块配置一致（可由明细复算） | sim/env/market.py、sim/env/demand.py、sim/env/devices.py、tests/sim/test_env_timing.py |
 
 > **`2026-09-30` `T-031`/`T-032` 走查夹具收敛 + 按语义拆分**：新增 `tests/conftest.py`（**只放 pytest 夹具**）与
 > `tests/e2e_support.py`（**助手**：服务生命周期 / HTTP 与库助手 / 按 `data-model.md` §0·§5.1 口径的独立复算公式；
@@ -147,7 +150,7 @@
 | CP-C | T-025 完成后 | ① 人工走查 `AC-001`/`AC-002`/`AC-003`/`AC-004` 的行为；② 错误码行为与契约 §4 一致（重点：重复回调与重复补传**返回 200 且不重复记账**）；③ 交付物的错误提示是"确定性反馈"而非静默失败；④ **T-036 已通过（四条负例）**：故意加一个契约外端点 → 比对变红；故意加 `id_card` 字段 → 扫描命中；故意在 `run.py` `import pytest` → 隔离检查变红；移除后均恢复绿（**须留实测输出**） | 进入前端与端到端批次（T-026~T-034） |
 | CP-D | T-035 完成后、交付前 | ① `AGENTS.md` §3 的 **5 条现场演示硬要求**逐条现场验收（含**断网**跑一遍、**同机双窗口**跑一遍）；② 质量门禁逐项核对；③ 未决问题（`Q-2`/`Q-3`/`Q-6`/`Q-7`/`Q-8`/`Q-9`/`Q-10`/`Q-15`）状态复核，确认没有"带着已知假指标交付" | 交付 / 演示 |
 
-## 6. AC 覆盖矩阵（机械核验用：23 条 `AC` 每条至少一个验证任务）
+## 6. AC 覆盖矩阵（机械核验用：24 条 `AC` 每条至少一个验证任务）
 
 | AC | 契约测试 | 实现 | 验证（端到端/压测/演示核验） |
 | --- | --- | --- | --- |
@@ -174,5 +177,6 @@
 | `AC-021` | T-008 | T-015 | T-031 |
 | `AC-022` | T-013 | T-020、T-021 | T-032 |
 | `AC-023` | T-013 | T-020、T-022 | T-032 |
+| `AC-024` | —（时钟接缝属实现层能力，无契约端点） | T-SIM-00 | T-SIM-00（默认逐字段不变 + 注入生效 + 7 处取样点逐个覆盖）、T-SIM-01、T-SIM-02 |
 
 > 覆盖矩阵中的任务编号必须都存在于 §3；`AC` 与任务编号的对应关系是**核验依据**，不是说明性文字 —— 改动任务表须同步本矩阵。

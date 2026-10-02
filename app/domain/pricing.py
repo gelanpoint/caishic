@@ -20,9 +20,8 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import date
 
-from .. import TradeError
+from .. import TradeError, clock
 from ..db import now_iso
 from .audit import write_audit
 from .catalog import parse_business_date
@@ -149,7 +148,7 @@ def create_transaction(
         )
 
     if business_date is None:
-        business_date = date.today().isoformat()
+        business_date = clock.today_iso()
     else:
         business_date = parse_business_date(business_date, field="business_date")
     lines: list[tuple[int, int, int, int, int, int]] = []

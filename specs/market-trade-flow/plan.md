@@ -61,6 +61,7 @@ market-trade-mvp/
 ├── app/
 │   ├── __init__.py               # Flask 应用工厂：注册蓝图、静态目录、统一错误处理
 │   ├── config.py                 # 配置：端口、数据文件路径、暂存告警阈值（数值来源引用 spec.md，不在代码里另立一套）
+│   ├── clock.py                  # **时钟来源的唯一落点**（`REQ-033`/`AC-024`）：默认本机墙钟；`MT_CLOCK_FILE` 指向本地时钟文件时业务日与时间戳一律取自该值。全部业务日/时间戳取样必须经此模块，**不得在别处再写一份 `date.today()`/`datetime.now()`**（`T-SIM-00` 于 `2026-10-02` 新增）
 │   ├── db.py                     # sqlite3 连接与 PRAGMA(WAL/foreign_keys)、事务辅助、建表执行入口
 │   ├── migrations/               # 顺序 SQL 建表与变更脚本（0001_init.sql …），字段以 ./data-model.md 为准
 │   ├── seed.py                   # 种子数据导入（只读本地文件，不依赖外网；REQ-025）
@@ -98,9 +99,36 @@ market-trade-mvp/
 └── tests/
     ├── contract/                 # 契约测试：先于实现编写，对齐 ./contracts/
     ├── unit/                     # 领域逻辑单测（含涉钱路径的用例级对账测试）
-    ├── e2e/                      # AC-001 ~ AC-023 的端到端验证
+    │   ├── clock_support.py          # `REQ-033`/`AC-024` 共用支撑（**助手与常量，不含夹具**；仿 `contract_support.py` 先例，避免多目录同名 conftest 撞车）
+    │   ├── test_clock_injection.py   # 接缝**行为面**：默认逐字段不变 + 注入生效（全链路营业日）+ 报错响亮 + 每次重读
+    │   └── test_clock_guard.py       # 接缝**检查面**：墙钟直读的 ast 守卫（含 4 个合成负例）+ SQL 列默认值缺口枚举（钉住 12 列）
+    ├── sim/                      # 多智能体仿真的检查类用例（**与 tests/contract 分开**，不改后者的收集数与红绿分布；`T-SIM-01`/`T-SIM-02` 于 `2026-10-02` 新增）
+    ├── e2e/                      # AC-001 ~ AC-024 的端到端验证
     └── perf/                     # 并发与响应时间压测脚本（NFR-001 与继承基线的验证）
 ```
+
+> **多智能体仿真包（`sim/`，`docs/sim-design.md`；`T-SIM-01`/`T-SIM-02` 于 `2026-10-02` 开始按批次创建）**：
+> **只依赖 Python 标准库**（不新增运行期依赖，`ADR-0004` 的两期边界不变）；**不得被 `run.py` 或 `app/**` 引用**；
+> **唯一跨侧接口是 HTTP 契约的 31 个端点**（`sim/**` 不得 `import app`，机械检查带灵敏度负例）。
+> 本目录为**目录级授权**，内部文件由 `./tasks.md` §3 的 `T-SIM-01`/`T-SIM-02` 逐文件授权；
+> 其余计划文件（`agents/`、`rules/`、`bridge/`、`observe/`、`verify/`、`scenarios/`）在 `docs/sim-design.md` §2.2 已设计，
+> **由后续批次 `T-SIM-03`~`T-SIM-10` 各自登记后再创建**（未登记的不得出现）。
+>
+> ```
+> sim/
+> ├── __init__.py · __main__.py · cli.py         # 命令行入口（--mode/--scenario/--days/--seed/--replications/--verify/--report）
+> ├── core/
+> │   ├── clock.py        # 仿真时钟：营业日 / 时段块 / 周 / 月推进（与系统 business_date 同轴）
+> │   ├── streams.py      # 每 agent 独立确定性随机流（同 seed 逐字节可复现的地基）
+> │   ├── events.py       # 只增不改的事件日志（JSONL）
+> │   └── registry.py     # agent 注册与 id 映射
+> ├── env/
+> │   ├── market.py       # 市场 / 摊位 / 品类 / 商品 / 基准价 / 价目表
+> │   ├── demand.py       # 客流到达过程（按时段块）
+> │   └── devices.py      # 设备机队 / 故障 / 报修队列 / 维修工台
+> └── calibration/
+>     └── params.json     # **全部参数 + 出处字段**（`provenance.kind ∈ {sourced, assumed}`，由 tests/sim 强制）
+> ```
 
 > **测试支撑模块（非用例，`T-031`/`T-035` 按语义拆出，逐文件授权）**：`tests/conftest.py`（**只放 pytest 夹具**）、
 > `tests/e2e_support.py`（端到端助手：服务生命周期 / HTTP 与库助手 / 独立复算公式）、

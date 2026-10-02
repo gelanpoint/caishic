@@ -14,18 +14,23 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from datetime import datetime
 from pathlib import Path
 
-from . import config
+from . import clock, config
 
 # 迁移脚本命名：`NNNN_描述.sql`（按文件名升序执行）
 _MIGRATION_NAME_RE = re.compile(r"^\d{4}_.+\.sql$")
 
 
 def now_iso() -> str:
-    """本机本地时间的 ISO-8601 文本（`YYYY-MM-DD HH:MM:SS`，`data-model.md` §0 时间字段约定）。"""
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    """本机本地时间（或注入时钟）的 ISO-8601 文本（`data-model.md` §0 时间字段约定）。
+
+    `T-SIM-00`（`REQ-033` / `AC-024`）之后本函数只是 `app/clock.py` 的**转发**：
+    **时间戳的来源只有一个落点**（否则"现在是几点"会有 N 个出处）。全项目的时间戳都经这里取，
+    因此注入时钟能一次覆盖全部时间戳——包括审计留痕：**注入模式下审计时间戳 = 仿真时钟，不是墙钟**
+    （语义声明见 `spec.md` §5「边界与例外」）。
+    """
+    return clock.now_iso()
 
 
 def connect(db_path: Path | str | None = None) -> sqlite3.Connection:

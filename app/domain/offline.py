@@ -22,9 +22,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import date
 
-from .. import TradeError, config
+from .. import TradeError, clock, config
 from ..db import now_iso
 from .audit import write_audit
 from .pricing import MAX_ITEMS, MAX_WEIGHT_GRAMS, create_transaction
@@ -149,7 +148,7 @@ def stage_transaction(
     items = _parse_staged_items(body)
     stall_id = stall["stall_id"]
     actor = f"stall-{stall['stall_no']}"
-    day = date.today().isoformat()
+    day = clock.today_iso()
     # 本地副本本体：补传时正是靠它重建 §3.6 的请求体（`NFR-013` 要求补传成功后置空）
     payload_json = json.dumps({"items": items, "client_idempotency_key": key}, ensure_ascii=False)
 

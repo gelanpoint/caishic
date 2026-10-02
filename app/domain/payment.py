@@ -13,9 +13,8 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import date
 
-from .. import TradeError
+from .. import TradeError, clock
 from ..db import now_iso
 from .audit import write_audit
 from .numbering import insert_payment_row
@@ -62,7 +61,7 @@ def pay_transaction(
             "MT-1001", "交易不在可收款状态", {"status": txn["status"], "transaction_no": transaction_no}
         )
 
-    business_date = txn["business_date"] or date.today().isoformat()
+    business_date = txn["business_date"] or clock.today_iso()
 
     if method == "cash":
         operator = body.get("operator")
