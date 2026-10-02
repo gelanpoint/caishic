@@ -16,11 +16,19 @@
 | 3 路轻并发（"评委数人"同时点） | **判门禁**（合并进同一组样本） |
 | 10 路并发写突发 | 只**报告**：它是容量观察，见 `test_concurrency.py` 与下面的环境归因 |
 
-**环境归因（实测证据，不是推断）**：数据目录落在 `D:` 卷上时，10 路并发写的 p95 约 2.2s；
+**环境归因（实测证据，不是推断）**：数据目录落在 `D:` 卷（仓库所在卷）上时，10 路并发写的 p95 约 2.2s；
 而**同一段代码、同一负载**落在 `C:` 的系统临时目录上时 p95 约 0.2s。
-`D:` 卷的 256KB 写 + fsync p50 为 **32ms**，`C:` 为 **2ms**（各 20 次，且 `D:` 上仓库内外都一样慢）
+`D:` 卷的 256KB 写 + fsync p50 为 **32~38ms**，`C:` 为 **2ms**（各 20 次，且 `D:` 上仓库内外都一样慢）
 ⇒ 差异随**盘**，不随代码或路径。`test_burst_latency_is_limited_by_disk_fsync_not_by_product`
 把这条对照实验**放进用例**里，使它可复跑、而不是靠一段口头结论。
+
+**门禁用例的样本从哪个数据目录取（`2026-09-30` 父代理裁定 ① 的落地）**：
+`MT_DATA_DIR` 显式设置时 → 取**它所在的卷**（用同级临时目录，**绝不写进演示库本身**）；
+未设置时 → 取**系统临时目录**（与演示数据目录同类的位置：用户数据/临时区，通常在快盘）。
+理由：仓库内 `.pytest-tmp` 是 **pytest 的落点**、不是交付环境 ——
+拿它当"接口响应时间"的测量环境，量到的是"这台开发机的仓库盘"，而现场数据目录按裁定**不在**那里。
+`D:` 的那组数字没有被藏起来：`test_burst_latency_is_limited_by_disk_fsync_not_by_product`
+仍以仓库卷为对照并打印，`quality-gates.md` §1.1 的「已知边界」也留着它，并标明"不是本阈值的适用场景"。
 """
 
 from __future__ import annotations
@@ -43,6 +51,20 @@ from e2e_support import (
     start_live_server,
 )
 from gates import GATE_FILE, parse_latency_thresholds, percentile
+
+
+def gate_data_dir() -> Path:
+    """门禁用例的样本目录：跟着**演示数据目录所在卷**走（见模块 docstring）。
+
+    - `MT_DATA_DIR` 已设置 → 在**同一父目录**下另开一个临时目录：同一个卷、**不碰演示库**；
+    - 未设置 → 系统临时目录（演示数据目录落点的同类位置）。
+    """
+    configured = os.environ.get("MT_DATA_DIR")
+    if configured:
+        parent = Path(configured).resolve().parent
+        parent.mkdir(parents=True, exist_ok=True)
+        return Path(tempfile.mkdtemp(prefix="mt-perf-gate-", dir=parent))
+    return Path(tempfile.mkdtemp(prefix="mt-perf-gate-"))
 
 
 # ---------------------------------------------------------------------------
@@ -69,8 +91,11 @@ def test_latency_thresholds_are_read_from_the_gate_file():
 # ---------------------------------------------------------------------------
 
 
-def test_interface_latency_within_gate_thresholds(live_server):
+def test_interface_latency_within_gate_thresholds():
     """门禁项：在**演示数据目录所在的卷**上，按"摊主点按"的形态采样接口响应时间。
+
+    样本目录由 `gate_data_dir()` 决定（跟着 `MT_DATA_DIR` 的卷走，见模块 docstring）；
+    起停与清理在本用例内完成，**用的不是仓库内 `.pytest-tmp`**。
 
     样本 = 单客户端连续 50 笔（选品→计价→收款，与现场动线同形）+ 3 路轻并发 50 笔
     （"评委数人同时点"），共 100 个 —— 这组样本里**没有 10 路写突发**：突发是容量观察，
@@ -81,6 +106,18 @@ def test_interface_latency_within_gate_thresholds(live_server):
     （最近秩法偏保守，取第 96 位），一次 hiccup 不再左右判定。
     """
     thresholds = parse_latency_thresholds()
+    data_dir = gate_data_dir()
+    live_server = start_live_server(data_dir)
+    print(f"[门禁] 样本数据目录：{data_dir}（演示配置 MT_DATA_DIR={os.environ.get('MT_DATA_DIR') or '未设置'}）")
+    try:
+        _measure_interactive_latency(live_server, thresholds)
+    finally:
+        live_server.stop()
+        shutil.rmtree(data_dir, ignore_errors=True)
+
+
+def _measure_interactive_latency(live_server, thresholds: dict) -> None:
+    """采样 + 判门禁 + 失败时给出环境归因（拆出来只为让用例本体短到看得清"量了什么"）。"""
     stalls = ["A-01", "A-02", "A-03", "A-04"]
     tokens = {stall: bind_stall(live_server, stall) for stall in stalls}
     products = {stall: active_products(live_server, tokens[stall])[0] for stall in stalls}
@@ -128,12 +165,12 @@ def test_interface_latency_within_gate_thresholds(live_server):
         raise AssertionError(
             f"接口响应时间超阈：p50={p50:.0f}ms / p95={p95:.0f}ms / p99={p99:.0f}ms，"
             f"阈值 {thresholds['source']}（{GATE_FILE.name}）。\n"
-            f"环境实测（同一段原始 I/O）：256KB+fsync p50 —— C: {fast:.0f}ms vs D: {repo:.0f}ms。\n"
-            "该阈值**在本机 D: 盘（演示数据目录所在卷）上余量很薄**：本用例量的是"
-            "「单客户端点按 + 3 路轻并发」，D: 的 fsync 成本直接吃掉了大部分余量；"
-            "若这两个数差得远，根因是**盘**不是接口实现（对照实验见 "
+            f"环境实测（同一段原始 I/O）：256KB+fsync p50 —— 系统临时卷 {fast:.0f}ms vs 仓库所在卷 {repo:.0f}ms。\n"
+            "本用例量的是「单客户端点按 + 3 路轻并发」；它超阈时，先看上面两个 fsync 数是否差得远 ——"
+            "**差得远就是盘的问题，不是接口实现的问题**（对照实验见 "
             "test_burst_latency_is_limited_by_disk_fsync_not_by_product）。\n"
-            "处置属人工决定（把现场数据目录挪到 C:，或按 spec.md §4.1 记一次放宽）—— 见 docs/PROJECT-STATE.md。"
+            "处置：把现场数据目录放到快盘（`MT_DATA_DIR`，`start.bat` 默认已这么做），"
+            "或按 spec.md §4.1 记一次放宽（写明根因是磁盘）—— 先实测再决定。"
         )
 
 
@@ -200,14 +237,15 @@ def test_burst_latency_is_limited_by_disk_fsync_not_by_product(live_server):
     repo_p95 = burst(live_server)
     fast_fsync = _raw_fsync_p50_ms(Path(tempfile.gettempdir()) / "mt-perf-fsync")
     repo_fsync = _raw_fsync_p50_ms(REPO_ROOT / ".pytest-tmp" / "perf-fsync")
-    print(f"[归因] 10 路并发写突发 p95：系统临时目录（C:）{fast_p95:.0f}ms vs "
-          f"演示数据目录所在卷（D:）{repo_p95:.0f}ms；"
-          f"原始 256KB+fsync p50：C: {fast_fsync:.0f}ms vs D: {repo_fsync:.0f}ms")
+    print(f"[归因] 10 路并发写突发 p95：系统临时卷（`%TEMP%`，快盘一类）{fast_p95:.0f}ms vs "
+          f"仓库所在卷（`.pytest-tmp`）{repo_p95:.0f}ms；"
+          f"原始 256KB+fsync p50：系统临时卷 {fast_fsync:.0f}ms vs 仓库所在卷 {repo_fsync:.0f}ms")
     assert fast_p95 < thresholds["p95_ms"], (
         f"**产品侧**的并发写时延也不达标：快卷上 p95={fast_p95:.0f}ms 已超 {thresholds['source']}"
         f"（那就不是盘的问题，而是实现的问题）"
     )
     if repo_fsync > fast_fsync * 2 and repo_p95 >= thresholds["p95_ms"]:
-        print("[归因] 结论：D: 卷 fsync 明显更慢，突发 p95 随盘上升 —— "
-              "这是**现场环境风险**（演示数据目录在 D:），需人工决定是否迁移数据目录或记录放宽，"
-              "**不是**接口实现缺陷（同一代码在 C: 上达标）")
+        print("[归因] 结论：仓库所在卷的 fsync 明显更慢，突发 p95 随盘上升 ⇒ **差异随盘、不随代码**。"
+              "现场数据目录按裁定放在用户数据目录一类快盘（`start.bat` 默认如此），"
+              "故这组慢盘数字是**已知边界**、不是本阈值的适用场景；"
+              "若现场实测（含快盘）仍不达标，按 spec.md §4.1 记一次放宽并写明根因是磁盘。")

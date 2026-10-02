@@ -33,5 +33,20 @@ if ! "$PY_CMD" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)
     exit 1
 fi
 
+# 演示数据目录放到**用户数据目录**（避开可能很慢的工作目录所在卷）——
+# 与 start.bat 同一纪律：不覆盖用户已显式设置的 MT_DATA_DIR；无法确定用户数据目录时什么也不设
+# （行为与改动前完全一致，即仓库内 data/）。`python run.py` 的默认值没有改变。
+# 依据（实测）：接口响应时间受**磁盘 fsync 成本**支配，同一代码同一负载在不同卷上差一个数量级；
+# 详见 docs/standards/quality-gates.md §1.1 的「响应时间阈值必须连口径一起读」注。
+if [ -z "${MT_DATA_DIR:-}" ]; then
+    _user_data="${XDG_DATA_HOME:-$HOME/.local/share}"
+    if [ -n "${_user_data:-}" ]; then
+        MT_DATA_DIR="$_user_data/MarketTradeDemo/data"
+        export MT_DATA_DIR
+        echo "[演示] 数据目录已指向用户数据目录：$MT_DATA_DIR"
+        echo "        如需改回仓库内 data/，先执行：unset MT_DATA_DIR"
+    fi
+fi
+
 echo "正在启动服务（首次启动会自动建库并导入种子数据）..."
 exec "$PY_CMD" run.py "$@"

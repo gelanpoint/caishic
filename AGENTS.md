@@ -71,6 +71,13 @@ python run.py
 # 或双击 start.bat（Windows；实现环节后可用）
 ```
 
+**演示数据目录放哪（`2026-09-30` 裁定，现场按此执行）**
+
+- **双击 `start.bat`**：脚本自动把数据目录设到**用户数据目录**（`%LOCALAPPDATA%\MarketTradeDemo\data`，通常落在 `C:` 这类快盘），并在控制台打印实际路径；**已显式设置 `MT_DATA_DIR` 时不覆盖**。`start.sh` 同规则（`$XDG_DATA_HOME` 或 `~/.local/share`）。
+- **`python run.py` 的默认值未变**（仍是仓库内 `data/`）：开发与测试照旧，不设置时行为与从前完全一致。
+- **为什么要这样**：实测接口响应时间受**磁盘 fsync 成本**支配 —— 「点按口径」下 `C:` 为 p50 43ms/p95 73ms，仓库所在 `D:` 为 p50 297~354ms/p95 683~770ms（256KB 写 + fsync 的 p50：`C:` 2ms vs `D:` 37ms，仓库内外一样慢）。依据与已知边界见 `docs/standards/quality-gates.md` §1.1。
+- **换盘/换目录**：设 `MT_DATA_DIR` 即可（如 `set MT_DATA_DIR=E:\demo-data`）；若现场实测（含 `C:`）仍不达标，**按 `specs/market-trade-flow/spec.md` §4.1 记一次放宽并写明根因是磁盘** —— 先实测再决定。
+
 **现场演示硬要求（启动形态约定，实现环节必须逐条满足）**
 
 1. 启动时**打印局域网 IP 地址**，便于手机真机扫码。
