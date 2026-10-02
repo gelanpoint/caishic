@@ -109,6 +109,25 @@ class Params:
         return sorted(k for k in self.parameters() if self.kind(k) == "assumed")
 
 
+def with_overrides(params: Params, overrides: dict[str, Any]) -> Params:
+    """按场景覆盖若干参数的**取值**（`value`），出处字段原样保留。**不修改入参**（深拷贝）。
+
+    `T-SIM-06` 的对照实验靠它成立：`sim/scenarios/*.json` 只声明"这一臂改了哪几个参数"，
+    其余一律取基线 —— 于是"两组只差一件事"是**数据结构保证**的，而不是靠人记得别改别的。
+    出处字段（`provenance`）**不因覆盖而消失**：报告要能说清"这个数被谁改成了多少、它本来是什么出处"。
+    """
+    import copy
+
+    raw = copy.deepcopy(params.raw)
+    parameters = raw.get("parameters") or {}
+    unknown = sorted(set(overrides) - set(parameters))
+    if unknown:
+        raise ParamsError(f"场景覆盖了未定义的参数：{unknown}（参数文件：{params.source}）")
+    for key, value in overrides.items():
+        parameters[key]["value"] = value
+    return Params(raw, f"{params.source} (+scenario overrides)")
+
+
 def load_params(path: Path | str | None = None) -> Params:
     """读入并校验参数文件；任何出处不合规都**立刻报错**（不静默放过）。"""
     target = Path(path) if path is not None else DEFAULT_PARAMS_PATH

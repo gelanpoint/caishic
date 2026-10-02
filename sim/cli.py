@@ -42,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--mode", choices=("model", "live"), default="model", help="运行模式")
-    parser.add_argument("--days", type=int, default=30, help="营业日数（12 个月 = 360）")
+    parser.add_argument("--days", type=int, default=None, help="营业日数（缺省：骨架 30 / 集成运行 360）")
     parser.add_argument("--seed", type=int, default=20261002, help="随机种子（决定可复现性）")
     parser.add_argument("--agents", type=int, default=DEFAULT_AGENTS, help="骨架占位 agent 数（T-SIM-02 起由环境层决定）")
     parser.add_argument("--start", default=DEFAULT_START, help="首个营业日 YYYY-MM-DD")
@@ -54,6 +54,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--params", default=str(DEFAULT_PARAMS_PATH), help="参数文件（含出处，必填 provenance）")
     parser.add_argument("--out-dir", default=None, help="产物目录（默认 data/sim/<mode>-<seed>）")
+    parser.add_argument(
+        "--scenario",
+        default=None,
+        help="跑集成运行（**真跑四个 Agent**，`T-SIM-06`）：S0..S6 之一，或 all（全部场景）；"
+             "缺省仍走 T-SIM-01 的骨架运行",
+    )
+    parser.add_argument("--integrated", action="store_true", help="不指定场景时按 S0 基线跑集成运行")
+    parser.add_argument("--days-full", type=int, default=360, help="集成运行/研究档的营业日数")
+    parser.add_argument("--arrivals", type=int, default=None, help="集成运行覆盖日到达数（缩减档用；缺省用参数值）")
+    parser.add_argument("--consumers", type=int, default=None, help="集成运行覆盖消费者 agent 数")
+    parser.add_argument("--sensitivity-days", type=int, default=60, help="敏感性档的营业日数")
+    parser.add_argument("--lhs-samples", type=int, default=64, help="分层拉丁超立方样本数")
+    parser.add_argument("--no-study", action="store_true", help="只跑场景臂，跳过全局 OAT/LHS（省时间）")
     return parser
 
 
@@ -262,6 +275,47 @@ def _sum_block_field(events_path: Path, field: str) -> int:
     return total
 
 
+def _run_integrated(args, params, base_out: Path) -> int:
+    """集成运行（`T-SIM-06`）：真跑四个 Agent；指定场景时出报告，不指定时按 S0 基线跑一次。
+
+    **为什么缺省路径仍是骨架运行**：`T-SIM-01` 的验收①（同 seed 逐字节一致）与
+    "新增 agent 不平移他人随机数"两条判据**直接断言 `skeleton_step` 事件的存在**，
+    那是已验收的判据 —— 不为新功能而改。集成运行由 `--scenario` / `--integrated` 触发。
+    """
+    from .bridge.study import run_study
+
+    days = args.days if args.days is not None else args.days_full
+    scenario_ids = None
+    if args.scenario and args.scenario.lower() != "all":
+        scenario_ids = [item.strip().upper() for item in args.scenario.split(",") if item.strip()]
+    study = run_study(
+        params,
+        days=days,
+        replications=args.replications,
+        seed=args.seed,
+        out_root=base_out / "study",
+        scenario_ids=scenario_ids,
+        arrivals=args.arrivals,
+        consumers=args.consumers,
+        sensitivity_days=args.sensitivity_days,
+        lhs_samples=args.lhs_samples,
+        with_sensitivity=not args.no_study,
+        progress=lambda message: print(message),
+    )
+    if args.no_study:
+        print("[--no-study] 已跳过全局 OAT / LHS / 结论稳健性；报告里的敏感性一节会如实标为空"
+              "（**没跑 ≠ 不敏感**）")
+    for row in study["results"]:
+        m04 = row["metrics"]["M-04"]
+        print(
+            f"[{row['scenario']}] {row['arm']}: 走秤率 {m04['ratio']:.4f} "
+            f"({m04['numerator']}/{m04['denominator']})，事件目录 {row['out_dir']}"
+        )
+    print(f"[报告] {study['paths']['report']}")
+    print(f"[产物] {study['paths']['metrics']} · {study['paths']['scenarios']} · {study['paths']['sensitivity']}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -278,11 +332,18 @@ def main(argv: list[str] | None = None) -> int:
     except ParamsError as exc:
         print(f"[参数错误] {exc}", file=sys.stderr)
         return 4
+    # `--days` 缺省按路径分流：骨架/环境层 30 日，集成运行 360 日（12 个月，Q5 的判定窗口）
+    if args.days is None:
+        args.days = args.days_full if (args.scenario or args.integrated) else 30
     if args.days < 1 or args.agents < 0 or args.replications < 1:
         print("[用法错误] --days ≥1、--agents ≥0、--replications ≥1", file=sys.stderr)
         return 2
 
     base_out = Path(args.out_dir) if args.out_dir else Path("data") / "sim" / f"model-{args.seed}"
+
+    if args.scenario or args.integrated:
+        return _run_integrated(args, params, base_out)
+
     runner = run_env_baseline_once if args.env else run_model_once
     results = []
     for rep in range(args.replications):

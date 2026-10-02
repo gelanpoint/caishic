@@ -1,0 +1,234 @@
+"""月频结构决策（`T-SIM-06`；商户 / 市场方 / 监管；频率分层见设计 §4.1）。
+
+拆出本模块的原因同 `day_loop.py`：`quality-gates.md` §1.2 的"单文件 ≤ 400 行"（`Q-16`：按语义拆分，
+不放宽阈值）。本模块只做**月频**的事：商户选动作与更新 Q/EWMA、市场方分配预算（带迟滞）、
+监管抽检、市场方现金流、消费者信任的月度汇总。**它不计算任何指标** —— 指标只认事件流。
+"""
+
+from __future__ import annotations
+
+from ..agents.consumer import update_trust
+from ..agents.market_admin import repair_capacity
+from ..agents.merchant import COMPLY, merchant_terms
+from ..core.clock import DAYS_PER_MONTH
+
+
+# ---------------------------------------------------------------------------
+def _merchant_params_for_period(world, stall):
+    """本期的商户参数：**抽检率换成监管的当期名义抽检率**（S2 的机制链在此接上）。
+
+    `p_check` 的口径必须说清：商户效用里的 `Ψ = p_check·(F_short + Loss_rep)` 用的是**名义**
+    抽检率（场景变量），而监管的**实现**发现数由抽样记录给出 —— 两者口径不同，**报告同时给出、不混算**。
+    """
+    from ..agents.merchant import merchant_params
+
+    overrides = {"p_check": world.regulator.rp.inspection_rate}
+    if world.self_funded:
+        overrides["device_share_cents"] = world.self_funded_share_cents
+    return merchant_params(world.params, **overrides)
+
+
+def peer_mean_q(agents) -> float:
+    """上一期全群 Q 均值（同伴影响项 `ρ` 的输入；与 `sim/agents/merchant.py` 同口径）。"""
+    live = [a for a in agents if a.q]
+    if not live:
+        return 0.0
+    return sum(sum(a.q.values()) / len(a.q) for a in live) / len(live)
+
+
+def market_cash_month(world, *, active_stalls: int, period: int) -> dict:
+    """市场方**当月现金流**（M-17 的分子/分母）：收入侧 / 费用侧逐项落进事件，可被逐项核对。
+
+    每一项都注明它来自哪个参数；`subsidy` 的**摊销口径是假设**（补贴是资本性的一次性收入，
+    这里按设备摊销期摊到每月），故 M-17/M-18 的结论必须与假设分区展示。
+    """
+    params = world.params
+    commissions = world.month_commission_cents + world.month_buyer_fee_cents
+    channel_fee = commissions * float(params.value("channel_fee_rate_bp")) / 10000.0
+    device_capex = float(world.fleet.total) * float(params.value("scale_unit_price_cents")) + float(
+        params.value("device_screen_count")
+    ) * float(params.value("device_screen_unit_price_cents"))
+    screen_capex = float(params.value("device_screen_count")) * float(params.value("device_screen_unit_price_cents"))
+    sign_capex = float(params.value("price_sign_cents_per_stall")) * active_stalls
+    amort_months = float(params.value("device_amortization_months"))
+    income = {
+        "commission": world.month_commission_cents,
+        "buyer_fee": world.month_buyer_fee_cents,
+        "stall_fee": float(params.value("stall_fee_cents_per_month")) * active_stalls,
+        "bank": float(params.value("bank_funding_cents_3y")) / 36.0,
+        "subsidy": (device_capex + sign_capex) * float(params.value("subsidy_ratio_bp")) / 10000.0 / amort_months,
+    }
+    expense = {
+        "device_amortization": device_capex / amort_months,
+        "maintenance": world.month_repairs * float(params.value("repair_cost_cents")),
+        "verification": float(params.value("market_verification_cents_per_month")),
+        "network": float(params.value("network_refit_cents_per_market")) / float(params.value("network_amortization_months")),
+        "labor": float(params.value("market_labor_cents_per_month")),
+        "channel_fee": channel_fee,
+    }
+    return {
+        "period": period,
+        "income_cents": round(sum(income.values()), 6),
+        "expense_cents": round(sum(expense.values()), 6),
+        "net_cents": round(sum(income.values()) - sum(expense.values()), 6),
+        "income_detail": {k: round(v, 6) for k, v in sorted(income.items())},
+        "expense_detail": {k: round(v, 6) for k, v in sorted(expense.items())},
+        "active_stalls": active_stalls,
+    }
+
+
+def decide_month_start(world, log, business_date: str, period: int, usage_rate: float) -> None:
+    """月初：退出生效 → 市场方预算 → 逐摊"要不要用/怎么用"。"""
+    from .model_adapter import adopt_decision  # 延迟导入：model_adapter 在运行时才需要本模块
+    for stall in world.stalls.values():
+        if stall.active and stall.merchant.exited and stall.exits_period is not None:
+            stall.active = False
+            log.emit(
+                "stall_exit",
+                business_date=business_date,
+                period=period,
+                stall_no=stall.stall_no,
+                decided_period=stall.exits_period,
+            )
+    record = world.admin.step(period, installed_ratio=1.0, usage_rate=usage_rate)
+    world.capacity_per_day = repair_capacity(world.admin.maintenance_budget_cents, float(world.params.value("repair_cost_cents")))
+    log.emit("market_admin_period", business_date=business_date, repair_capacity=world.capacity_per_day, **record)
+
+    for stall in world.stalls.values():
+        stall.upfront_cents = float(world.self_funded_upfront_cents) if world.self_funded else 0.0
+        stall.self_funded_share_cents = float(world.self_funded_share_cents)
+        mp = _merchant_params_for_period(world, stall)
+        volume = stall.prev_volume_cents or world.initial_volume_cents
+        scale_txns = stall.prev_scale_txns or max(1, int(round(world.daily_arrivals / len(world.stalls) * DAYS_PER_MONTH * 0.5)))
+        terms = merchant_terms(COMPLY, mp, volume_cents=volume, scale_txn_count=scale_txns)
+        if not stall.adopted and stall.active:
+            stall.adopted = adopt_decision(
+                upfront_cents=stall.upfront_cents,
+                monthly_net_benefit_cents=terms.utility,
+                cost_weight=world.adoption_cost_weight,
+                horizon_months=stall.horizon_months,
+            )
+            if stall.adopted:
+                log.emit(
+                    "stall_adopted",
+                    business_date=business_date,
+                    period=period,
+                    stall_no=stall.stall_no,
+                    upfront_cents=stall.upfront_cents,
+                    horizon_months=round(stall.horizon_months, 6),
+                    cost_weight=world.adoption_cost_weight,
+                    monthly_net_benefit_cents=round(terms.utility, 6),
+                )
+        if not stall.active:
+            continue
+        #: **本次私下交易是否做得到**（`S6` 的 `feas(evade)`）。抽一次、本期有效：
+        #: 出口查验与扫码覆盖是"这段时间有没有人管"的环境事实，不是每笔独立掷骰子。
+        #: 抽签用该摊位自己的 `cheat` 流（同一用途 = 该摊位的作弊/私下决策），故**不影响别的摊位**。
+        cheat_rng = world.streams.stream(stall.stall_no, "cheat")
+        stall.evade_feasible = cheat_rng.random() < world.evade_feasibility
+        action = stall.merchant.choose(cheat_rng)
+        world.actions[stall.stall_no] = action
+        stall.current_action = action
+        log.emit(
+            "merchant_period",
+            business_date=business_date,
+            period=period,
+            stall_no=stall.stall_no,
+            action=action,
+            adopted=stall.adopted,
+            upfront_cents=stall.upfront_cents,
+            adopted_channel="scale" if (stall.adopted and action == COMPLY) else "shadow",
+            expected_volume_cents=round(volume, 6),
+            expected_scale_txns=scale_txns,
+            expected_terms=terms.as_dict(),
+        )
+
+
+def close_month(world, log, business_date: str, period: int, month_totals: dict) -> float:
+    """月末：商户实现值 → Q/EWMA；监管抽检；市场方现金流；消费者信任分布。返回本月观测到的使用率。"""
+    from ..agents.merchant import merchant_terms as terms_fn
+
+    observed = world.month_on_scale + sum(
+        world.month_by_stall.get(stall_no, {}).get("shadow_txns", 0) for stall_no in world.stalls
+    )
+    usage_rate = world.month_on_scale / observed if observed else float(world.params.value("scale_use_baseline_rate"))
+    peer_q = peer_mean_q([s.merchant for s in world.stalls.values()])
+    active_start = month_totals["active_start"]
+    for stall in world.stalls.values():
+        if stall.current_action is None:
+            continue
+        realized = world.month_by_stall.get(stall.stall_no, {"volume_cents": 0, "scale_txns": 0, "short_txns": 0})
+        mp = _merchant_params_for_period(world, stall)
+        volume = max(1.0, float(realized["volume_cents"]))
+        realized_terms = terms_fn(stall.current_action, mp, volume_cents=volume, scale_txn_count=realized["scale_txns"])
+        stall.merchant.observe(stall.current_action, realized_terms, volume, peer_q)
+        if stall.merchant.exited and stall.exits_period is None:
+            stall.exits_period = period
+        stall.prev_volume_cents = float(realized["volume_cents"])
+        stall.prev_scale_txns = int(realized["scale_txns"])
+        log.emit(
+            "merchant_month",
+            business_date=business_date,
+            period=period,
+            stall_no=stall.stall_no,
+            action=stall.current_action,
+            realized_volume_cents=round(float(realized["volume_cents"]), 6),
+            realized_scale_txns=int(realized["scale_txns"]),
+            realized_short_txns=int(realized["short_txns"]),
+            net_income_cents=round(realized_terms.utility, 6),
+            ewma_utility=round(stall.merchant.ewma_utility, 6),
+            exited=stall.merchant.exited,
+        )
+
+    offenders = sum(
+        1
+        for stall in world.stalls.values()
+        if stall.active and world.month_by_stall.get(stall.stall_no, {}).get("short_txns", 0) > 0
+    )
+    active_stalls = sum(1 for stall in world.stalls.values() if stall.active)
+    inspection = world.regulator.inspect_period(
+        world.streams.stream("regulator", "adapt"),
+        stalls_in_scope=active_stalls,
+        offenders=min(offenders, active_stalls),
+        period=period,
+    )
+    log.emit("regulator_period", business_date=business_date, **inspection)
+
+    cash = market_cash_month(world, active_stalls=active_stalls, period=period)
+    log.emit("market_cash_month", business_date=business_date, **cash)
+
+    for consumer_id in world.consumer_ids:
+        total = 0.0
+        for stall_no in world.stalls:
+            key = (consumer_id, stall_no)
+            if key not in world.visited:
+                world.trust[key] = update_trust(world.trust[key], None, world.cp)
+            total += world.trust[key]
+        log.emit(
+            "consumer_period",
+            business_date=business_date,
+            period=period,
+            consumer_id=consumer_id,
+            trust_sum=round(total, 9),
+            trust_mean=round(total / max(1, len(world.stalls)), 9),
+            stalls=len(world.stalls),
+        )
+    log.emit(
+        "month_closed",
+        business_date=business_date,
+        period=period,
+        active_start=active_start,
+        active_end=active_stalls,
+        exits=sum(1 for s in world.stalls.values() if s.exits_period == period),
+        short_offenders=offenders,
+    )
+    world.visited.clear()
+    world.month_by_stall = {}
+    world.month_on_scale = 0
+    world.month_amount = 0
+    world.month_commission_cents = 0.0
+    world.month_buyer_fee_cents = 0.0
+    world.month_scanned = 0
+    world.month_short = 0
+    world.month_repairs = 0
+    return usage_rate

@@ -52,6 +52,19 @@
       "unit": "分/次",
       "value": 2000000
     },
+    "avg_basket_grams": {
+      "provenance": {
+        "calibration": "P-15『单摊月流水 14 万元』是**推算且统计期间未交代**的量级锚。本参数由该锚反推：均价 × 篮子重量 ≈ 单笔金额，报告须同时给出『模型implied 月流水 vs 该锚』的偏离，不得把锚当事实。",
+        "kind": "assumed",
+        "ref": "P-15（只给量级）"
+      },
+      "range": [
+        500,
+        5000
+      ],
+      "unit": "克/笔",
+      "value": 2000
+    },
     "bank_funding_cents_3y": {
       "provenance": {
         "kind": "sourced",
@@ -60,6 +73,32 @@
       },
       "unit": "分/3年",
       "value": 200000000
+    },
+    "cash_payment_share": {
+      "provenance": {
+        "calibration": "现金占比高 = 支付链路没被接受（结论 11）；结论 18 的 1.4 亿是现金流水但统计期间未交代，故只能作量级参考。取 0.7 并全域扫描，M-08 的结论对它有依赖。",
+        "kind": "assumed",
+        "ref": "结论 11 / 结论 18"
+      },
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": "占比",
+      "value": 0.7
+    },
+    "channel_fee_rate_bp": {
+      "provenance": {
+        "kind": "sourced",
+        "quote": "微信支付小微商户 0.38%-0.6%（本仿真取下限 0.38% 作为通道成本）",
+        "ref": "结论 21"
+      },
+      "range": [
+        38,
+        60
+      ],
+      "unit": "万分比",
+      "value": 38
     },
     "channel_fee_rate_bp_range": {
       "provenance": {
@@ -94,6 +133,32 @@
       ],
       "unit": "万分比",
       "value": 200
+    },
+    "consumer_agent_count": {
+      "provenance": {
+        "calibration": "设计说『数百个』但无实测规模；取 200 以控制单机运行时间，并在 OAT 中作为结构参数扫描（它影响信任矩阵的分辨率，不影响客流总量）。",
+        "kind": "assumed",
+        "ref": "设计 §3.3「数百个」"
+      },
+      "range": [
+        100,
+        500
+      ],
+      "unit": "个",
+      "value": 200
+    },
+    "consumer_price_sensitivity": {
+      "provenance": {
+        "calibration": "价格敏感度无出处；取 1.0（价格分位与信任同量纲）只为让两路可比，全域扫描。",
+        "kind": "assumed",
+        "ref": "A-19"
+      },
+      "range": [
+        0.0,
+        3.0
+      ],
+      "unit": "无量纲",
+      "value": 1.0
     },
     "consumer_scan_baseline_rate": {
       "provenance": {
@@ -132,6 +197,19 @@
       "unit": "比例",
       "value": 0.6
     },
+    "consumer_stall_choice_temperature": {
+      "provenance": {
+        "calibration": "选摊离散选择无行为实验数据（A-07/A-19）；温度越小越『挑最好的』，全域扫描并在报告里说明信任/价格两路的相对强度依赖它。",
+        "kind": "assumed",
+        "ref": "A-19（价格公示对选摊的拉动系数无出处）"
+      },
+      "range": [
+        0.05,
+        1.0
+      ],
+      "unit": "logit 温度",
+      "value": 0.2
+    },
     "daily_arrivals_per_market": {
       "provenance": {
         "calibration": "Q-9 是项目自己标注的待确认假设（80-150 笔/摊·日 × 10 摊 = 800-1500 笔/日），故不归 sourced。校准思路：现场闸机/秤端计数 3 个营业日。",
@@ -158,6 +236,18 @@
       "unit": "比例",
       "value": 0.05
     },
+    "device_amortization_months": {
+      "provenance": {
+        "calibration": "设备折旧年限无任何出处（《报告》只给采购价）；取 36 期并在 OAT 中扫描，Q5 的现金流结论对它有依赖。",
+        "kind": "assumed"
+      },
+      "range": [
+        24,
+        60
+      ],
+      "unit": "月",
+      "value": 36
+    },
     "device_count": {
       "provenance": {
         "calibration": "按「一摊一秤」建模（与 market_stall_count 同值）。这是**建模假设**，不是实测装机数；真实场景存在一摊多秤或一秤多摊，故纳入敏感性并与 market_stall_count 解耦。",
@@ -170,6 +260,19 @@
       ],
       "unit": "台",
       "value": 10
+    },
+    "device_idle_tau_repair_days": {
+      "provenance": {
+        "calibration": "A-13 要求『只用序关系、不接受绝对月份』，故 τ_repair 只用于 M-10 的**口径说明**（报修超过 τ 天未修好算闲置），其取值不参与任何通过/不通过判定。",
+        "kind": "assumed",
+        "ref": "A-13（结论 6 只说『维修也不及时』）"
+      },
+      "range": [
+        1,
+        30
+      ],
+      "unit": "天",
+      "value": 7
     },
     "device_mtbf_days": {
       "provenance": {
@@ -184,6 +287,19 @@
       "unit": "天",
       "value": 540
     },
+    "device_screen_count": {
+      "provenance": {
+        "calibration": "P-02 给了摊位小屏单价（1100 元/台）但**没有任何市场的实际布点数量**；本参数是 S4 的对照变量（无公示=0 / 电子屏=10），不是实测规模。",
+        "kind": "assumed",
+        "ref": "结论 24（单价有出处，数量没有）"
+      },
+      "range": [
+        0,
+        10
+      ],
+      "unit": "块",
+      "value": 0
+    },
     "device_screen_unit_price_cents": {
       "provenance": {
         "kind": "sourced",
@@ -192,6 +308,19 @@
       },
       "unit": "分/台",
       "value": 110000
+    },
+    "evade_feasibility": {
+      "provenance": {
+        "calibration": "A-20 明确无出处。本参数是 S6 的**对照变量**（堵死=0 / 不堵=1），不是实测值；S6 的结论只能表述为『关于该可行性的命题』。",
+        "kind": "assumed",
+        "ref": "A-20（出口查验执行率/扫码覆盖率的合成）"
+      },
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": "可行性",
+      "value": 1.0
     },
     "gross_margin_rate": {
       "provenance": {
@@ -290,6 +419,18 @@
       "unit": "枚举(installed/usage)",
       "value": "installed"
     },
+    "market_labor_cents_per_month": {
+      "provenance": {
+        "calibration": "运维人力成本无出处（设计 §9.1 的收入侧列了『人力』但未给值）；本参数是 M-17 费用侧的假设项，报告须与假设分区展示。",
+        "kind": "assumed"
+      },
+      "range": [
+        0,
+        1000000
+      ],
+      "unit": "分/月",
+      "value": 300000
+    },
     "market_maintenance_floor_share": {
       "provenance": {
         "calibration": "维护预算的保底占比。取 0 是【判据定义】：只有取 0，「装机量口径 ⇒ 维护占比 = 0」才是一条可证伪的断言；取正数会把机制掩盖成「维护少了一点」。",
@@ -310,6 +451,57 @@
       ],
       "unit": "摊",
       "value": 10
+    },
+    "market_verification_cents_per_month": {
+      "provenance": {
+        "calibration": "『统一检定维修』只有做法没有价格，故只能给区间并扫描；该值直接进 M-17 的费用侧，故 Q5 结论对它敏感这件事必须报告。",
+        "kind": "assumed",
+        "ref": "结论 14（统一检定维修，无价格）"
+      },
+      "range": [
+        0,
+        500000
+      ],
+      "unit": "分/月",
+      "value": 80000
+    },
+    "merchant_adoption_cost_weight": {
+      "provenance": {
+        "calibration": "**这是 R6 反例能否成立的关键参数，且它没有出处。** 它表示一次性设备支出在商户『要不要装/用』判断里的心理权重（前景理论式的损失厌恶代理量）：=1 时是一次性支出的字面金额，取值越大表示越『舍不得掏这笔钱』。设计 §4.3 的意愿通道与 A-18 的 w0..w5 就是它；因无数据，R6 的结论只能是『当该权重超过 k 时自费组显著更差』这种**关于参数的命题**。",
+        "kind": "assumed",
+        "ref": "A-18（商户使用意愿权重 w0..w5）/ 结论 26"
+      },
+      "range": [
+        1.0,
+        400.0
+      ],
+      "unit": "倍数",
+      "value": 1.0
+    },
+    "merchant_adoption_horizon_months_range": {
+      "provenance": {
+        "calibration": "商户异质性来源（结论 15 提到商户对数据曝光/涨租的顾虑不同 → 忍耐期不同）。每个摊位在自己的流上抽一个 6~24 期的忍耐期，故『谁先不用』是可观测的分布，而不是一个全群一致的魔法阈值。",
+        "kind": "assumed",
+        "ref": "A-18"
+      },
+      "range": [
+        6,
+        24
+      ],
+      "unit": "月"
+    },
+    "merchant_cloud_software_cents_per_year": {
+      "provenance": {
+        "kind": "sourced",
+        "quote": "上海口径：云软件 5000 元/年由业主承担。⚠️ 出处把该项记在**业主**名下，而设计 §7.1 的 `R6` 行把『云软件 5000/年』计入**商户自费**口径 —— 本仿真按 `R6` 行执行，口径差异已在报告登记，不隐瞒。",
+        "ref": "结论 26"
+      },
+      "range": [
+        0,
+        500000
+      ],
+      "unit": "分/年·摊",
+      "value": 500000
     },
     "merchant_detect_coef": {
       "provenance": {
@@ -483,6 +675,18 @@
       "unit": "分/台",
       "value": 375000
     },
+    "network_amortization_months": {
+      "provenance": {
+        "calibration": "P-03 给了网络改造**投入**（120.5 万/市场）但没给摊销年限；取 36 期并扫描。",
+        "kind": "assumed"
+      },
+      "range": [
+        24,
+        60
+      ],
+      "unit": "月",
+      "value": 36
+    },
     "network_refit_cents_per_market": {
       "provenance": {
         "kind": "sourced",
@@ -491,6 +695,32 @@
       },
       "unit": "分/市场",
       "value": 12050000
+    },
+    "price_adjust_probability": {
+      "provenance": {
+        "calibration": "调价频率无出处；它只影响 M-21 的留痕样本量（改价类），全域扫描。",
+        "kind": "assumed",
+        "ref": "结论 1（做法无效果数据）"
+      },
+      "range": [
+        0.0,
+        0.5
+      ],
+      "unit": "概率/摊·月",
+      "value": 0.1
+    },
+    "price_sign_cents_per_stall": {
+      "provenance": {
+        "calibration": "湖州物理价签只有做法、没有单价；设计 §5 说它「成本低一个量级」（相对电子屏 1100 元/台），故取 110 元/摊并在 OAT 中扫描。**这是假设，不是报价。**",
+        "kind": "assumed",
+        "ref": "结论 1（只有做法没有成本）"
+      },
+      "range": [
+        0,
+        110000
+      ],
+      "unit": "分/摊",
+      "value": 11000
     },
     "product_base_price_cents_range": {
       "provenance": {
@@ -502,6 +732,18 @@
         2000
       ],
       "unit": "分/500g"
+    },
+    "refund_probability": {
+      "provenance": {
+        "calibration": "退货比例无公开数据（结论 11 只提到结账对不上/退货场景）；它只影响 M-21 的留痕样本量，全域扫描。",
+        "kind": "assumed"
+      },
+      "range": [
+        0.0,
+        0.1
+      ],
+      "unit": "概率/笔",
+      "value": 0.02
     },
     "repair_cost_cents": {
       "provenance": {
@@ -566,6 +808,32 @@
       "unit": "比例",
       "value": 0.05
     },
+    "short_weight_on_scale_probability": {
+      "provenance": {
+        "calibration": "『走秤但仍短秤』是八两秤问题的真实形态（否则 M-12 会退化成 M-05 的同义词）；概率无出处，全域扫描。",
+        "kind": "assumed",
+        "ref": "A-03"
+      },
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": "概率",
+      "value": 0.5
+    },
+    "short_weight_propensity_share": {
+      "provenance": {
+        "calibration": "结论 13 只说『部分经营户』，**没有比例、没有分布**；取 0.3 只为让 M-12 非退化，全域扫描后报告依赖强度。",
+        "kind": "assumed",
+        "ref": "A-03（只有『部分经营户』的定性分层）"
+      },
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": "占比",
+      "value": 0.3
+    },
     "short_weight_ratio": {
       "provenance": {
         "kind": "sourced",
@@ -578,6 +846,19 @@
       ],
       "unit": "比例",
       "value": 0.2
+    },
+    "stall_fee_cents_per_month": {
+      "provenance": {
+        "calibration": "摊位费/租金无公开数据（结论 12 只说温州式**不再另收**租金水电，反过来说明别处是收的）。取 2000 元/摊·月作为**假设**：它是市场方收入侧的一项，且 S1-③ 温州臂把它设为 0 才能复现结论 12 的对照。全域扫描，Q5 现金流结论不得依赖其点值。",
+        "kind": "assumed",
+        "ref": "结论 12（温州式不收租金水电）"
+      },
+      "range": [
+        0,
+        500000
+      ],
+      "unit": "分/摊·月",
+      "value": 200000
     },
     "subsidy_ratio_bp": {
       "provenance": {
