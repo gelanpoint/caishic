@@ -94,6 +94,7 @@ market-trade-mvp/
 │   │   └── css/                  # 样式（适配手机宽度；不引外部字体或样式库）
 ├── data/                         # 运行时数据目录（SQLite 文件与离线暂存文件；不入库，见 .gitignore）
 ├── scripts/
+│   ├── launch.py                 # **演示启动器（`start.bat` / `start.sh` 的公共实现）**：演示数据目录默认落点、全部中文提示、失败说明（`CP-D` 现场验收发现 `.bat` 内的非 ASCII 会被 cmd 按**控制台代码页**解析坏 ⇒ 中文一律移出 `.bat`，脚本只留 ASCII 管道）
 │   ├── gen_seed.py               # 种子数据生成器：按**确定性构造规则**生成 ./app/seed_data/seed.json（**产物可复算**：删掉种子文件后重跑本脚本必须逐字节还原；`--check` 与现有文件比对不写入）。规则、规模依据与自检写在该文件 docstring，**改种子必须同步改它**
 │   └── reset_demo.py             # 重置演示数据：删除数据文件并重跑种子导入（NFR-003/NFR-004 的恢复手段）
 └── tests/

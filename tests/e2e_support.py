@@ -93,11 +93,16 @@ class LiveServer:
 
 
 def start_live_server(data_dir: Path, *, port: int | None = None,
-                      env_extra: dict | None = None, wait: bool = True) -> LiveServer:
-    """起一个真服务（`python run.py --port N`），等它 `/healthz` 通了再返回。
+                      env_extra: dict | None = None, wait: bool = True,
+                      entry: str = "run.py") -> LiveServer:
+    """起一个真服务（`python <entry> --port N`），等它 `/healthz` 通了再返回。
 
     `wait=False` 用于**故意制造启动失败**的场景（如 `T-033` 的端口占用检测），
     此时调用方自己 `proc.wait()` 看退出码与提示。
+
+    `entry` 默认是 `run.py`；`CP-D` 现场验收后新增 `scripts/launch.py` 这条**演示启动路径**
+    （`start.bat` / `start.sh` 实际调的就是它），故它也要能被当作真服务起起来测 ——
+    否则"双击能起来"这件事又只剩人工走查。
     """
     data_dir.mkdir(parents=True, exist_ok=True)
     port = port or free_port()
@@ -105,7 +110,7 @@ def start_live_server(data_dir: Path, *, port: int | None = None,
     log_path = data_dir / "server.log"
     handle = log_path.open("w", encoding="utf-8", errors="replace")
     proc = subprocess.Popen(
-        [sys.executable, "run.py", "--port", str(port)],
+        [sys.executable, entry, "--port", str(port)],
         cwd=str(REPO_ROOT),
         env=env,
         stdout=handle,
