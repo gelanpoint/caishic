@@ -103,6 +103,11 @@ market-trade-mvp/
     │   ├── test_clock_injection.py   # 接缝**行为面**：默认逐字段不变 + 注入生效（全链路营业日）+ 报错响亮 + 每次重读
     │   └── test_clock_guard.py       # 接缝**检查面**：墙钟直读的 ast 守卫（含 4 个合成负例）+ SQL 列默认值缺口枚举（钉住 12 列）
     ├── sim/                      # 多智能体仿真的检查类用例（**与 tests/contract 分开**，不改后者的收集数与红绿分布；`T-SIM-01`/`T-SIM-02` 于 `2026-10-02` 新增）
+    │   ├── sim_support.py            # 共用支撑：把仓库根放进 `sys.path` + ast 导入解析纯函数（**不含夹具**，理由同 `clock_support.py`）
+    │   ├── test_sim_no_app_import.py # 隔离闸门一：`sim/**` 不得 `import app`；反向：`run.py`/`app/**` 不得 `import sim`（各带合成负例）
+    │   ├── test_sim_deps_isolation.py# 隔离闸门二：`sim/**` 只依赖标准库；`requirements.txt` 运行期仍只有 `Flask`（带 numpy/pandas 负例）
+    │   ├── test_param_provenance.py  # 参数出处必填：sourced 须有 `结论 N`/`D-xx`，**`Q-xx` 一律归 assumed**；assumed 须有校准思路（带 4 个合成负例）
+    │   └── test_seed_reproducibility.py # 同 seed 逐字节一致（不同 seed 必不同）+ 加 agent 不影响他人 + 演示库哈希不变
     ├── e2e/                      # AC-001 ~ AC-024 的端到端验证
     └── perf/                     # 并发与响应时间压测脚本（NFR-001 与继承基线的验证）
 ```
@@ -116,16 +121,18 @@ market-trade-mvp/
 >
 > ```
 > sim/
-> ├── __init__.py · __main__.py · cli.py         # 命令行入口（--mode/--scenario/--days/--seed/--replications/--verify/--report）
+> ├── __init__.py · __main__.py · cli.py         # 命令行入口（--mode/--days/--seed/--agents/--start/--replications/--params/--out-dir）
 > ├── core/
-> │   ├── clock.py        # 仿真时钟：营业日 / 时段块 / 周 / 月推进（与系统 business_date 同轴）
-> │   ├── streams.py      # 每 agent 独立确定性随机流（同 seed 逐字节可复现的地基）
-> │   ├── events.py       # 只增不改的事件日志（JSONL）
-> │   └── registry.py     # agent 注册与 id 映射
+> │   ├── __init__.py    # 包标识
+> │   ├── clock.py       # 仿真时钟：营业日 / 时段块 / 月 / 季推进（与系统 business_date 同轴；**时段块取值不写死在此**，由 params.json 提供）
+> │   ├── streams.py     # 每 agent 独立确定性随机流（`hashlib` 派生种子，跨进程稳定；同 seed 逐字节可复现的地基）
+> │   ├── events.py      # 只增不改的事件日志（JSONL，键序与空白由格式固定，否则复现判据会假红）
+> │   ├── params.py      # 参数与**出处**的加载与校验（`provenance_problems` 是纯函数，故灵敏度负例可直接喂它）
+> │   └── registry.py    # agent 注册与 id 映射（同名重复登记直接报错：id 撞车会让两条流合并）
 > ├── env/
-> │   ├── market.py       # 市场 / 摊位 / 品类 / 商品 / 基准价 / 价目表
-> │   ├── demand.py       # 客流到达过程（按时段块）
-> │   └── devices.py      # 设备机队 / 故障 / 报修队列 / 维修工台
+> │   ├── market.py      # 市场 / 摊位 / 品类 / 商品 / 基准价 / 价目表（`T-SIM-02`）
+> │   ├── demand.py      # 客流到达过程（按时段块）（`T-SIM-02`）
+> │   └── devices.py     # 设备机队 / 故障 / 报修队列 / 维修工台（`T-SIM-02`）
 > └── calibration/
 >     └── params.json     # **全部参数 + 出处字段**（`provenance.kind ∈ {sourced, assumed}`，由 tests/sim 强制）
 > ```

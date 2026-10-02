@@ -1,0 +1,246 @@
+{
+  "schema_version": 1,
+  "note": "鸟市仿真参数与出处。规则：sourced = 仓库内可核出处（结论 N / D-xx）；assumed = 假设，必须写 calibration。Q-xx 属项目自认的待确认假设，一律归 assumed（见 sim/core/params.py）。本文件由 tests/sim/test_param_provenance.py 强制校验。",
+  "blocks": [
+    {
+      "name": "开市准备",
+      "start": "05:30",
+      "intensity": 0.0,
+      "provenance": {
+        "kind": "assumed",
+        "ref": "Q-9",
+        "calibration": "Q-9 是项目自己标注的『待确认假设（行业常识，未经调研验证）』，故不归 sourced。校准思路：现场计数 3 个营业日的分时客流后替换强度。"
+      }
+    },
+    {
+      "name": "主峰",
+      "start": "06:00",
+      "intensity": 3.0,
+      "provenance": {
+        "kind": "assumed",
+        "ref": "Q-9",
+        "calibration": "主峰时段 06:00-09:00 出自 Q-9（待确认假设）；强度 3.0 无任何出处，全域敏感性扫描，结论不得依赖其点值。"
+      }
+    },
+    {
+      "name": "平峰",
+      "start": "09:00",
+      "intensity": 1.0,
+      "provenance": {
+        "kind": "assumed",
+        "ref": "Q-9",
+        "calibration": "作为相对强度的基准 1.0（无量纲），仅相对关系参与计算，故不需要绝对标定。"
+      }
+    },
+    {
+      "name": "次峰",
+      "start": "17:00",
+      "intensity": 2.0,
+      "provenance": {
+        "kind": "assumed",
+        "ref": "Q-9",
+        "calibration": "次峰时段 17:00-19:00 出自 Q-9（待确认假设）；强度 2.0 无出处，纳入敏感性。"
+      }
+    }
+  ],
+  "parameters": {
+    "scale_unit_price_cents": {
+      "value": 135000,
+      "range": [135000, 256600],
+      "unit": "分/台",
+      "provenance": {
+        "kind": "sourced",
+        "ref": "结论 23",
+        "quote": "普通溯源秤 1350 元/台、2145 元/台、2566 元/台（苏州公开中标价，5 个独立项目）"
+      }
+    },
+    "device_screen_unit_price_cents": {
+      "value": 110000,
+      "unit": "分/台",
+      "provenance": {
+        "kind": "sourced",
+        "ref": "结论 24",
+        "quote": "摊位小屏 1100 元/台（同项目 141 台；300 摊 = 33 万元）"
+      }
+    },
+    "network_refit_cents_per_market": {
+      "value": 12050000,
+      "unit": "分/市场",
+      "provenance": {
+        "kind": "sourced",
+        "ref": "结论 25",
+        "quote": "WiFi 综合覆盖布线 88 万 + 互联网专线 32.5 万 = 120.5 万（占 366.9 万标的 33%）；单例，不出区间"
+      }
+    },
+    "subsidy_ratio_bp": {
+      "value": 5000,
+      "range": [0, 5000],
+      "unit": "万分比",
+      "provenance": {
+        "kind": "sourced",
+        "ref": "结论 3",
+        "quote": "上海宝山：按审计实际投入的 50% 补贴，单项目上限 200 万元"
+      }
+    },
+    "channel_fee_rate_bp_range": {
+      "range": [38, 60],
+      "unit": "万分比",
+      "provenance": {
+        "kind": "sourced",
+        "ref": "结论 21",
+        "quote": "微信支付小微商户 0.38%-0.6%；个体户餐饮/零售/食品生鲜 0.6%、T+1"
+      }
+    },
+    "wenzhou_buyer_rate_bp_range": {
+      "range": [50, 600],
+      "unit": "万分比",
+      "provenance": {
+        "kind": "sourced",
+        "ref": "结论 12",
+        "quote": "温州菜篮子：按品种向采购方收取 0.5%-6%，且不再另收经营户租金水电费；2001 年物价局批复，运行至今"
+      }
+    },
+    "merchant_self_funded_scale_cents": {
+      "value": 375000,
+      "range": [375000, 460000],
+      "unit": "分/台",
+      "provenance": {
+        "kind": "sourced",
+        "ref": "结论 26",
+        "quote": "上海口径：智慧电子秤 3750 元/台、AI 秤 4600 元/台由商户承担；云软件 5000 元/年由业主承担"
+      }
+    },
+    "verification_sampling_bp": {
+      "value": 1000,
+      "unit": "万分比",
+      "provenance": {
+        "kind": "sourced",
+        "ref": "结论 4",
+        "quote": "武汉：区级验收后，市里按照 10% 的比例抽检验收（注：是验收抽检，不是日常计量抽检）"
+      }
+    },
+    "admin_fine_market_operator_cents": {
+      "value": 2000000,
+      "unit": "分/次",
+      "provenance": {
+        "kind": "sourced",
+        "ref": "结论 2",
+        "quote": "儋州某市场开办者因场内商户屡次未明码标价被罚 2 万元（罚的是市场开办者、事由是明码标价，非商户短秤）"
+      }
+    },
+    "short_weight_ratio": {
+      "value": 0.2,
+      "range": [0.0, 0.2],
+      "unit": "比例",
+      "provenance": {
+        "kind": "sourced",
+        "ref": "结论 13",
+        "quote": "南宁商务局原话把这类行为直接称为『八两秤』（8 两 / 1 斤 = 0.8）→ 短秤幅度 0.2；分布与比例无出处"
+      }
+    },
+    "bank_funding_cents_3y": {
+      "value": 200000000,
+      "unit": "分/3年",
+      "provenance": {
+        "kind": "sourced",
+        "ref": "结论 19",
+        "quote": "达川：交通银行达州支行三年期 200 余万元资金支持；未交代覆盖几个市场，只能作量级锚"
+      }
+    },
+    "gross_margin_rate": {
+      "value": 0.25,
+      "range": [0.15, 0.35],
+      "unit": "比例",
+      "provenance": {
+        "kind": "assumed",
+        "calibration": "《报告》只给硬件价格与费率，没有任何成本/毛利数据。校准思路：用结论 18 的单摊流水量级做一致性检验；最终必须实地采集。先做全域敏感性。"
+      }
+    },
+    "short_weight_detect_rate": {
+      "value": 0.05,
+      "range": [0.0, 0.3],
+      "unit": "比例",
+      "provenance": {
+        "kind": "assumed",
+        "calibration": "无任何来源。它决定『客流反噬』项的强度（越狠越容易被老顾客发现）；必须报告结论对它是否敏感。"
+      }
+    },
+    "trust_update_eta_pos": {
+      "value": 0.35,
+      "range": [0.1, 0.6],
+      "unit": "比例",
+      "provenance": {
+        "kind": "assumed",
+        "calibration": "完全无来源。结论 16 只给定性语义（『再也不信』）。只给区间不给点值；结论须表述为关于参数的命题。"
+      }
+    },
+    "trust_update_eta_neg": {
+      "value": 0.8,
+      "range": [0.4, 1.0],
+      "unit": "比例",
+      "provenance": {
+        "kind": "assumed",
+        "calibration": "同上。用『再也不信』这一措辞约束 eta_neg/eta_pos 的**下界**（语义推断，非测量）。这是全设计最弱的一环。"
+      }
+    },
+    "trust_decay_delta": {
+      "value": 0.02,
+      "range": [0.0, 0.1],
+      "unit": "比例/期",
+      "provenance": {
+        "kind": "assumed",
+        "calibration": "无来源。与 eta 一起决定恢复半衰期；纳入敏感性。"
+      }
+    },
+    "consumer_scan_baseline_rate": {
+      "value": 0.15,
+      "range": [0.02, 0.5],
+      "unit": "比例",
+      "provenance": {
+        "kind": "assumed",
+        "ref": "结论 17",
+        "calibration": "结论 17 明确承认『主动扫码评价的比例仍缺乏统计』—— 这是**已知的数据缺口**，不是我方疏漏。全域扫描，答辩时直说。"
+      }
+    },
+    "device_mtbf_days": {
+      "value": 540,
+      "range": [180, 1095],
+      "unit": "天",
+      "provenance": {
+        "kind": "assumed",
+        "ref": "《报告》第九节（自认数据缺口）",
+        "calibration": "《报告》第九节原文承认『设备每年坏多少、修一次多少钱，没有公开数据』。故只做区间敏感性，**禁止**把点值当事实。"
+      }
+    },
+    "repair_cost_cents": {
+      "value": 30000,
+      "range": [10000, 100000],
+      "unit": "分/次",
+      "provenance": {
+        "kind": "assumed",
+        "ref": "《报告》第九节（自认数据缺口）",
+        "calibration": "同 device_mtbf_days。维修预算 B 与服务台数的换算依赖它，故必须做全域扫描并在报告里标注依赖强度。"
+      }
+    },
+    "merchant_exit_breakeven_months": {
+      "value": 6,
+      "range": [3, 12],
+      "unit": "月",
+      "provenance": {
+        "kind": "assumed",
+        "ref": "结论 8",
+        "calibration": "无经营损益数据。校准锚：结论 8 成都青羊『2024-10 开始运营、数月即垮』给出时间量级；结论 10 龙南只约束方向（有手续费组必须出现非零流失）。"
+      }
+    },
+    "zhengzhou_flow_per_stall_cents_per_month": {
+      "value": 14000000,
+      "range": [7000000, 28000000],
+      "unit": "分/摊·月",
+      "provenance": {
+        "kind": "assumed",
+        "ref": "结论 18",
+        "calibration": "由结论 18 的 1.4 亿元现金流水 ÷ 1000 余商户 ≈ 14 万元/户**推算**，而该报道**未交代统计期间** —— 故只能作量级锚，必须标为推算而非观测。"
+      }
+    }
+  }
+}
