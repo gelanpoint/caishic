@@ -51,6 +51,58 @@ def sim_python_files() -> list[Path]:
     return sorted(SIM_DIR.rglob("*.py"))
 
 
+# ---------------------------------------------------------------------------
+# `T-SIM-06` 集成运行的**极小规模档**（真跑四个 Agent，但把规模压到"秒级"）
+# ---------------------------------------------------------------------------
+#: 集成运行的最小可用配置：**30 营业日**（= 1 个完整仿真月 ⇒ 月度事件齐全）、
+#: 60 日到达 / 20 个消费者。用更短的 `days`（如 20）会**没有任何月频事件**
+#: （`month_closed` / `consumer_period` / `market_cash_month`），于是 `M-01/02/03/06/15/17/18/19`
+#: 全部分母为 0 —— 那种"绿"什么也没测。
+TINY_RUN = {"days": 30, "arrivals": 60, "consumers": 20}
+
+
+def scenario_by_id(scenario_id: str) -> dict:
+    """按 id 取一个场景定义（`sim/scenarios/S*.json`）。"""
+    from sim.bridge.scenario import load_scenario, scenario_files
+
+    for path in scenario_files():
+        scenario = load_scenario(path)
+        if scenario["id"] == scenario_id:
+            return scenario
+    raise KeyError(f"没有场景 {scenario_id!r}")
+
+
+def tiny_run(*, scenario_id: str = "S0", arm_index: int = 0, seed: int = 20261002, out_dir: Path,
+             extra_overrides: dict | None = None, days: int | None = None, arrivals: int | None = None,
+             consumers: int | None = None):
+    """跑一次**极小规模**的集成运行，返回 `(result, events)`。
+
+    它走的是**与 CLI 完全相同**的入口（`run_scenario`），只是把规模压小 ——
+    于是用例断言的是产品路径，不是"测试自己搭的一个平行世界"。
+    """
+    from sim.bridge.model_adapter import read_events, run_scenario
+    from sim.bridge.scenario import arm_flags, merged_overrides
+    from sim.core.params import load_params
+
+    scenario = scenario_by_id(scenario_id)
+    arm = scenario["arms"][arm_index]
+    overrides = merged_overrides(scenario, arm)
+    overrides["daily_arrivals_per_market"] = arrivals if arrivals is not None else TINY_RUN["arrivals"]
+    overrides["consumer_agent_count"] = consumers if consumers is not None else TINY_RUN["consumers"]
+    if extra_overrides:
+        overrides.update(extra_overrides)
+    result = run_scenario(
+        load_params(PARAMS_PATH),
+        scenario_id=f"{scenario_id}::{arm['name']}",
+        overrides=overrides,
+        days=days if days is not None else TINY_RUN["days"],
+        seed=seed,
+        out_dir=Path(out_dir),
+        self_funded=arm_flags(scenario, arm)["self_funded"],
+    )
+    return result, read_events(Path(out_dir) / "events.jsonl")
+
+
 def imported_roots(source: str) -> set[str]:
     """解析源码里所有 `import X` / `from X import ...` 的**顶层包名**。**纯函数**。
 
