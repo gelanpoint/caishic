@@ -107,16 +107,22 @@
 | `docs/standards/classification.md` | 定级规则（复核级别用） | `已建立`（2026-09-30；自包含，无 skill 内部路径） |
 | `docs/standards/architecture.md` | 架构决策树与默认值 | `已建立`（2026-09-30；自包含） |
 | `docs/standards/nfr-baseline.md` | 非功能基线 | `已建立`（2026-09-30；自包含） |
-| `docs/standards/quality-gates.md` | 质量阈值（**唯一权威**） | **`已定义`**（2026-09-30 由父代理批准填入；§1.1 继承基线 4 项 · §1.2 自定义 6 项 · §1.3 红线 5 项 · §1.4 放宽项只留指针；修订记录见其 §4） |
+| `docs/standards/quality-gates.md` | 质量阈值（**唯一权威**） | **`已定义`**（2026-09-30 由父代理批准填入；§1.1 继承基线 4 项 · §1.2 自定义 6 项 · §1.3 红线 5 项 · §1.4 放宽项只留指针；修订记录见其 §4；**§1.1「接口响应时间」行已补：并发口径 + 判定入口 + 样本取自哪个卷 + 已知边界（随盘）+ 现场处置（裁定 ①）**） |
 | `requirements.txt` | **运行期**依赖清单（**只有 Flask**）—— 演示机只装这一份 | `已建立`（2026-09-30，T-001；`Flask==3.1.3`，本机实测已装版本；范围依据 `ADR-0004`） |
-| `requirements-dev.txt` | **开发期**工具清单（`pytest` / `coverage`）—— **不进演示机** | `已建立`（2026-09-30，T-001；版本经实测下载锁定；**不得出现在 `requirements.txt`、不得被 `run.py` 或 `app/**` 引用**，机械检查归 `T-007`） |
+| `requirements-dev.txt` | **开发期**工具清单（`pytest` / `coverage` / **`playwright`**）—— **不进演示机** | `已建立`（2026-09-30，T-001；版本经实测下载锁定；`playwright==1.60.0` 由 `T-033` 补登记、**已获父代理批准**（`2026-10-02`）；**不得出现在 `requirements.txt`、不得被 `run.py` 或 `app/**` 引用**，机械检查归 `T-007`） |
 | `run.py` | 启动入口：端口占用检测 → 建库/迁移 → **导入种子** → 启动 HTTP 服务 → 打印局域网 IP / 两个入口地址 / 数据文件路径（`AGENTS.md` §3 硬要求 1/2/5） | `已建立`（2026-09-30，T-002；**T-005 补入种子导入调用**；实测 145 行） |
 | `app/__init__.py`、`app/config.py`、`app/db.py` | Flask 应用工厂与统一 404 / 运行期配置（`MT_DATA_DIR` 可覆盖数据目录）/ SQLite 连接（WAL + `foreign_keys` + `busy_timeout`）与按序迁移 | `已建立`（2026-09-30，T-002/T-004；52 / 42 / 97 行） |
 | `app/migrations/0001_init.sql` | 初始建库：**19 表 / 25 索引 / `audit_log` 只增不改触发器** | `已建立`（2026-09-30，T-004；372 行；父代理实测 `UPDATE`/`DELETE` 均 `IntegrityError`） |
-| `app/static/index.html`、`start.bat`、`start.sh` | 静态入口导航页与启动脚本（`start.bat`=CRLF / `start.sh`=LF） | `已建立`（2026-09-30，T-003；58 / 59 / 37 行；`git check-attr eol` 实测 `crlf`/`lf`） |
+| `app/static/index.html`、`start.bat`、`start.sh` | 静态入口导航页与启动脚本（`start.bat`=CRLF / `start.sh`=LF）；**启动脚本按裁定 ① 默认把演示数据目录设到用户数据目录**（不覆盖用户显式 `MT_DATA_DIR`；`LOCALAPPDATA`/`XDG` 缺失时行为与从前一致） | `已建立`（2026-09-30，T-003；实测 58 / 80 / 52 行；`git check-attr eol` 实测 `crlf`/`lf`；裁定 ① 落地与实测见变更记录） |
 | `app/seed.py` + `app/seed_data/seed.json` | **种子数据与导入（T-005）**：10 摊位 / 58 标准品类（蔬菜·水果·肉类·水产 20/13/13/12）/ 351 条摊位别名映射 / 250 商品 / 500 行价目表（2 个营业日）；**重复导入幂等**、只读本地文件不依赖外网 | `已建立`（2026-09-30，T-005；339 / 400 行；**CP-A ④ 实测输出见变更记录**） |
 | `scripts/reset_demo.py` | **重置演示数据（T-006）**：删除数据文件 → 重建表结构 → 重跑种子 → 逐条核对「可再次交易」前置条件（含写入探针） | `已建立`（2026-09-30，T-006；224 行；实测输出见变更记录） |
-| `tests/contract/` | **契约测试（批次 2，`T-007`～`T-014`）**：10 个 `test_*.py` + `conftest.py`（契约解析 / 路由表 ↔ 契约 §2 双向一致 / 响应体与库文件敏感字段扫描 / 统一错误格式 / 运行期依赖隔离，**含 26 条检查灵敏度负例**）。全套 `pytest tests/contract -q` 实测 **160 failed, 57 passed**（**exit 1**；红因 = 后端未实现，已逐条核验零假红） | `已建立`（2026-09-30；行数 `conftest.py` 408 · `test_admin.py` 479 · `test_contract_surface.py` 208 · `test_customer.py` 344 · `test_deps_isolation.py` 191 · `test_merchant_catalog.py` 292 · `test_offline.py` 425 · `test_payment.py` 417 · `test_refund.py` 275 · `test_sensitive_scan.py` 272 · `test_transaction_price.py` 355；提交 `f9113ac` / `68dc773` / `4374e64` / `d9d2e28` / `e03101e`。**注：后三个文件超 §1.2 的 400 行上限 → `Q-16`**） |
+| `tests/contract/`（12 文件） | **契约测试**：端点契约对齐 `contracts/rest-api.md`、路由表 ↔ 契约 §2 双向比对、响应体/迁移/库文件敏感字段扫描、统一错误格式、运行期依赖隔离（**含灵敏度负例**） | `已建立`（2026-09-30，`T-007`~`T-014` + `T-031`/`T-032`/`T-036` 补测；**实测 `238 passed`**；助手 `contract_support.py` 357 行、`conftest.py` 10 行垫片；`T-036` 七家族收口另见 `test_check_sensitivity*.py`） |
+| `tests/e2e/`（8 文件）+ `tests/e2e_support.py` | **端到端**（真实 `run.py` 子进程 + 真实 Chromium）：三条主线走查、`AC-001`~`AC-023` 场景、异常与边界、**5 条现场演示硬要求核验（含真断网彩排）** | `已建立`（2026-09-30，`T-030`~`T-033`；**实测 `35 passed`**；助手 380 行） |
+| `tests/perf/`（2 文件） | **并发与响应时间**：`test_concurrency.py` = 并发**正确性**（`AC-020` 逐笔核对、离线并发零丢弃）；`test_latency.py` = **响应时间**门禁（100 样本）+ 突发随盘的对照实验 | `已建立`（2026-09-30，`T-034`；**实测 `5 passed`**；门禁用例遵循 `MT_DATA_DIR`，见变更记录） |
+| `tests/gates.py`、`tests/conftest.py` | 门禁阈值读取的**唯一机器入口**（`parse_latency_thresholds`）；根 `conftest.py` **只放夹具** | `已建立`（2026-09-30，`T-034`/`T-035`；41 / 69 行；拆出动因 = 同名 `conftest` 撞车，见变更记录） |
+| `app/domain/`（11 模块） | 领域层：计价/改价/抹零（`pricing.py`）、号段与并发安全落库（`numbering.py`）、收款与回调（`payment.py`）、退货冲正（`refund.py`）、离线暂存与补传（`offline.py`）、佣金（`commission.py`）、日聚合/结算/对账（`settlement.py`）、三指标（`metrics.py`）、审计（`audit.py`）、字典与别名（`catalog.py`）、交易读与响应组装（`transactions.py`） | `已建立`（2026-09-30，`T-015`~`T-025`；行数实测 `audit`130 · `catalog`377 · `commission`203 · `metrics`382 · `numbering`187 · `offline`315 · `payment`227 · `pricing`312 · `refund`157 · `settlement`360 · `transactions`142；**全部 ≤400 行**，`numbering.py` 为 `T-034` 修并发缺陷时按语义拆出） |
+| `app/api/`（5 模块）+ `app/__init__.py` | HTTP 端点：秤端 `merchant.py`、运营端 `admin.py`、顾客页 `customer.py`、健康检查 `health.py`、进程内 Mock（支付回调/电子秤）`mock.py`；应用工厂含统一 404 与 **`MT-1014` 未预期异常兜底处理器** | `已建立`（2026-09-30，`T-015`~`T-025`；行数实测 `admin`189 · `customer`44 · `health`49 · `merchant`332 · `mock`70 · `__init__`231） |
+| `app/static/`（9 文件） | 纯静态前端（无构建、无 CDN）：入口导航 + 三端页面 + 原生 JS（含离线状态可视标识与显式切换）+ 样式 | `已建立`（2026-09-30，`T-026`~`T-029`；行数实测 `index.html`58 · `scale/index.html`93 · `admin/index.html`90 · `customer/index.html`50 · `js/scale.js`266 · `admin.js`228 · `customer.js`120 · `offline.js`84 · `css/app.css`60；**零外部资源**由 `T-029` + `T-036` 家族机械核验） |
 | `docs/调研报告-现实情况.md` | 一手调研留痕（**26 条结论 + 30 条原始链接**，192 行，含第十节测算）—— **外部输入，非本流程产物** | `已存在（前置输入，2026-09-30 两次修订）` |
 
 > **`spec.md` 的状态必须与门禁结果一致**：G1 过了才写「已确认」，没过就写「草稿」。
@@ -146,8 +152,7 @@
    > **全量回归：`python -m pytest -q` → `325 passed`（0 failed / 0 skipped）**。
    > **保留的唯一人工动作**：现场按 `AGENTS.md` §3 五条自己起一次服务走一遍；**若现场实测（含快盘）仍不达标**，
    > 按 `spec.md` §4.1 记一次放宽并写明根因是磁盘 —— **先实测再决定**。
-2. 排期（**不阻塞**）：`docs/PROJECT-STATE.md` 的「已产出文件」表尚未回填本批 12 个新增/改名测试文件（本批行数实测见变更记录）；
-   下次更新本文件时一并补齐（属**记录滞后**，不是产物缺失）。
+2. 「已产出文件」表已回填（`2026-10-02`）：补登 `app/domain/`（11 模块）、`app/api/`（5 模块）+ `app/__init__.py`、`app/static/`（9 文件）、`tests/contract/`、`tests/e2e/` + `e2e_support.py`、`tests/perf/`、`tests/gates.py` + `tests/conftest.py`，并更新 `quality-gates.md` / `requirements-dev.txt` / 启动脚本三行的状态与行数（全部实测）。**至此本批无遗留登记项。**
 3. 批次划分（父代理裁定）：批次 1 = `T-001`~`T-006` → **`CP-A`（✅ 已签署）**；
    批次 2 = `T-007`~`T-014`（契约测试全部先红）→ **`CP-B`（✅ 已签署 2026-09-30）**；批次 3 = `T-015`~`T-025` → **`CP-C`（含 `T-036` 灵敏度验证）**；批次 4 = `T-026`~`T-036` → **`CP-D`（证据齐备，待签署）**。
 
