@@ -183,6 +183,67 @@
 > **`spec.md` 的状态必须与门禁结果一致**：G1 过了才写「已确认」，没过就写「草稿」。
 > 谎报状态会让后续会话基于错误前提开工。
 
+## 仿真线进度（`T-SIM-*`，记忆锚③）
+
+> 本节是仿真线的记忆锚。**恢复时先读它**：`docs/sim-design.md`（设计，尤其 §2.6 与 §8 的任务书）
+> → 本节 → `specs/market-trade-flow/tasks.md` §3 的 `T-SIM-*` 行。
+
+| 任务 | 状态 | 一句话落点 |
+| --- | --- | --- |
+| `T-SIM-00` 业务日时钟接缝 | `已完成` | `app/clock.py` + `MT_CLOCK_FILE`；**唯一触碰主系统的改动**，已按 `RL-2` 先改规格 |
+| `T-SIM-01` 骨架 + 隔离闸门 + 参数出处 | `已完成` | `sim/cli.py` / `sim/core/*`；同 seed 逐字节可复现 |
+| `T-SIM-02` 环境层与时序 | `已完成` | `sim/env/*`；守恒可由明细复算（含高故障率压测对照） |
+| `T-SIM-03`~`T-SIM-05` 三类 Agent | `已完成` | `sim/agents/*`；商户效用分解 / 消费者信任 / 市场方与监管 |
+| `T-SIM-06` model 适配器 + 22 指标 + 7 场景 + 敏感性 | `已完成` | `sim/bridge/{model_adapter,day_loop,month_loop,scenario,study}.py` + `sim/observe/*` + `sim/verify/sensitivity.py` |
+| **`T-SIM-07` live 适配器** | **`已完成`（`2026-10-03`）** | `sim/bridge/{server_launcher,live_adapter,live_run,live_scenario,live_cli,live_evidence}.py` + `sim/core/console.py`；**31/31 端点真跑、六条判据全绿**，详见下方「`T-SIM-07` 实测」 |
+| `T-SIM-08` 验证器（`R1`–`R6` + §7.3 一致性 + 校准） | `未开始` | 前置：`T-SIM-07` 已就绪（§7.3 的 model↔live 一致性现在有真 live 数据可比了） |
+| `T-SIM-09` 纯静态可视化 + 报告自检 | `未开始` | 前置：`T-SIM-06` |
+| `T-SIM-10` 文档与答辩材料（`docs/sim-results.md`） | `未开始` | 前置：全部 |
+
+### `T-SIM-07` 实测（`2026-10-03`）
+
+- **运行命令**：`python -m sim --mode=live --scenario=S1 --live-arm=0 --live-days=30 --live-txns=4`
+  （`tests/sim/test_live_run.py` 用同一编排跑一遍，`S1` 第 0 臂 = 向商户抽 **200bp**）。
+- **规模**：HTTP 调用 **2082 次** / 营业日 **30** 天 / 就绪耗时 0.54s；产物 `live_report.json`、`coverage.json`、
+  `live_responses.jsonl`（2082 条**真实响应体**）。
+- **判据①** 端点覆盖 **31/31**（清单由**实际请求**反推，并与 `contracts/rest-api.md` §2 表**双向逐条**比对）。
+- **判据②** 全营业日 `reconciliation.balanced=true`：**30/30**（三线相等、`diff_cents=0`）。
+- **判据③** 幂等重放：`T-20261001-0001` 重发 → **同一交易号**、列表 `total` 1 → 1（HTTP **201 → 200**）。
+- **判据④** 敏感扫描：复用 `tests/contract/sensitive_scan.py` 扫 2082 条响应体 → **零命中**
+  （另有合成负例证明扫描器在扫真实数据时能命中）。
+- **判据⑤** 数据目录 **`C:\mt-sim\live-S1-…`**（`C:` 卷，符合 §2.6 的性能预算），实测
+  **p50 19.6ms / p95 40.6ms**（样本 2082）；若指定 `--live-data-dir` 落在 `D:`，判定会自动带上实测分位数并判红。
+- **判据⑥** `app/**`（33 文件）、`specs/**`（6 文件）树指纹运行前后**一致**，且用例**独立重算**复核。
+- **「佣金是系统算的」交叉核对**：写进系统的 `rate_bp=200` ⇒ 系统日佣金合计 **5699 分** ÷ 同期已结算订单
+  **284872 分** = **200.1bp**（差额为逐日四舍五入）；结算单与看板佣金合计同为 5699 分。
+  对照 `S0`（写入 1bp）佣金合计 **15 分** ⇒ 佣金随**系统里的口径**变化，不是 sim 自己算的。
+- **`--mode=model` 未受影响**：`git archive HEAD` 导出的改动前 `sim/` 与当前代码同参数跑出的
+  `events.jsonl` / `metrics.json` SHA-256 **逐字节相同**。
+- **回归**：`python -m pytest -q` → **`428 passed` / 0 failed**（含新增 21 条：`tests/sim/test_live_endpoints.py`
+  5 条 + `tests/sim/test_live_run.py` 16 条）。**此前登记为「因 `D:` 盘 fsync 判红」的那条性能门禁本轮未复现为红**
+  （`tests/perf` 5 passed；判定用例如今跟随 `MT_DATA_DIR`，未设置时落在系统临时目录即 `C:`）。
+
+### 仿真线未完成清单 / 接手落点
+
+1. **`T-SIM-08` 验证器**（下一步）：`sim/verify/backtest.py`（`R1`–`R6` 三态判定）+ `consistency.py`
+   （§7.3 model↔live，容差 ≤1 分/1 笔）。**现在有真 live 数据可比**：同一 seed、同一场景臂下，
+   `sim/bridge/live_run.py` 的系统侧数字（`reconciliation` / `usage_metrics` / 结算单）与
+   `sim/observe/metrics.py` 的 model 侧数字可以直接对账。
+   ⚠️ **`live_run.py` 目前固定 30 营业日、每营业日 4 笔**（为覆盖两个结算单端点且跑得完）；
+   做一致性对账时需要**提高成交密度**并把两边的口径对齐（model 侧含私下交易、系统侧不可见 —— 这是
+   §7.3 要处理的口径差，不是 bug）。
+2. **`T-SIM-09`**：`sim/observe/svg_report.py` + `tests/sim/test_svg_report_no_external.py`（复用
+   `test_no_external_assets.scan_static_text` 与其合成负例）。
+3. **`T-SIM-10`**：`docs/sim-results.md`（结果说明书 + §9 落地为可读表 + 五问答案卡，含「不稳健」标记）。
+4. **未登记的欠账（如实留档，本轮未做）**：`sim/bridge/study.py` **588 行**、`sim/bridge/model_adapter.py`
+   **406 行**，均超 `quality-gates.md` §1.2 的 400 行门禁 —— 上一任明确登记为「本轮不做」并给了拆法
+   （`study.py` 按「场景驱动器 / 敏感性编排」拆，`model_adapter.py` 按「纯函数判据 / 世界构造 / 运行编排」拆）。
+   `T-SIM-07` **未顺手重构**它们（会动已跑通且有测试覆盖的模块）；本轮新增文件已全部控制在 400 行以内。
+5. **`S6` 第三臂下游后果未证**（与 `T-SIM-07` 无关，父代理在跑）：`S6-③` 的近因已证
+   （`M-11` 维护预算 = 0 ⇒ 一台都没修），但 60 天档里设备全可用（`device_mtbf_days=540`），
+   走秤率被设备拖死的**下游后果**证明不了。live 模式若要用设备故障验证某条链路，
+   **必须用缩短 MTBF 的压力档并标注档位**。
+
 ## 下一步动作
 
 > **只写一件事**，而且必须是一个可立即执行的具体动作。做完再回来更新本文件。
@@ -245,6 +306,8 @@
 | — | — | **客户接口人报备的跟踪项** | 由父代理执行，**本期为澄清性修订、不改变交付物形态** | 若报备被否决，回退方案 = `ADR-0004` §5 第 4 条（退回"全部用标准库"） |
 
 ## 变更记录
+| 6-10-03\ | **\T-SIM-07\ live 适配器落地**（仿真线第三任接手，本次全部产出已提交）：新增 \sim/bridge/{server_launcher,live_adapter,live_run,live_scenario,live_cli,live_evidence}.py\ 与 \sim/core/console.py\（先登记 \plan.md\ §4 与 \	asks.md\ §3 再创建），改 \sim/cli.py\ 接 \--mode=live\（**\model\ 分支产物逐字节不变**，用 \git archive HEAD\ 导出的改动前 \sim/\ 对跑 \vents.jsonl\/\metrics.json\ SHA-256 相同为证）；新增 \	ests/sim/{test_live_endpoints,test_live_run}.py\ 共 21 条。**六条判据实测全绿**：31/31 端点（清单由实际请求反推 + 与契约 §2 双向逐条比对）、30/30 营业日 \alanced=true\、幂等重放同一交易号且列表不变（201→200）、敏感扫描 2082 条真实响应体零命中、数据目录落 \C:\（p50 19.6ms/p95 40.6ms）、\pp/**\+\specs/**\ 树指纹运行前后一致。**三处如实登记**：① 契约 ate_bp ∈ 1~10000\ ⇒ live 模式的「抽佣 0%」不可精确表达（取下界 1bp 并标 \clamped\）；② 当日最后一笔固定走收款码，否则 \mock/payment/callback\ 的覆盖靠运气；③ \PUT commission-rules\ 语义是「新增一条口径」，对已有相同口径的库复用并标明、不一致则原样抛错。**未改 \pp/**\、\specs/**\ 一行**（判据⑥为证）。全量回归 \python -m pytest -q\ → **428 passed / 0 failed** | \T-SIM-07\；\docs/sim-design.md\ §2.2；\	asks.md\ §3；父代理指令「T-SIM-07 逐条照做」 |
+
 
 | 日期 | 变更 | 原因 |
 | --- | --- | --- |

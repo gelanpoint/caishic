@@ -119,6 +119,8 @@ market-trade-mvp/
     │   ├── test_metrics_recomputable.py # `T-SIM-06` §6 的 22 个指标：**分子分母由 `events.jsonl` 逐条复算** + **非退化（抗写死）自检** + 负例
     │   ├── test_scenarios_and_r6.py  # `T-SIM-06` 7 个场景：对照只差声明变量 + 每个声明变量都必须真的被 sim 源码读到 + **`R6` 反例必须被执行**（自费组结果如实报告，三态判定不许写死）。**改名来历**：原名 `test_scenarios.py` 与 `tests/e2e/test_scenarios.py` **同名撞车**（pytest 无 `__init__.py` 时按 basename 认模块 ⇒ 全量收集直接 ERROR，与 `T-031` 那次 `conftest` 撞车同类），故按"避免同名"改名登记
     │   └── test_verify_sensitivity.py # `T-SIM-06` 敏感性：自写 Spearman（含并列秩）+ LHS 分层不退化 + OAT 单因子可辨（均带负例）
+    │   ├── test_live_endpoints.py      # `T-SIM-07` 端点清单：`sim` 内置的 31 个模板 ↔ 契约 §2 表**双向逐条比对**（漂移即红）+ 覆盖缺口的灵敏度负例
+    │   └── test_live_run.py            # `T-SIM-07` live 实跑：真起 `run.py` 子进程 → **六条判据逐条实测**（31/31、全营业日对账、幂等重放、敏感扫描零命中、数据目录在 `C:`、树指纹不变）+ 每条判据的**灵敏度负例**
     ├── e2e/                      # AC-001 ~ AC-024 的端到端验证
     │   └── test_offline_wait_helpers.py # 秤端等待助手的**确定性**自检（假 page，无浏览器）：`#pending` 为 `—` 时必须带上下文报错、数值时必须解析正确、超时必须转成断言（`2026-10-02` 裁定③）
     └── perf/                     # 并发与响应时间压测脚本（NFR-001 与继承基线的验证）
@@ -141,6 +143,7 @@ market-trade-mvp/
 > │   ├── events.py      # 只增不改的事件日志（JSONL，键序与空白由格式固定，否则复现判据会假红）
 > │   ├── params.py      # 参数与**出处**的加载与校验（`provenance_problems` 是纯函数，故灵敏度负例可直接喂它）
 > │   └── registry.py    # agent 注册与 id 映射（同名重复登记直接报错：id 撞车会让两条流合并）
+> │   └── console.py     # `T-SIM-07`：仿真侧的标准输出编码（**与 `app/console.py` 同一套规则但各自一份** —— 隔离闸门禁止 `sim` import `app`）
 > ├── agents/            # `T-SIM-03`/`T-SIM-04`：决策机制层（**环境事实**与**决策机制**分开，便于"只换策略不换环境"做单因子对照）
 > │   ├── __init__.py    # 包标识
 > │   ├── merchant.py    # 商户：效用四项分解 + `comply`/`evade`/`exit` 三动作（Q 学习 + EWMA 退出），三路径占比可单独观测
@@ -158,7 +161,13 @@ market-trade-mvp/
 > │   ├── day_loop.py    # `T-SIM-06`：**日频**事实生产（到达 → 选摊 → 一笔成交 → 私下可行性闸门 → 信任更新 → 设备推进）；拆出原因 = 400 行门禁（`Q-16` 裁定：按语义拆分）
 > │   ├── month_loop.py  # `T-SIM-06`：**月频**结构决策（商户动作与 Q/EWMA、市场方预算与迟滞、监管抽检、市场方现金流、消费者信任汇总）
 > │   ├── scenario.py    # `T-SIM-06`：场景装载与**"对照实验只差声明变量"的机械校验**（`scenario_problems` 是纯函数，负例可直接喂）
-> │   └── study.py       # `T-SIM-06`：7 个场景 × 臂的驱动器 + 全局 OAT / 每个场景**本场景指标**的 OAT / LHS 秩相关 / 结论稳健性 → 报告
+> │   ├── study.py       # `T-SIM-06`：7 个场景 × 臂的驱动器 + 全局 OAT / 每个场景**本场景指标**的 OAT / LHS 秩相关 / 结论稳健性 → 报告
+> │   ├── server_launcher.py # `T-SIM-07`：子进程拉起 `run.py`（**隔离 `MT_DATA_DIR`（落 `C:`）** + 独立端口 + `/healthz` 就绪探测与超时上限）+ **业务日时钟文件**（`MT_CLOCK_FILE`，`REQ-033`）+ 被测系统树指纹（`app/**`、`specs/**`）
+> │   ├── live_adapter.py# `T-SIM-07`：31 个端点的 **stdlib**（`http.client`）HTTP 客户端；端点覆盖**由实际请求反推**（拿路径去匹配契约模板，不自报"我调过"）
+> │   ├── live_run.py    # `T-SIM-07`：live 模式的**日/月编排**（场景装载 = 真 `PUT` 佣金口径 → 日初配置 → 逐笔成交 → 日终聚合/对账 → 月末结算）
+> │   ├── live_scenario.py # `T-SIM-07`：**场景 → 系统佣金口径**的装载与"库里已有同样一条口径"的显式处置（拆出原因 = 400 行门禁）
+> │   ├── live_cli.py    # `T-SIM-07`：`--mode=live` 的命令行分支与**六条判据的一行式汇报**（拆出原因 = 400 行门禁）
+> │   └── live_evidence.py # `T-SIM-07`：运行证据落盘 + **六条验收判据的判定**（`verification_problems` 是纯函数，故灵敏度负例可直接喂）
 > ├── observe/
 > │   ├── __init__.py    # 包标识
 > │   ├── metric_specs.py # `T-SIM-06`：22 个指标的**目录**（分子/分母口径、来源事件、**适用条件**）——只描述"是什么"，不含复算逻辑

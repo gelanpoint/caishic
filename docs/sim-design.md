@@ -148,6 +148,46 @@ data/sim/<run_id>/                    ← 产物（`.gitignore` 已忽略 data/�
 > 原名 `test_scenarios.py` 与 `tests/e2e/test_scenarios.py` 同名撞车，见 §2.2 下方纪律①）、
 > `test_verify_sensitivity.py`（自写 Spearman 并列秩 + LHS 分层 + OAT + 稳健性）。
 
+> **落地实况（`T-SIM-07` 同步，2026-10-03）** —— `sim/bridge/` 新增 6 个文件，语义边界是
+> 「怎么把被测系统安全拉起来」/「怎么按契约打 31 个端点」/「怎么逐日编排」/「怎么装载佣金口径」
+> /「怎么汇报与判定」/「命令行分支」；拆开的原因是 `quality-gates.md` §1.2 的 400 行门禁
+> （`Q-16` 裁定：按语义拆分、不放宽阈值）：
+>
+> | 文件 | 职责 | 实测行数 |
+> | --- | --- | --- |
+> | `server_launcher.py` | 子进程拉起 `run.py`：**隔离 `MT_DATA_DIR` 落 `C:`** + 独立端口 + `/healthz` 就绪探测（超时上限；进程早退即报错并附日志尾）+ **业务日时钟文件**（`MT_CLOCK_FILE`，按 `T-SIM-00` 已确立的接缝推进，**不另造一套**）+ 被测系统树指纹 | 285 |
+> | `live_adapter.py` | **31 个端点的 stdlib（`http.client`）客户端**，**不引任何新依赖**；端点覆盖**由实际请求反推**（拿真实路径去匹配契约模板，**不接受调用方自报**「我调过」） | 398 |
+> | `live_run.py` | 日/月编排：场景装载 → 日初配置 → 逐笔成交 → 日终聚合/对账/指标/看板/留痕 → 月末结算 | 343 |
+> | `live_scenario.py` | 场景臂 → **要写进系统的佣金口径**（`PUT /api/admin/commission-rules`）与「库里已有同样一条口径」的**显式**处置 | 126 |
+> | `live_evidence.py` | 证据落盘（`live_report.json` / `coverage.json` / `live_responses.jsonl`）+ **六条判据的判定**（纯函数 ⇒ 灵敏度负例可直接喂） | 208 |
+> | `live_cli.py` · `sim/core/console.py` | `--mode=live` 的命令行分支与六条判据的一行式汇报；仿真侧输出编码（与 `app/console.py` 同一套规则但**各自一份** —— 隔离闸门禁止 `sim` import `app`） | 104 · 33 |
+>
+> **三处实测得来的、与设计文本不完全一致的事实（如实登记；不自行改 `app/**`）**：
+>
+> 1. **「抽佣 0%」在 live 模式不可精确表达**：契约 §3.24 的 `rate_bp ∈ 1~10000`，而 `S0` / `S1-②`
+>    声明的是 `0bp`。live 模式取下界 `1bp = 0.01%` 并在报告里标 `clamped=true` + 原因。
+>    **这不动摇 `Q1` 的序关系结论**（1bp 与 200bp 仍差 200 倍），但「0%」这个字面值在 live 模式下
+>    **不存在**，引用时必须带这句。**要精确表达 0% 须改契约或数据模型，属系统侧改动。**
+> 2. **「当日最后一笔固定走收款码」**：若把 `POST /api/mock/payment/callback` 的出现交给随机数，
+>    「31/31 全覆盖」就变成碰运气的事（`cash_share=0.7`、每天 2 笔时整轮一次都不出现的概率 ≈ 0.09）。
+>    覆盖判据不能靠运气，故留一个**确定性**样本。
+> 3. **`PUT /api/admin/commission-rules` 的语义是「新增一条口径」**（`data-model.md` §2.14 保留历史生效期），
+>    对已有该口径的库再跑必然 `MT-1012`。live 模式对「库里那条与本次完全一致」的情形**复用并在报告里标明**
+>    （`reused_existing_rule`），不一致则**原样抛错** —— 不静默改口径、也不换个费率蒙混过去。
+>
+> **live 实测（2026-10-03，`python -m sim --mode=live --scenario=S1 --live-arm=0 --live-days=30 --live-txns=4`）**：
+> HTTP 调用 **2082 次** / 营业日 **30** 天 ⇒ 判据①**31/31**、判据②**30/30 天 `balanced=true`**、
+> 判据③重发后**同一交易号**且列表 `total` 不变（HTTP **201 → 200**）、判据⑤数据目录落在
+> **`C:\mt-sim\live-S1-…`**（实测 **p50 19.6ms / p95 40.6ms**，样本 2082）、判据⑥`app/**`（33 文件）与
+> `specs/**`（6 文件）树指纹**运行前后一致**；判据④由 `tests/sim/test_live_run.py` 复用
+> `tests/contract/sensitive_scan.py` 扫 **2082 条真实响应体** → **零命中**。
+> **「佣金由系统算」的交叉核对**：写进系统的口径 `rate_bp=200`，系统给出的日佣金合计 **5699 分**，
+> 同期已结算订单总额 **284872 分** ⇒ 实收费率 **200.1bp**（差额来自逐日四舍五入）；
+> 结算单佣金合计与看板佣金合计**同为 5699 分**（同一处口径 `stall_day_facts`）。
+> 对照：同 seed、同一编排的 `S0`（写入 1bp）实测佣金合计 **15 分** —— 佣金确实随**系统里的口径**而变，
+> 不是 sim 自己算的。**`--mode=model` 未受影响**：`git archive HEAD` 导出的改动前 `sim/` 与当前代码同参数
+> 跑出的 `events.jsonl` / `metrics.json` SHA-256 **逐字节相同**。
+
 > **`tests/sim/` 的两条实现纪律**（都是项目已经踩过的坑，不要重踩）：
 > ① **用例一律用唯一模块名导入**（`sim_support` 之类的专名），不要新增与 `tests/conftest.py` / `tests/contract/conftest.py` 同名的 `conftest.py` —— 项目曾因"同名 conftest 撞车"导致 10 个文件收不起来（提交 `cabe4e1`）。
 > ② **sim 侧不得复用 `tests/contract/contract_support.py` 的 HTTP 助手**（`bind_stall_session` / `create_priced_transaction` / `session_headers` 等）：它们会让"唯一耦合面 = HTTP 契约"这条纪律变成"复用测试夹具"，而夹具本身可以绕过契约。sim 的 live 适配器**自己实现** HTTP 调用（stdlib `http.client`），这正是它作为契约压测的价值所在。

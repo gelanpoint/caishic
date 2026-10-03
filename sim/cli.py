@@ -17,6 +17,7 @@ from datetime import date
 from pathlib import Path
 
 from .core.clock import Block, SimClock
+from .core.console import force_utf8_stdio
 from .core.events import EventLog
 from .core.params import DEFAULT_PARAMS_PATH, ParamsError, load_params
 from .core.registry import Registry
@@ -67,6 +68,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sensitivity-days", type=int, default=60, help="敏感性档的营业日数")
     parser.add_argument("--lhs-samples", type=int, default=64, help="分层拉丁超立方样本数")
     parser.add_argument("--no-study", action="store_true", help="只跑场景臂，跳过全局 OAT/LHS（省时间）")
+    parser.add_argument("--live-days", type=int, default=None,
+                        help="live 模式营业日数（缺省 30；**必须 ≥30** 才走得到月末、才调得到两个结算单端点）")
+    parser.add_argument("--live-txns", type=int, default=4, help="live 模式每个营业日的成交笔数")
+    parser.add_argument("--live-arm", type=int, default=0, help="live 模式用场景的第几臂（0 起）")
+    parser.add_argument("--live-data-dir", default=None,
+                        help="live 模式的隔离数据目录（缺省落 `C:/mt-sim/<run_id>`；给了就按它实际所在的卷判定）")
+    parser.add_argument("--live-port", type=int, default=None, help="live 模式的服务端口（缺省向内核要一个空闲端口）")
+    parser.add_argument("--live-timeout", type=float, default=180.0, help="live 模式的 `/healthz` 就绪探测超时上限（秒）")
+    parser.add_argument("--live-run-id", default=None,
+                        help="live 模式的隔离数据目录名（缺省带时间戳 ⇒ 每次运行都是一份干净库）")
     return parser
 
 
@@ -316,16 +327,23 @@ def _run_integrated(args, params, base_out: Path) -> int:
     return 0
 
 
+def _run_live_mode(args) -> int:
+    """`--mode=live`（`T-SIM-07`）：真起被测服务、走完 31 个端点、逐条打印六条判据。
+
+    编排与汇报都在 `sim/bridge/live_cli.py`（`quality-gates.md` §1.2 的 400 行门禁：按语义拆分）。
+    **`model` 分支不受本函数影响** —— 它是已验收路径（`T-SIM-01/02/06` 的判据直接断言它的产物）。
+    """
+    from .bridge.live_cli import live_command
+
+    return live_command(args)
+
+
 def main(argv: list[str] | None = None) -> int:
+    force_utf8_stdio()
     args = build_parser().parse_args(argv)
 
     if args.mode == "live":
-        print(
-            "[未实现] --mode=live（真实 HTTP 调用 31 个端点）由 T-SIM-07 接入。\n"
-            "  本阶段（T-SIM-01/02）只提供 --mode=model 的骨架与环境层。",
-            file=sys.stderr,
-        )
-        return 3
+        return _run_live_mode(args)
 
     try:
         params = load_params(args.params)
