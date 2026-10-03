@@ -497,7 +497,28 @@ print(render_params_readme(load_params()))"
 | 修复后 | `[0.594, 0.479, 0.305, 0.183, **0.187**, **0.180**, **0.152**, **0.145**]` |
 
 ⇒ **大涨与归零都消失了**，留下的是一条平缓下降的曲线。
-复现命令见 `tasks.md` 的 `T-SIM-11` 验收①。
+`M-10按期` 同步从 `[0.400, 0.400, 0.500, 0.711, 0.333, 1.0, 1.0, 1.0]` 变成
+`[0.400, 0.400, 0.500, 0.711, 0.667, 0.667, 0.667, 0.667]` —— **不再末尾贴上限 1.0**，
+这也是 `R3-c` 判定改变的原因（见 §3.1 与 §8.6）。
+
+**最小复现命令（一条，重跑即可看到同一现象；不需要任何临时脚本）**
+
+```powershell
+# 档位：S-约束 压力档（240 营业日 / 8 期 / MTBF=10 / 修复均值=6 / 维修单价 1.6e6），只把 MTBF 改成 180
+python -c "import copy;from pathlib import Path;from sim.core.params import load_params;\
+from sim.verify.arm_runner import run_arm;from sim.verify.r_criteria import BINDING_PROFILE;\
+p=copy.deepcopy(BINDING_PROFILE);p['param_overrides']['device_mtbf_days']=180;p['replications']=1;\
+r=run_arm(load_params(),scenario_id='S3',arm_index=0,label='S3-A',prof=p,\
+out_root=Path('.pytest-tmp/mtbf180'),progress=lambda m:None);\
+print('M-04 =',r['rows'][0]['series']['M-04']);print('M-10按期 =',r['rows'][0]['series']['M-10-按期'])"
+```
+
+实测输出（**修复后**）：
+`M-04 = [0.593698, 0.47925, 0.304744, 0.18276, 0.18669, 0.180424, 0.15226, 0.14529]`、
+`M-10按期 = [0.4, 0.4, 0.5, 0.711111, 0.666667, 0.666667, 0.666667, 0.666667]`。
+
+> ⚠️ **`arm_index=0` 是**足额**臂（`S3-预算足额-保底50%`），`arm_index=4` 才是 **0.3× 组**。
+> 上一轮把足额臂的数字登记成 0.3× 组，正是这个坑（见 §8.4）。**读任何「两组对照」的数字前，先确认臂序。**
 
 ### 8.6 对已登记结论的影响（**差异清单，以实况文件为准但本节如实登记**）
 
