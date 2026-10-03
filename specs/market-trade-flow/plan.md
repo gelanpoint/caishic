@@ -196,7 +196,10 @@ market-trade-mvp/
 > │   ├── test_verify_consistency.py # `T-SIM-08` 验收②③：model 账目**只由事件流复算** + 三处口径差**有字段有值** + **灵敏度负例**（篡改 model 一处必红）+ 端到端真起服务对账
 > │   └── test_calibration_moments.py # `T-SIM-08`：6 个矩逐一有出处 + 匹配空间**只用无出处参数** + LHS 分层覆盖度 + 越界取值自报 + 单点真跑
 > │   └── test_svg_report_no_external.py # `T-SIM-09` 验收①②③：**复用 `tests/contract/test_no_external_assets.py::scan_static_text()`** 扫生成的 `report.html` → 0 命中；**合成负例必红**（塞一个协议外链 + 一个包管理器目录引用）；缺产物时该块必须显示"未生成"而不是假数据
+> │   └── test_merchant_learning_hygiene.py # `T-SIM-11` 验收①~④：商户学习的**卫生守卫** —— 没有实现的流水就不学习 + 退出商户不进同伴网络；**每条守卫都配"把修复关掉必须变红"的灵敏度负例**
+> │   └── test_param_table_doc.py       # `T-SIM-10` 验收②：`docs/sim-results.md` 的参数来源表必须与 `sim/observe/param_table.py` 的渲染**逐字一致**（同一份事实存两遍就是下次漂移的种子）
 > └── `sim/observe/verify_report.py` # `T-SIM-08`：**验证类报告装配**（回测 / 一致性 / 匹配矩三份产物）+ 从 `study.py` 迁来的「`R6` 三段证据装配」与「`R` 的诚实提示」（措辞只此一处）
+> ├── observe/param_table.py   # `T-SIM-10`：**参数来源表的人读可读版**（把 `sim-design.md` §9 落成一张可核对的表；`sourced` 与 `assumed` **必须分表、一眼可分**；**纯函数** → 负例可直接喂，且文档由它渲染）
 > ├── scenarios/
 > │   ├── S0_baseline.json · S1_commission.json · S2_enforcement.json · S3_maintenance.json ·
 > │   │   S4_price_disclosure.json · S5_device_funding.json · S6_short_weight_feasibility.json

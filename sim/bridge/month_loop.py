@@ -28,8 +28,47 @@ def _merchant_params_for_period(world, stall):
     return merchant_params(world.params, **overrides)
 
 
+def coexisting_peers(world) -> list:
+    """同期**仍在营**的商户（同伴网络 `Q̄_peer` 的成员）。**纯函数**，故负例可直接喂构造出来的 `world`。
+
+    ⚠️ 已退出的商户**不在**这个网络里：它已经离场，它的经验不该继续对留下的人施加同伴压力。
+    这不是洁癖 —— 把离场商户算进来会出事，见 [`peer_mean_q`](month_loop.py) 的算术说明。
+    """
+    return [s.merchant for s in world.stalls.values() if s.active]
+
+
+def realized_volume_for_learning(stall, realized: dict) -> float | None:
+    """本期**用于学习的**实现流水；返回 `None` = 没有实现流水 ⇒ **不可学习**。**纯函数**。
+
+    `T-SIM-11` 修复：原文对退出/停业摊位用 `volume = max(1.0, 实现流水)` 兜底除零，
+    于是"没有流水"被当成"流水 1 分"，`normalized = U / 1.0 = −29999.75`
+    （退出后只剩设备分摊 30000 与 `p_check·(F+L)=102500`）——
+    **比真实的每元效用（~0.25）大 10⁵ 倍**的垃圾值，既污染它自己的 `Q`，也污染同伴均值。
+
+    语义上正确的规则是：**一期没有任何成交 ⇒ 没有实现值可学**（这是"没有数据"，不是"经营失败"）。
+    顺带堵掉一个假出口：没有生意的月份不能被判"赚不够活下去"。
+    """
+    if not stall.active:
+        return None
+    volume = float(realized.get("volume_cents") or 0.0)
+    return volume if volume > 0 else None
+
+
 def peer_mean_q(agents) -> float:
-    """上一期全群 Q 均值（同伴影响项 `ρ` 的输入；与 `sim/agents/merchant.py` 同口径）。"""
+    """上一期**同期仍在营**的商户群 Q 均值（同伴影响项 `ρ` 的输入）。
+
+    ⚠️ **调用方必须只传 `coexisting_peers(world)`**。理由不是洁癖，是算术：
+    已退出的商户没有流水可学，它的 `Q` 是残值；而"没有流水"那一期若被兜底喂进
+    `observe()`，它的 `Q` 就变成 **−30000 量级**（见 `realized_volume_for_learning`）——
+    比真实的每元效用（~0.25）大 **10⁵ 倍**。把它算进同伴均值，
+    `ρ(1−φ)·Q̄_peer ≈ 0.08 × (−7700) ≈ −616` 就被加进**每一个在营商户**的 `Q`，
+    直接压过 0.25 量级的真实效用差，`softmax` 于是被垃圾值支配。
+
+    **实测（`T-SIM-11`）**：这一条污染单独造出
+    `M-04 = [0.594, 0.479, 0.305, 0.183, 0.727, 0, 0, 0]` 的"大涨后归零"假象
+    （`R3` 压力档 MTBF=180 / 240 日 / `S3` 足额臂），修掉之后同一臂变成
+    `[0.594, 0.479, 0.305, 0.183, 0.187, 0.180, 0.152, 0.145]` —— **不再大涨、不再归零**。
+    """
     live = [a for a in agents if a.q]
     if not live:
         return 0.0
@@ -175,33 +214,29 @@ def close_month(world, log, business_date: str, period: int, month_totals: dict)
         world.month_by_stall.get(stall_no, {}).get("shadow_txns", 0) for stall_no in world.stalls
     )
     usage_rate = world.month_on_scale / observed if observed else float(world.params.value("scale_use_baseline_rate"))
-    peer_q = peer_mean_q([s.merchant for s in world.stalls.values()])
+    #: **同伴均值只取"同期仍在营"的商户** —— 已退出的商户不在这个 10 摊网络里（理由见 `peer_mean_q`）。
+    peer_q = peer_mean_q(coexisting_peers(world))
     active_start = month_totals["active_start"]
     for stall in world.stalls.values():
         if stall.current_action is None:
             continue
         realized = world.month_by_stall.get(stall.stall_no, {"volume_cents": 0, "scale_txns": 0, "short_txns": 0})
+        #: **没有实现的流水，就没有可学习的实现值**（`T-SIM-11` 修复；规则见 `realized_volume_for_learning`）。
+        volume = realized_volume_for_learning(stall, realized)
+        if volume is None:
+            continue
         mp = _merchant_params_for_period(world, stall)
-        volume = max(1.0, float(realized["volume_cents"]))
         realized_terms = terms_fn(stall.current_action, mp, volume_cents=volume, scale_txn_count=realized["scale_txns"])
         stall.merchant.observe(stall.current_action, realized_terms, volume, peer_q)
         if stall.merchant.exited and stall.exits_period is None:
             stall.exits_period = period
         stall.prev_volume_cents = float(realized["volume_cents"])
         stall.prev_scale_txns = int(realized["scale_txns"])
-        log.emit(
-            "merchant_month",
-            business_date=business_date,
-            period=period,
-            stall_no=stall.stall_no,
-            action=stall.current_action,
-            realized_volume_cents=round(float(realized["volume_cents"]), 6),
-            realized_scale_txns=int(realized["scale_txns"]),
-            realized_short_txns=int(realized["short_txns"]),
-            net_income_cents=round(realized_terms.utility, 6),
-            ewma_utility=round(stall.merchant.ewma_utility, 6),
-            exited=stall.merchant.exited,
-        )
+        log.emit("merchant_month", business_date=business_date, period=period, stall_no=stall.stall_no,
+                 action=stall.current_action, realized_volume_cents=round(float(realized["volume_cents"]), 6),
+                 realized_scale_txns=int(realized["scale_txns"]), realized_short_txns=int(realized["short_txns"]),
+                 net_income_cents=round(realized_terms.utility, 6),
+                 ewma_utility=round(stall.merchant.ewma_utility, 6), exited=stall.merchant.exited)
 
     offenders = sum(
         1
