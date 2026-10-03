@@ -193,12 +193,22 @@ def test_unwired_key_guard_is_sensitive(sim_source):
 
 
 def test_evade_feasibility_is_read_in_the_day_loop():
-    """`S6` 的堵死开关必须在**日频成交**里生效（不是只在参数表里躺着）。"""
+    """`S6` 的堵死开关必须在**日频成交**里生效（不是只在参数表里躺着）。
+
+    读取点原来钉在 `model_adapter.py` 一个文件上；`T-SIM-08` 按语义把「建世界」搬进
+    `world_setup.py` 之后，`params.value("evade_feasibility")` 随之搬到了那里。
+    **断言跟着语义走，不跟着文件名走** —— 否则下一次按语义拆分会再次把这条守卫变成假红，
+    而它的本意（"堵死这条对照不能是空的"）一个字都没变。同一意图的**树级**守卫在
+    `test_every_declared_varying_key_is_actually_read_by_the_model` 里，那条遍历整个 `sim/**`。
+    """
     source = (SIM_DIR / "bridge" / "day_loop.py").read_text(encoding="utf-8")
     assert "evade_feasible" in source and "forced_on_scale" in source, \
         "day_loop 没有实现『想私下也私不成』这条机制"
-    assert re.search(r"evade_feasibility", (SIM_DIR / "bridge" / "model_adapter.py").read_text(encoding="utf-8"))
-    print("[T-SIM-06] evade_feasibility 在 day_loop 里真的生效，且 forced_on_scale 落进事件流")
+    read_sites = [path.relative_to(SIM_DIR).as_posix()
+                  for path in sim_python_files()
+                  if 'value("evade_feasibility")' in path.read_text(encoding="utf-8")]
+    assert read_sites, "sim/** 里没有任何代码 value('evade_feasibility') ⇒ S6 的堵死开关没有接入模型"
+    print(f"[T-SIM-06] evade_feasibility 在 day_loop 里真的生效，且读取点位于 {read_sites}")
 
 
 # ---------------------------------------------------------------------------

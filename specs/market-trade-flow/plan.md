@@ -179,6 +179,21 @@ market-trade-mvp/
 > ├── verify/
 > │   ├── __init__.py    # 包标识
 > │   └── sensitivity.py # `T-SIM-06`：OAT（一次一参数）+ **自写 Spearman**（含并列秩）+ 分层拉丁超立方与覆盖度检验 + 结论稳健性 + 存活区域形状
+> │   ├── model_ledger.py  # `T-SIM-08`：**model 侧账目只由事件流复算**（纯函数、无 I/O、不起服务）+ 一致性对账的运行档与容差常量（`consistency.py` 原样转出，两边共用同一份）
+> │   ├── r_criteria.py   # `T-SIM-08`：`R1`~`R6` 判据的**可执行声明**（文本 / 判据形式 / 依赖参数 / 所用档位）+ **三个档位的定义与自证**（含"为什么必须换档才看得到机制"）
+> │   ├── backtest.py     # `T-SIM-08`：`R1`~`R6` 回测与**三态**判定（成立/不成立/不稳健，收敛规则只此一处）+ **「绝对阈值 vs 序关系」纪律的机械执行** + 无出处参数的**稳健性扫描**
+> │   ├── consistency.py  # `T-SIM-08`：`model ↔ live` 一致性（同一批成交决策流两边对账，容差 ≤1 分 / 1 笔）+ **三处口径差显式量化**（shadow / 取整 / 佣金）+ **灵敏度负例**（篡改 model 一处必红）
+> │   └── calibration.py  # `T-SIM-08`：**档 2 匹配矩**（POM，领域方法 —— 明确不假称来自本项目调研）：把 `R1`~`R6` 当 6 个定性矩做 LHS + 拒绝采样，报**区域占比**与**最敏感参数**（不报"完美参数点"）
+> │   ├── world_setup.py  # `T-SIM-08`：**建世界**（`StallState` / `World` / `build_world`）——从 `model_adapter.py` 按语义搬出（400 行门禁，`Q-16`）
+> │   └── sensitivity_runner.py # `T-SIM-08`：**敏感性编排**（六张键表 + 全局 OAT / LHS 秩相关 / 每场景 own-OAT / 结论稳健性）——从 `study.py` 按语义搬出（400 行门禁，`Q-16`）
+> ├── sim/verify_cli.py   # `T-SIM-08`：**验证类三个入口**（回测 / 一致性 / 匹配矩）的命令行分支（从 `sim/cli.py` 按语义搬出；`model` / `live` / `study` 三条已验收路径不受影响）
+> ├── sim/env_baseline.py  # `T-SIM-08`：**零决策基线运行**（到达过程 + 设备机队 + 守恒自检 + 明细落盘）——从 `sim/cli.py` 按语义搬出，`cli.py` 原样转出
+> ├── sim/cli_support.py   # `T-SIM-08`：**跨分支共用**的 `SCHEMA_VERSION` 与 `_write_json`（只有一份落盘口径）
+> ├── tests/sim（T-SIM-08 新增三条）
+> │   ├── test_verify_backtest.py   # `T-SIM-08` 验收①②：六条判据**三态**（不许二态）+「无出处参数不许撑绝对阈值」是**机械**的 + 与 `T-SIM-06` 的 `r6_verdict` **逐条同源**
+> │   ├── test_verify_consistency.py # `T-SIM-08` 验收②③：model 账目**只由事件流复算** + 三处口径差**有字段有值** + **灵敏度负例**（篡改 model 一处必红）+ 端到端真起服务对账
+> │   └── test_calibration_moments.py # `T-SIM-08`：6 个矩逐一有出处 + 匹配空间**只用无出处参数** + LHS 分层覆盖度 + 越界取值自报 + 单点真跑
+> └── `sim/observe/verify_report.py` # `T-SIM-08`：**验证类报告装配**（回测 / 一致性 / 匹配矩三份产物）+ 从 `study.py` 迁来的「`R6` 三段证据装配」与「`R` 的诚实提示」（措辞只此一处）
 > ├── scenarios/
 > │   ├── S0_baseline.json · S1_commission.json · S2_enforcement.json · S3_maintenance.json ·
 > │   │   S4_price_disclosure.json · S5_device_funding.json · S6_short_weight_feasibility.json

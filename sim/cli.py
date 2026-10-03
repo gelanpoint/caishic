@@ -16,17 +16,14 @@ import sys
 from datetime import date
 from pathlib import Path
 
+from .cli_support import SCHEMA_VERSION, _write_json
 from .core.clock import Block, SimClock
 from .core.console import force_utf8_stdio
 from .core.events import EventLog
 from .core.params import DEFAULT_PARAMS_PATH, ParamsError, load_params
 from .core.registry import Registry
 from .core.streams import StreamSet
-from .env.demand import block_lambdas, day_arrivals, split_on_scale
-from .env.devices import DeviceFleet
-from .env.market import build_market
-
-SCHEMA_VERSION = 1
+from .env_baseline import _sum_block_field, run_env_baseline_once  # 原样转出（见 `sim/env_baseline.py`）
 
 #: 骨架占位 agent 的数量（对应演示规模的 10 个摊位；`T-SIM-02` 起由环境层决定）
 DEFAULT_AGENTS = 10
@@ -78,6 +75,26 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--live-timeout", type=float, default=180.0, help="live 模式的 `/healthz` 就绪探测超时上限（秒）")
     parser.add_argument("--live-run-id", default=None,
                         help="live 模式的隔离数据目录名（缺省带时间戳 ⇒ 每次运行都是一份干净库）")
+    parser.add_argument("--backtest", action="store_true",
+                        help="跑 `T-SIM-08` 的 `R1`~`R6` 回测并落 `backtest.json` / `backtest.md`"
+                             "（三态判定；档位与出处随结论一起给出）")
+    parser.add_argument("--backtest-only", default=None,
+                        help="只回测指定判据（逗号分隔，如 `R3,R6`）；缺省 = 全部六条")
+    parser.add_argument("--no-robustness-scan", action="store_true",
+                        help="回测时跳过稳健性扫描（**那不是『没发现翻转』**，报告里会如实标为未跑）")
+    parser.add_argument("--consistency", action="store_true",
+                        help="跑 `T-SIM-08` 的 model↔live 一致性对账（§7.3；容差 ≤1 分 / 1 笔）")
+    parser.add_argument("--consistency-days", type=int, default=30,
+                        help="一致性对账的营业日数（必须 ≥30 才走得到月末结算单）")
+    parser.add_argument("--consistency-txns", type=int, default=20,
+                        help="一致性对账每日喂给 live 的走秤笔数上限（**成交密度**；`live_run` 缺省只有 4）")
+    parser.add_argument("--no-consistency-tamper", action="store_true",
+                        help="**灵敏度负例默认开**（`T-SIM-08` 验收③：篡改 model 一处 ⇒ 一致性必红）；"
+                             "只有显式关掉才会不跑 —— 关掉的那次结果在报告里会写明『本次未跑负例』")
+    parser.add_argument("--calibrate", action="store_true",
+                        help="跑 `T-SIM-08` 的档 2 匹配矩（POM；领域方法，不假称来自本项目调研）")
+    parser.add_argument("--calibrate-samples", type=int, default=48,
+                        help="匹配矩的采样点数（每点 = 6 个矩各跑一遍）")
     return parser
 
 
@@ -158,132 +175,6 @@ def run_model_once(args, params, seed: int, out_dir: Path) -> dict:
     return metrics
 
 
-def run_env_baseline_once(args, params, seed: int, out_dir: Path) -> dict:
-    """跑一次**零决策基线**：环境层推进 90 营业日也不该出现任何异常或守恒破坏。
-
-    零决策 = 没有任何策略变化，随机流与参数都取基线值。它的用途是**对照基线**：
-    后续场景（`S0`~`S6`）与它的差异才是"策略造成的差异"，而不是"随机噪声造成的差异"。
-
-    天气/结构事实全部落进事件日志，**守恒与强度都能由明细独立复算**（`T-SIM-02` 验收②④）——
-    故本函数只负责"产生事实与自检"，判定交给 `tests/sim/test_env_timing.py`。
-    """
-    clock = SimClock(
-        start=date.fromisoformat(args.start),
-        days=args.days,
-        blocks=tuple(Block(name, start, intensity) for name, start, intensity in params.blocks()),
-    )
-    streams = StreamSet(seed)
-    market = build_market(params, streams)
-    fleet = DeviceFleet(
-        total=int(params.value("device_count")),
-        mtbf_days=float(params.value("device_mtbf_days")),
-        repair_mean_days=float(params.value("repair_mean_days")),
-    )
-    daily_arrivals = float(params.value("daily_arrivals_per_market"))
-    on_scale_rate = float(params.value("scale_use_baseline_rate"))
-    lambdas = {name: lam for name, _start, _intensity, lam in block_lambdas(clock.blocks, daily_arrivals)}
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    events_path = out_dir / "events.jsonl"
-    totals = {"arrivals": 0, "on_scale": 0, "off_scale": 0, "breakdowns": 0, "repaired": 0}
-    with EventLog(events_path) as log:
-        log.emit(
-            "run_started",
-            mode="model",
-            layer="env-baseline",
-            seed=seed,
-            days=args.days,
-            start=args.start,
-            stalls=len(market.stalls),
-            products=len(market.products),
-            devices=fleet.total,
-            blocks=[b.name for b in clock.blocks],
-        )
-        for index, business_date, month_end, quarter_end in clock.iter_days():
-            log.emit("day_opened", day_index=index, business_date=business_date)
-
-            arrivals = day_arrivals(clock.blocks, daily_arrivals, streams.stream("market", "arrival"))
-            day_total = 0
-            for block in arrivals:
-                on_scale, off_scale = split_on_scale(block.count, on_scale_rate, streams.stream("market", "choice"))
-                if on_scale + off_scale != block.count:
-                    raise RuntimeError(f"客流守恒被破坏：{on_scale}+{off_scale}≠{block.count}")
-                day_total += block.count
-                log.emit(
-                    "block_arrivals",
-                    business_date=business_date,
-                    block=block.block,
-                    start=block.start,
-                    intensity=block.intensity,
-                    lam=round(block.lam, 12),
-                    count=block.count,
-                    on_scale=on_scale,
-                    off_scale=off_scale,
-                )
-            totals["arrivals"] += day_total
-            log.emit("day_arrivals_total", business_date=business_date, count=day_total)
-
-            fleet_state = fleet.step_day(streams.stream("market", "breakdown"), streams.stream("market", "repair"))
-            totals["breakdowns"] += fleet_state["breakdowns"]
-            totals["repaired"] += fleet_state["repaired"]
-            log.emit(
-                "device_state",
-                business_date=business_date,
-                total=len(fleet.states),
-                **fleet_state,
-            )
-            log.emit(
-                "day_closed",
-                day_index=index,
-                business_date=business_date,
-                month_end=month_end,
-                quarter_end=quarter_end,
-            )
-        log.emit("run_finished", days=args.days, event_count=log.count)
-        event_count = log.count
-
-    # 逐日明细复算出的日总量（用于 metrics 自洽，也是"可由明细复算"的最小演示）
-    on_scale_total, off_scale_total = _sum_block_field(events_path, "on_scale"), _sum_block_field(events_path, "off_scale")
-    metrics = {
-        "schema_version": SCHEMA_VERSION,
-        "mode": "model",
-        "layer": "env-baseline",
-        "skeleton_only": False,
-        "seed": seed,
-        "days": args.days,
-        "start": args.start,
-        "first_business_date": clock.business_date(0),
-        "last_business_date": clock.business_date(args.days - 1),
-        "stalls": len(market.stalls),
-        "products": len(market.products),
-        "devices": fleet.total,
-        "device_states_final": fleet.counts(),
-        "block_lambdas": {name: round(lam, 12) for name, lam in sorted(lambdas.items())},
-        "arrivals_total": totals["arrivals"],
-        "on_scale_total": on_scale_total,
-        "off_scale_total": off_scale_total,
-        "flow_conservation_ok": on_scale_total + off_scale_total == totals["arrivals"],
-        "device_conservation_ok": sum(fleet.counts().values()) == len(fleet.states),
-        "breakdowns_total": totals["breakdowns"],
-        "repairs_done_total": fleet.repairs_done_total,
-        "device_days_lost_total": fleet.device_days_lost_total,
-        "event_count": event_count,
-        "events_sha256": hashlib.sha256(events_path.read_bytes()).hexdigest(),
-        "params_sourced": params.sourced_ids(),
-        "params_assumed": params.assumed_ids(),
-    }
-    _write_json(out_dir / "metrics.json", metrics)
-    return metrics
-
-
-def _sum_block_field(events_path: Path, field: str) -> int:
-    """由事件明细求和某个 `block_arrivals` 字段（"可由明细复算"的实现）。"""
-    total = 0
-    for line in events_path.read_text(encoding="utf-8").splitlines():
-        record = json.loads(line)
-        if record.get("kind") == "block_arrivals":
-            total += int(record[field])
-    return total
 
 
 def _run_integrated(args, params, base_out: Path) -> int:
@@ -358,6 +249,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     base_out = Path(args.out_dir) if args.out_dir else Path("data") / "sim" / f"model-{args.seed}"
+
+    if args.backtest or args.consistency or args.calibrate:
+        from .verify_cli import verify_command
+
+        return verify_command(args, params, base_out)
 
     if args.scenario or args.integrated:
         return _run_integrated(args, params, base_out)

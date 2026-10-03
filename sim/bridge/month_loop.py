@@ -77,6 +77,29 @@ def market_cash_month(world, *, active_stalls: int, period: int) -> dict:
     }
 
 
+def open_period(world, *, day_index: int, day_count: int, month_totals: dict | None = None,
+                usage_rate: float | None = None, decide=None, log=None, business_date: str | None = None,
+                period: int | None = None) -> dict:
+    """期初的**结构决策**（`T-SIM-08` 从 `run_scenario` 搬进来，`Q-16` 的"按语义拆分"）。
+
+    ## 为什么这两行值得单独成函数
+
+    它们决定的是"**月频**结构"，却长在日循环的编排里，于是读 `run_scenario` 的人会把
+    `month_totals["active_start"]` 的更新时点当成日循环的一部分 —— 而它其实是**期初**语义：
+    在 `decide_month_start` **之前**统计一次"本月初在营摊位数"，所以本期刚退出的摊位仍计入分母。
+    这个口径差异直接决定 `M-01`（商户月度流失率）的分子分母，放错地方就会被后人"顺手修正"成
+    另一种口径而不自知。
+
+    `decide=None` 时只建/返回期初账目（第一次调用）；给了 `decide` 才真正执行月频决策。
+    """
+    if month_totals is None:
+        return {"active_start": sum(1 for s in world.stalls.values() if s.active)}
+    month_totals["active_start"] = sum(1 for s in world.stalls.values() if s.active)
+    if decide is not None:
+        decide(world, log, business_date, period, usage_rate)
+    return month_totals
+
+
 def decide_month_start(world, log, business_date: str, period: int, usage_rate: float) -> None:
     """月初：退出生效 → 市场方预算 → 逐摊"要不要用/怎么用"。"""
     from .model_adapter import adopt_decision  # 延迟导入：model_adapter 在运行时才需要本模块

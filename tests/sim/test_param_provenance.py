@@ -13,12 +13,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
 from sim_support import PARAMS_PATH
 
-from sim.core.params import ParamsError, load_params, provenance_problems
+from sim.core.params import Params, ParamsError, load_params, provenance_problems
 
 
 def test_shipped_params_file_is_provenance_clean():
@@ -108,3 +109,53 @@ def test_clean_synthetic_entry_stays_green():
     assert provenance_problems("b", {"range": [1, 2], "provenance": {"kind": "sourced", "ref": "D-02"}}, "x") == []
     assert provenance_problems("c", {"value": 1, "provenance": {"kind": "assumed", "calibration": "待实地采集"}}, "x") == []
     print("[T-SIM-01] 合规条目（结论 N / D-xx / assumed+calibration）零误报")
+
+
+# ---------------------------------------------------------------------------
+# `T-SIM-08` 验收④：回测判据里引用的每个参数，都必须过本文件这一套出处校验
+# ---------------------------------------------------------------------------
+def test_every_key_used_by_the_backtest_criteria_is_a_registered_parameter():
+    """`R1`~`R6` 的 `depends_on` / `scan_keys` / 臂覆盖里出现的每个参数名都必须在参数文件里。
+
+    **本文件是出处的唯一权威**（`params.py::provenance_problems` + `Params.kind`），
+    回测侧不另写一套"看起来像出处"的检查 —— 那样两套规则迟早分叉。
+    """
+    from sim.verify.r_criteria import CRITERIA, PROFILES
+
+    params = load_params(PARAMS_PATH)
+    known = set(params.parameters())
+    referenced: set[str] = set()
+    for crit in CRITERIA:
+        referenced |= set(crit.scan_keys)
+        for clause in crit.clauses:
+            referenced |= set(clause.depends_on)
+        for arm in crit.arms.values():
+            referenced |= set(arm.get("extra") or {})
+    for prof in PROFILES.values():
+        referenced |= set(prof.get("param_overrides") or {})
+    unknown = sorted(referenced - known)
+    assert not unknown, f"回测引用了参数文件里没有的键：{unknown}"
+    print(f"[T-SIM-08] 回测引用的 {len(referenced)} 个参数键全部在 {Path(PARAMS_PATH).name} 里登记")
+
+
+def test_backtest_provenance_reading_matches_the_params_file():
+    """回测判定用的 `Params.kind` 与本文件的校验结论必须一致（不允许第二套"更宽松"的判定）。
+
+    **灵敏度负例**：把某条 `assumed` 伪造成 `sourced`，回测侧必须立刻不再把它算进
+    "无出处"名单 —— 这证明它读的是参数文件，而不是自己抄了一份分类表。
+    """
+    from sim.verify.backtest import unsourced
+    from sim.verify.r_criteria import ABSOLUTE, CRITERIA, Clause
+
+    params = load_params(PARAMS_PATH)
+    clause = Clause("X", "合成", ABSOLUTE, "M-02", depends_on=("merchant_exit_reference_point",), threshold=6)
+    assert unsourced(params, clause) == ["merchant_exit_reference_point(assumed)"]
+
+    raw = json.loads(PARAMS_PATH.read_text(encoding="utf-8"))
+    entry = raw["parameters"]["merchant_exit_reference_point"]
+    entry["provenance"] = {"kind": "sourced", "ref": "结论 8"}
+    assert provenance_problems("merchant_exit_reference_point", entry, "合成") == [], \
+        "合成的 sourced 自身必须先合规（否则下面的负例测的不是同一件事）"
+    forged = Params(raw, "合成文件")
+    assert unsourced(forged, clause) == [], "参数文件标成 sourced 之后，回测侧仍把它算成无出处 ⇒ 两套规则"
+    print("[T-SIM-08] 回测的出处判定读的是参数文件（负例：伪造成 sourced 后名单立刻清空）")

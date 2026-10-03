@@ -196,7 +196,7 @@
 | `T-SIM-03`~`T-SIM-05` 三类 Agent | `已完成` | `sim/agents/*`；商户效用分解 / 消费者信任 / 市场方与监管 |
 | `T-SIM-06` model 适配器 + 22 指标 + 7 场景 + 敏感性 | `已完成` | `sim/bridge/{model_adapter,day_loop,month_loop,scenario,study}.py` + `sim/observe/*` + `sim/verify/sensitivity.py` |
 | **`T-SIM-07` live 适配器** | **`已完成`（`2026-10-03`）** | `sim/bridge/{server_launcher,live_adapter,live_run,live_scenario,live_cli,live_evidence}.py` + `sim/core/console.py`；**31/31 端点真跑、六条判据全绿**，详见下方「`T-SIM-07` 实测」 |
-| `T-SIM-08` 验证器（`R1`–`R6` + §7.3 一致性 + 校准） | `未开始` | 前置：`T-SIM-07` 已就绪（§7.3 的 model↔live 一致性现在有真 live 数据可比了） |
+| **`T-SIM-08` 验证器** | **`已完成`（`2026-10-03`）** | `sim/verify/{r_criteria,backtest,consistency,calibration}.py` + `sim/observe/verify_report.py`；**`R1`–`R6` 六条逐条三态结论 + model↔live 容差 ≤1 分/1 笔通过 + 灵敏度负例变红**，详见下方「`T-SIM-08` 实测」 |
 | `T-SIM-09` 纯静态可视化 + 报告自检 | `未开始` | 前置：`T-SIM-06` |
 | `T-SIM-10` 文档与答辩材料（`docs/sim-results.md`） | `未开始` | 前置：全部 |
 
@@ -223,22 +223,186 @@
   5 条 + `tests/sim/test_live_run.py` 16 条）。**此前登记为「因 `D:` 盘 fsync 判红」的那条性能门禁本轮未复现为红**
   （`tests/perf` 5 passed；判定用例如今跟随 `MT_DATA_DIR`，未设置时落在系统临时目录即 `C:`）。
 
+### `T-SIM-08` 实测（`2026-10-03`）
+
+> 全部产物的**复现命令**（产物落 `data/sim/` 下，`data/` 在 `.gitignore` 里，故只登记命令与结论，不入库）：
+
+```powershell
+python -m sim --backtest    --out-dir data/sim/verify              # R1~R6 三态回测（默认带稳健性扫描）
+python -m sim --backtest --backtest-only R3 --out-dir data/sim/verify/R3
+python -m sim --consistency --out-dir data/sim/verify              # §7.3 model↔live（负例默认开）
+python -m sim --calibrate   --calibrate-samples 32 --out-dir data/sim/verify
+```
+
+- **三态判定的收敛规则只写在 `sim/verify/backtest.py::verdict_of` 一处**：
+  任一子句不通过 ⇒ `不成立`；含 `不可评估` ⇒ `不成立`（**不可评估 ≠ 通过**）；
+  中心档全通过但无出处参数推到区间端点时序关系翻转 ⇒ `不稳健`；否则 `成立`。
+- **「绝对阈值 vs 序关系」是机械的**：`absolute` 子句只要依赖一个 `provenance.kind=assumed` 的参数，
+  即判 `不可评估` 并点名是哪一个 —— **不放宽阈值、也不算通过**（`tests/sim/test_param_provenance.py`
+  同一套 `provenance_problems` / `Params.kind`，不另写权威）。
+
+| 判据 | 三态 | 用了什么形式 / 档位 | 实测落点（诚实版） |
+| --- | --- | --- | --- |
+| `R1` 抽佣 2% + 无免维护 | `不成立` | `R1-a` 绝对阈值 → **不可评估**（退出阈值无出处）；`R1-b`/`R1-c` 序关系 → **不通过**；`L1` 档 360 日/300 到达·日 | 走秤率、ExitRate **两组逐位相同**（0.1902 / 0.0583）⇒ 这条对照在该档**测不出差异** |
+| `R2` 不抽佣 + 出资 + 统一检定维修 | `不成立` | 纯序关系；`L1` 档 | `R2-a/b/c` 全不通过（A=B）；只有 `R2-d`（与 `S0` 区间重叠）通过 |
+| `R3` 维护预算 0.3× | `不成立` | 纯序关系；**`S-约束` 压力档**（240 日 / MTBF=10 / 修复均值=6 / 维修单价 1.6e6） | `R3-a` W_q **6.4 → 74.7 天** ✅、`R3-b` 摊位-日闲置 **0.784 → 0.988** ✅、`R3-d` 0.3× 组走秤率**单调降到 0** ✅；**只有 `R3-c`「预算单调下降」不通过** —— 迟滞 6 期后预算**只升不降**（KPI=usage、使用率低 ⇒ 每月约 +25%） |
+| `R4` 空壳 vs 真实来源扫码页 | `不成立` | `R4-b` 绝对阈值 → **不可评估**（信任权重无出处）；其余序关系；`L1` 档 | `R4-a` 空壳组单调不增 ✅、**两组序关系成立**（0.085 < 0.385，区间不重叠）✅；**`R4-c` 不通过**：真实来源组只收敛到 **0.335**，没到 0.5 |
+| `R5` 温州口径存活 12 个月 | `不成立` | **五条全是绝对阈值 ⇒ 全部 `不可评估`**；`L1` 档 | 实测值照给但不当作结论：`CumCash` 5.98e7 ✅、在营比 0.4 ❌、300–360 日走秤率 0.868 ✅、信任 0.238 ❌ |
+| `R6` 反例：商户自费 | `不成立` | 纯序关系；`L1` 档 | **自费组与出资组逐位相同**（0.1902）⇒ 模型里的"自费"在默认档**没有真实成本**；`R6-b`（自费臂确有 375000 分一次性支出）通过。稳健性扫描显示 `merchant_adoption_cost_weight=400` 时自费组归零 ⇒ **只在一个无出处参数的区间里才分得开** |
+
+> ⚠️ **`R6` 是"如实不成立"，不是粉饰。** 这与 `docs/sim-验证结论实况.md` 里 `T-SIM-06` 记的
+> 「翻转窗口」结论一致：自费是否被弃用**几乎全由 `merchant_adoption_cost_weight`（A-18，无出处）决定**。
+
+**根因（本轮查清，不是推断）**：`R1`/`R2`/`R6` 三条在 `L1` 档之所以"两组完全相同"，是因为
+`merchant_q_temperature = 0.05` 的 softmax 在 2% 佣金造成的 0.02 归一化效用差下，
+本档 10 个摊位、51 个摊位-月的抽样恰好一次都没翻过。**这不是"抽佣没有影响"，是"该档下这条对照
+的可分辨度不够"**；稳健性扫描在 `gross_margin_rate=0.35`、`daily_arrivals_per_market=800/1500`
+时都翻成了 `A<B` ⇒ 结论只存在于区间里。
+
+**`model ↔ live` 一致性（§7.3）**
+
+- 档位：**30 营业日 × ≤20 走秤笔/日**（`live_run` 缺省只有 4 笔/日，整轮 120 笔，逐笔对账密度不够）；
+  model 侧到达数同步降到 140/日，**密度上限是唯一被削减的维度**，且削减发生在**已算好的决策流**上。
+- 实测：**30 个营业日 × 270 个字段 + 10 张结算单，0 条不一致**（容差 ≤1 分 / ≤1 笔）。
+  比对项 = 走秤笔数 / 总额 / 佣金 / 三指标六个分子分母 / `reconciliation.balanced` / 结算单金额。
+- **三处口径差显式量化，不是静默忽略**：① 私下交易（model 侧走秤 600 / 私下 1474 笔 ⇒ model 侧
+  `M-04` 0.289，系统侧看不到分母）⇒ 只在走秤通道对账，shadow 笔数与影响单列；
+  ② 取整与计量单位（model「每 500g + 银行家舍入」vs 系统「每公斤 + 四舍五入」）：单价按 ×2 换算，
+  期望金额用系统那条规则重算，**两套规则差 1 分的笔数 = 1 笔**（单列）；
+  ③ 佣金（model 自按日浮点累加 vs 系统逐摊逐日 `half_up`）：model 侧按系统口径独立复算后再比。
+- **灵敏度负例**：从 model 事件流里**真删掉一笔成交**，拿**同一份** live 报告重新对账 ⇒
+  **变红，报 6 条问题**（日总额差 952 分、日佣金差 19 分、结算单差 547295 分…）。
+  ⚠️ 如实说明：**"少一笔"本身在 ≤1 笔的笔数容差内**，所以笔数字段抓不住它，是**金额字段**抓住的 ——
+  这不是漏判，是容差的必然结果，报告里写明了。
+
+**档 2 · 匹配矩（POM）—— 做扎实到什么程度（如实说）**
+
+- 方法：把 `R1`–`R6` 当 6 个**定性矩**，在 6 维 `[假设]` 参数空间做**分层 LHS 采样 + 拒绝采样**。
+  **明确标注：pattern-oriented modeling 是 ABM 领域方法，不假称来自本项目调研**；矩的定性来源是结论 9/10/14/6/16/12/26。
+- 实测：**32 个样本里 0 个同时满足 6 个矩**；平均命中 **2.03 / 6**。
+  逐矩命中：`M4` 32/32、`M6` 31/32、`M1` 1/32、`M2` 1/32、`M3` 0/32、`M5` 0/32。
+- 最敏感参数（Spearman，输出 = 命中矩数）：`merchant_adoption_cost_weight` **+0.39**、
+  `gross_margin_rate` / `merchant_exit_reference_point` 各 **−0.32**、`consumer_scan_floor` +0.23。
+- **诚实边界**：32 点是**网格采样，不是全域穷举**（未采到的区域一律"未评估"，不是"不存在"）；
+  运行档是 90 日**压缩档**（不是 360 日全量档），MTBF=10 天 / 修复均值=6 天**超出登记区间**（压力档）。
+  6 矩 vs 20 项待定参数的**过度拟合风险**写在产物里（`§7.5` 原话），故只报**区域占比**与**最敏感参数**，
+  **不报"完美参数点"**。
+
+**欠账（上一轮挂了两轮的 400 行门禁）—— 本轮清了**
+
+| 文件 | 改前 | 改后 | 拆法（按语义，不放宽阈值、不删注释凑行数） |
+| --- | --- | --- | --- |
+| `sim/bridge/study.py` | 588 | **263** | 「`R6` 三段证据装配」与「`R` 的诚实提示」→ `sim/observe/verify_report.py`；「敏感性编排」（六张键表 + `run_sensitivity`）→ `sim/verify/sensitivity_runner.py` |
+| `sim/bridge/model_adapter.py` | 406 | **229** | 「建世界」（`StallState` / `World` / `build_world`）→ `sim/bridge/world_setup.py`；「期初结构决策」→ `month_loop.open_period` |
+
+两处旧模块都保留同名转出，**既有调用方与既有用例一行不改**（唯一改的是
+`test_scenarios_and_r6.py` 里一条把读取点钉死在 `model_adapter.py` 文件名上的断言 ——
+改成遍历 `sim/**` 找 `value("evade_feasibility")`，**断言跟着语义走，不跟着文件名走**）。
+
+**回归**：`python -m pytest -q` → 见下方变更记录（新增 26 条用例：
+`test_verify_backtest.py` 10 条 + `test_verify_consistency.py` 7 条 + `test_calibration_moments.py` 6 条
++ `test_param_provenance.py` 增 2 条 + `test_scenarios_and_r6.py` 改 1 条）。
+
+### `T-SIM-08` 实测（`2026-10-03`）
+
+> 全部产物的**复现命令**（产物落 `data/sim/` 下，`data/` 在 `.gitignore` 里，故只登记命令与结论，不入库）：
+
+```powershell
+python -m sim --backtest    --out-dir data/sim/verify              # R1~R6 三态回测（默认带稳健性扫描）
+python -m sim --backtest --backtest-only R3 --out-dir data/sim/verify/R3
+python -m sim --consistency --out-dir data/sim/verify              # §7.3 model↔live（负例默认开）
+python -m sim --calibrate   --calibrate-samples 32 --out-dir data/sim/verify
+```
+
+- **三态判定的收敛规则只写在 `sim/verify/backtest.py::verdict_of` 一处**：
+  任一子句不通过 ⇒ `不成立`；含 `不可评估` ⇒ `不成立`（**不可评估 ≠ 通过**）；
+  中心档全通过但无出处参数推到区间端点时序关系翻转 ⇒ `不稳健`；否则 `成立`。
+- **「绝对阈值 vs 序关系」是机械的**：`absolute` 子句只要依赖一个 `provenance.kind=assumed` 的参数，
+  即判 `不可评估` 并点名是哪一个 —— **不放宽阈值、也不算通过**（`tests/sim/test_param_provenance.py`
+  同一套 `provenance_problems` / `Params.kind`，不另写权威）。
+
+| 判据 | 三态 | 用了什么形式 / 档位 | 实测落点（诚实版） |
+| --- | --- | --- | --- |
+| `R1` 抽佣 2% + 无免维护 | `不成立` | `R1-a` 绝对阈值 → **不可评估**（退出阈值无出处）；`R1-b`/`R1-c` 序关系 → **不通过**；`L1` 档 360 日/300 到达·日 | 走秤率、ExitRate **两组逐位相同**（0.1902 / 0.0583）⇒ 这条对照在该档**测不出差异** |
+| `R2` 不抽佣 + 出资 + 统一检定维修 | `不成立` | 纯序关系；`L1` 档 | `R2-a/b/c` 全不通过（A=B）；只有 `R2-d`（与 `S0` 区间重叠）通过 |
+| `R3` 维护预算 0.3× | `不成立` | 纯序关系；**`S-约束` 压力档**（240 日 / MTBF=10 / 修复均值=6 / 维修单价 1.6e6） | `R3-a` W_q **6.4 → 74.7 天** ✅、`R3-b` 摊位-日闲置 **0.784 → 0.988** ✅、`R3-d` 0.3× 组走秤率**单调降到 0** ✅；**只有 `R3-c`「预算单调下降」不通过** —— 迟滞 6 期后预算**只升不降**（KPI=usage、使用率低 ⇒ 每月约 +25%） |
+| `R4` 空壳 vs 真实来源扫码页 | `不成立` | `R4-b` 绝对阈值 → **不可评估**（信任权重无出处）；其余序关系；`L1` 档 | `R4-a` 空壳组单调不增 ✅、**两组序关系成立**（0.085 < 0.385，区间不重叠）✅；**`R4-c` 不通过**：真实来源组只收敛到 **0.335**，没到 0.5 |
+| `R5` 温州口径存活 12 个月 | `不成立` | **五条全是绝对阈值 ⇒ 全部 `不可评估`**；`L1` 档 | 实测值照给但不当作结论：`CumCash` 5.98e7 ✅、在营比 0.4 ❌、300–360 日走秤率 0.868 ✅、信任 0.238 ❌ |
+| `R6` 反例：商户自费 | `不成立` | 纯序关系；`L1` 档 | **自费组与出资组逐位相同**（0.1902）⇒ 模型里的"自费"在默认档**没有真实成本**；`R6-b`（自费臂确有 375000 分一次性支出）通过。稳健性扫描显示 `merchant_adoption_cost_weight=400` 时自费组归零 ⇒ **只在一个无出处参数的区间里才分得开** |
+
+> ⚠️ **`R6` 是"如实不成立"，不是粉饰。** 这与 `docs/sim-验证结论实况.md` 里 `T-SIM-06` 记的
+> 「翻转窗口」结论一致：自费是否被弃用**几乎全由 `merchant_adoption_cost_weight`（A-18，无出处）决定**。
+
+**根因（本轮查清，不是推断）**：`R1`/`R2`/`R6` 三条在 `L1` 档之所以"两组完全相同"，是因为
+`merchant_q_temperature = 0.05` 的 softmax 在 2% 佣金造成的 0.02 归一化效用差下，
+本档 10 个摊位、51 个摊位-月的抽样恰好一次都没翻过。**这不是"抽佣没有影响"，是"该档下这条对照
+的可分辨度不够"**；稳健性扫描在 `gross_margin_rate=0.35`、`daily_arrivals_per_market=800/1500`
+时都翻成了 `A<B` ⇒ 结论只存在于区间里。
+
+**`model ↔ live` 一致性（§7.3）**
+
+- 档位：**30 营业日 × ≤20 走秤笔/日**（`live_run` 缺省只有 4 笔/日，整轮 120 笔，逐笔对账密度不够）；
+  model 侧到达数同步降到 140/日，**密度上限是唯一被削减的维度**，且削减发生在**已算好的决策流**上。
+- 实测：**30 个营业日 × 270 个字段 + 10 张结算单，0 条不一致**（容差 ≤1 分 / ≤1 笔）。
+  比对项 = 走秤笔数 / 总额 / 佣金 / 三指标六个分子分母 / `reconciliation.balanced` / 结算单金额。
+- **三处口径差显式量化，不是静默忽略**：① 私下交易（model 侧走秤 600 / 私下 1474 笔 ⇒ model 侧
+  `M-04` 0.289，系统侧看不到分母）⇒ 只在走秤通道对账，shadow 笔数与影响单列；
+  ② 取整与计量单位（model「每 500g + 银行家舍入」vs 系统「每公斤 + 四舍五入」）：单价按 ×2 换算，
+  期望金额用系统那条规则重算，**两套规则差 1 分的笔数 = 1 笔**（单列）；
+  ③ 佣金（model 自按日浮点累加 vs 系统逐摊逐日 `half_up`）：model 侧按系统口径独立复算后再比。
+- **灵敏度负例**：从 model 事件流里**真删掉一笔成交**，拿**同一份** live 报告重新对账 ⇒
+  **变红，报 6 条问题**（日总额差 952 分、日佣金差 19 分、结算单差 547295 分…）。
+  ⚠️ 如实说明：**"少一笔"本身在 ≤1 笔的笔数容差内**，所以笔数字段抓不住它，是**金额字段**抓住的 ——
+  这不是漏判，是容差的必然结果，报告里写明了。
+
+**档 2 · 匹配矩（POM）—— 做扎实到什么程度（如实说）**
+
+- 方法：把 `R1`–`R6` 当 6 个**定性矩**，在 6 维 `[假设]` 参数空间做**分层 LHS 采样 + 拒绝采样**。
+  **明确标注：pattern-oriented modeling 是 ABM 领域方法，不假称来自本项目调研**；矩的定性来源是结论 9/10/14/6/16/12/26。
+- 实测：**32 个样本里 0 个同时满足 6 个矩**；平均命中 **2.03 / 6**。
+  逐矩命中：`M4` 32/32、`M6` 31/32、`M1` 1/32、`M2` 1/32、`M3` 0/32、`M5` 0/32。
+- 最敏感参数（Spearman，输出 = 命中矩数）：`merchant_adoption_cost_weight` **+0.39**、
+  `gross_margin_rate` / `merchant_exit_reference_point` 各 **−0.32**、`consumer_scan_floor` +0.23。
+- **诚实边界**：32 点是**网格采样，不是全域穷举**（未采到的区域一律"未评估"，不是"不存在"）；
+  运行档是 90 日**压缩档**（不是 360 日全量档），MTBF=10 天 / 修复均值=6 天**超出登记区间**（压力档）。
+  6 矩 vs 20 项待定参数的**过度拟合风险**写在产物里（`§7.5` 原话），故只报**区域占比**与**最敏感参数**，
+  **不报"完美参数点"**。
+
+**欠账（上一轮挂了两轮的 400 行门禁）—— 本轮清了**
+
+| 文件 | 改前 | 改后 | 拆法（按语义，不放宽阈值、不删注释凑行数） |
+| --- | --- | --- | --- |
+| `sim/bridge/study.py` | 588 | **263** | 「`R6` 三段证据装配」与「`R` 的诚实提示」→ `sim/observe/verify_report.py`；「敏感性编排」（六张键表 + `run_sensitivity`）→ `sim/verify/sensitivity_runner.py` |
+| `sim/bridge/model_adapter.py` | 406 | **229** | 「建世界」（`StallState` / `World` / `build_world`）→ `sim/bridge/world_setup.py`；「期初结构决策」→ `month_loop.open_period` |
+
+两处旧模块都保留同名转出，**既有调用方与既有用例一行不改**（唯一改的是
+`test_scenarios_and_r6.py` 里一条把读取点钉死在 `model_adapter.py` 文件名上的断言 ——
+改成遍历 `sim/**` 找 `value("evade_feasibility")`，**断言跟着语义走，不跟着文件名走**）。
+
+**回归**：`python -m pytest -q` → 见下方变更记录（新增 26 条用例：
+`test_verify_backtest.py` 10 条 + `test_verify_consistency.py` 7 条 + `test_calibration_moments.py` 6 条
++ `test_param_provenance.py` 增 2 条 + `test_scenarios_and_r6.py` 改 1 条）。
+
 ### 仿真线未完成清单 / 接手落点
 
-1. **`T-SIM-08` 验证器**（下一步）：`sim/verify/backtest.py`（`R1`–`R6` 三态判定）+ `consistency.py`
-   （§7.3 model↔live，容差 ≤1 分/1 笔）。**现在有真 live 数据可比**：同一 seed、同一场景臂下，
-   `sim/bridge/live_run.py` 的系统侧数字（`reconciliation` / `usage_metrics` / 结算单）与
-   `sim/observe/metrics.py` 的 model 侧数字可以直接对账。
-   ⚠️ **`live_run.py` 目前固定 30 营业日、每营业日 4 笔**（为覆盖两个结算单端点且跑得完）；
-   做一致性对账时需要**提高成交密度**并把两边的口径对齐（model 侧含私下交易、系统侧不可见 —— 这是
-   §7.3 要处理的口径差，不是 bug）。
+1. ~~**`T-SIM-08` 验证器**~~ ✅ 已完成（见上方「`T-SIM-08` 实测」）。**留给下一手的四条**：
+   a. **`R3-c` 是规格问题不是实现问题**：`docs/sim-design.md` §7.1 的 `R3` 行写着「维护预算 `B` 与
+      `ScaleUseRate` **同时单调下降**」，但在本模型里 KPI=usage + 使用率低 ⇒ 迟滞 6 期后预算**只升不降**
+      （每月约 +25%）。这条判据**按原文永远不可能成立**，建议由负责人决定是改判据还是改市场方调参方向；
+   b. **`R1`/`R2`/`R6` 在 `L1` 档不可分辨**：10 摊 × 51 摊位-月的抽样密度下，2% 佣金造成的效用差一次都没
+      翻过决策。若要让这几条在中心档可判定，要么提高重复数与摊位数（`L1` 档成本 ×N），
+      要么承认它们**只存在于区间里**（稳健性扫描已给出区间的端点）；
+   c. **档 2 匹配矩只跑了 32 点**（网格采样，不是全域穷举）。要做扎实需要 (i) 提高点数、
+      (ii) 把匹配空间从 6 维扩到真正决定 6 个矩的全部假设参数（会放大过度拟合风险，须与 `§7.5` 一起权衡）；
+   d. **档 2 的 `M3`/`M5` 命中数恒为 0**：`M3` 用 `S3` 的 90 日压缩档，而「预算真正成为约束」需要维修单价
+      越过登记区间（见 `r_criteria.BINDING_PROFILE`）；`M5` 的四个阈值全无出处，压缩档里几乎不可能四条同时过。
+      **这两条不是「没算」，是「在诚实登记的档位下不可能命中」。**
 2. **`T-SIM-09`**：`sim/observe/svg_report.py` + `tests/sim/test_svg_report_no_external.py`（复用
    `test_no_external_assets.scan_static_text` 与其合成负例）。
 3. **`T-SIM-10`**：`docs/sim-results.md`（结果说明书 + §9 落地为可读表 + 五问答案卡，含「不稳健」标记）。
-4. **未登记的欠账（如实留档，本轮未做）**：`sim/bridge/study.py` **588 行**、`sim/bridge/model_adapter.py`
-   **406 行**，均超 `quality-gates.md` §1.2 的 400 行门禁 —— 上一任明确登记为「本轮不做」并给了拆法
-   （`study.py` 按「场景驱动器 / 敏感性编排」拆，`model_adapter.py` 按「纯函数判据 / 世界构造 / 运行编排」拆）。
-   `T-SIM-07` **未顺手重构**它们（会动已跑通且有测试覆盖的模块）；本轮新增文件已全部控制在 400 行以内。
+4. ~~**未登记的欠账**~~ ✅ **已清**：`sim/bridge/study.py` 588 → **263** 行、
+   `sim/bridge/model_adapter.py` 406 → **229** 行，拆法与理由见上方「`T-SIM-08` 实测」的欠账表
+   （按语义拆，旧模块保留同名转出，既有调用方与用例不改）。
 5. **`S6` 第三臂下游后果未证**（与 `T-SIM-07` 无关，父代理在跑）：`S6-③` 的近因已证
    （`M-11` 维护预算 = 0 ⇒ 一台都没修），但 60 天档里设备全可用（`device_mtbf_days=540`），
    走秤率被设备拖死的**下游后果**证明不了。live 模式若要用设备故障验证某条链路，
@@ -306,6 +470,33 @@
 | — | — | **客户接口人报备的跟踪项** | 由父代理执行，**本期为澄清性修订、不改变交付物形态** | 若报备被否决，回退方案 = `ADR-0004` §5 第 4 条（退回"全部用标准库"） |
 
 ## 变更记录
+### `2026-10-03` · `T-SIM-08` 验证器（`R1`–`R6` 三态回测 + `model ↔ live` 一致性 + 档 2 匹配矩）
+
+- **新增**：`sim/verify/r_criteria.py`（判据声明 + 三个档位的自证）、`sim/verify/backtest.py`（三态判定 +
+  稳健性扫描）、`sim/verify/consistency.py`（`model ↔ live` 对账 + 灵敏度负例）、
+  `sim/verify/calibration.py`（档 2 匹配矩）、`sim/observe/verify_report.py`（三份产物装配 + 从 `study.py`
+  迁来的措辞）、`tests/sim/test_verify_backtest.py`、`tests/sim/test_verify_consistency.py`、
+  `tests/sim/test_calibration_moments.py`。
+- **按语义拆分（400 行门禁，不放宽阈值）**：`sim/bridge/study.py` **588 → 263** 行
+  （「`R6` 三段证据装配」+「`R` 的诚实提示」→ `sim/observe/verify_report.py`；「敏感性编排」→
+  `sim/verify/sensitivity_runner.py`）；`sim/bridge/model_adapter.py` **406 → 229** 行（「建世界」→
+  `sim/bridge/world_setup.py`；「期初结构决策」→ `month_loop.open_period`）。旧模块保留同名转出。
+- **改动**：`sim/cli.py`（`--backtest` / `--backtest-only` / `--no-robustness-scan` / `--consistency` /
+  `--consistency-days` / `--consistency-txns` / `--no-consistency-tamper` / `--calibrate` /
+  `--calibrate-samples`；`--mode=model` 分支未动）、`tests/sim/test_param_provenance.py`（+2 条：回测引用的
+  参数键必须已登记；回测的出处判定读的是参数文件本身）、`tests/sim/test_scenarios_and_r6.py`
+  （一条断言从"钉在 `model_adapter.py` 文件名上"改成遍历 `sim/**` 找 `value("evade_feasibility")`）、
+  `specs/market-trade-flow/plan.md` §4、`specs/market-trade-flow/tasks.md` §3（`T-SIM-08` 行）、
+  本文件。**未触碰** `app/**`、`specs/**`（除 `plan.md`/`tasks.md`）、`tests/e2e/**`、`run.py`、
+  `docs/sim-验证结论实况.md`。
+- **结论**：**`R1`~`R6` 六条逐条实测，不成立 6 条**（详见「仿真线进度」表的逐条落点）。
+  `R6` 如实不成立：自费组与出资组在 `L1` 档**逐位相同**，自费是否被弃用**几乎全由无出处的
+  `merchant_adoption_cost_weight`（A-18）决定**。`R3` 的三条机理子句成立，唯一不成立的 `R3-c`
+  是**规格问题**（迟滞 6 期后维护预算只升不降）。
+- **`model ↔ live`**：30 个营业日 × 270 个字段 + 10 张结算单，**0 条不一致**（容差 ≤1 分 / ≤1 笔）；
+  三处口径差（私下交易 / 取整与计量单位 / 佣金）**显式量化**；**灵敏度负例**（真删 model 一笔）**变红**。
+- **回归**：`python -m pytest -q` → **`453 passed` / 0 failed**（`268.01s`）。
+
 | 6-10-03\ | **\T-SIM-07\ live 适配器落地**（仿真线第三任接手，本次全部产出已提交）：新增 \sim/bridge/{server_launcher,live_adapter,live_run,live_scenario,live_cli,live_evidence}.py\ 与 \sim/core/console.py\（先登记 \plan.md\ §4 与 \	asks.md\ §3 再创建），改 \sim/cli.py\ 接 \--mode=live\（**\model\ 分支产物逐字节不变**，用 \git archive HEAD\ 导出的改动前 \sim/\ 对跑 \vents.jsonl\/\metrics.json\ SHA-256 相同为证）；新增 \	ests/sim/{test_live_endpoints,test_live_run}.py\ 共 21 条。**六条判据实测全绿**：31/31 端点（清单由实际请求反推 + 与契约 §2 双向逐条比对）、30/30 营业日 \alanced=true\、幂等重放同一交易号且列表不变（201→200）、敏感扫描 2082 条真实响应体零命中、数据目录落 \C:\（p50 19.6ms/p95 40.6ms）、\pp/**\+\specs/**\ 树指纹运行前后一致。**三处如实登记**：① 契约 ate_bp ∈ 1~10000\ ⇒ live 模式的「抽佣 0%」不可精确表达（取下界 1bp 并标 \clamped\）；② 当日最后一笔固定走收款码，否则 \mock/payment/callback\ 的覆盖靠运气；③ \PUT commission-rules\ 语义是「新增一条口径」，对已有相同口径的库复用并标明、不一致则原样抛错。**未改 \pp/**\、\specs/**\ 一行**（判据⑥为证）。全量回归 \python -m pytest -q\ → **428 passed / 0 failed** | \T-SIM-07\；\docs/sim-design.md\ §2.2；\	asks.md\ §3；父代理指令「T-SIM-07 逐条照做」 |
 
 
