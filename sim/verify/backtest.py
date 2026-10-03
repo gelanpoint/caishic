@@ -33,14 +33,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..bridge.model_adapter import read_events, run_scenario
-from ..bridge.scenario import arm_flags, load_scenario, merged_overrides, scenario_files
-from ..observe.metrics import compute_all, survival_judgement
-from ..observe.metric_util import pct
+from ..observe.metrics import survival_judgement
 from .r_criteria import ABSOLUTE, CRITERIA, VERDICTS, Clause, Criterion, criterion, profile
-
-#: 重复区间用 p5/p95（与 `study.py` 的 `_summary` 同口径，不另立一套）
-INTERVAL = (5, 95)
 
 #: `converging_high` 的"高位"阈值。⚠️ 这**不是**本模块新拍的数：`sim/observe/report.py` 的存活判据
 #: ④ 用的是同一个 0.5（`§6.9` 的 TrustIndex 阈值），此处沿用以免同一件事有两个阈值。
@@ -48,113 +42,9 @@ TRUST_HIGH = 0.5
 
 
 # ---------------------------------------------------------------------------
-# 档位 → 运行参数 → 跑一个臂
+# 取数层的同名转出（2026-10-03 按语义拆出；搬动理由见 arm_runner.py 的 docstring）
 # ---------------------------------------------------------------------------
-def scenario_by_id(scenario_id: str) -> dict:
-    for path in scenario_files():
-        scenario = load_scenario(path)
-        if scenario["id"] == scenario_id:
-            return scenario
-    raise KeyError(f"没有场景 {scenario_id!r}")
-
-
-def arm_overrides(scenario: dict, arm: dict, prof: dict, extra: dict | None = None) -> dict:
-    """某一臂在某一档下的**最终参数覆盖**（场景基线 + 该臂对照变量 + 档位规模 + 档位压力值）。"""
-    out = merged_overrides(scenario, arm)
-    out["daily_arrivals_per_market"] = prof["arrivals"]
-    out["consumer_agent_count"] = prof["consumers"]
-    out.update(prof.get("param_overrides") or {})
-    out.update(extra or {})
-    return out
-
-
-def _scale_series(events: list[dict]) -> list[float]:
-    """逐期走秤率序列（`M-04` 的按期切分）——「单调下降」这类判据必须有序列才判得了。
-
-    切窗用**营业日序号**而不是月/日算术（与 `sim/observe/metrics.py::survival_window` 同纪律）：
-    仿真月（`DAYS_PER_MONTH=30`）与自然月不对齐，用日期做算术会默默错位。
-    """
-    days = sorted({e["business_date"] for e in events if e.get("kind") == "day_arrivals_total"})
-    period_of = {day: index // 30 for index, day in enumerate(days)}
-    buckets: dict[int, list[int]] = {}
-    for event in events:
-        if event.get("kind") != "txn":
-            continue
-        bucket = buckets.setdefault(period_of.get(event["business_date"], -1), [0, 0])
-        bucket[1] += 1
-        if event.get("channel") == "scale":
-            bucket[0] += 1
-    return [round(num / den, 6) for _period, (num, den) in sorted(buckets.items()) if den]
-
-
-def _series_of(events: list[dict], metrics: dict) -> dict:
-    """从事件流/指标里抽出判据要用的**序列**（算完即丢事件明细）。"""
-    maintenance = [float(e.get("maintenance_cents") or 0.0) for e in events if e.get("kind") == "market_admin_period"]
-    upfront = max((float(e.get("upfront_cents") or 0.0) for e in events if e.get("kind") == "stall_adopted"),
-                  default=None)
-    idle_detail = (metrics.get("M-10") or {}).get("detail") or {}
-    return {
-        "M-01": [row["bp"] / 10000.0 for row in ((metrics.get("M-01") or {}).get("detail") or {}).get("by_month", [])
-                 if row.get("denominator")],
-        "M-04": _scale_series(events),
-        "M-15": [row["mean"] for row in ((metrics.get("M-15") or {}).get("detail") or {}).get("by_period", [])],
-        "M-17-B": maintenance,
-        "R6-upfront": [upfront] if upfront is not None else [],
-        "M-10-设备口径": [idle_detail.get("口径②设备-日(停摆>τ)", {})],
-    }
-
-
-def run_arm(params, *, scenario_id: str, arm_index: int, label: str, prof: dict,
-            extra: dict | None = None, seed: int = 20261002, out_root: Path | str = "data/sim/backtest",
-            self_funded: bool | None = None, progress=print) -> dict:
-    """跑完一个臂的 `replications` 次重复，返回指标 + 派生序列（**不保留事件明细**）。"""
-    scenario = scenario_by_id(scenario_id)
-    arm = scenario["arms"][arm_index]
-    overrides = arm_overrides(scenario, arm, prof, extra)
-    flag = arm_flags(scenario, arm)["self_funded"] if self_funded is None else bool(self_funded)
-    out_root = Path(out_root)
-    rows = []
-    for rep in range(prof["replications"]):
-        target = out_root / f"{scenario_id}-{arm_index}-{rep:02d}"
-        result = run_scenario(params, scenario_id=f"{scenario_id}::{arm['name']}", overrides=overrides,
-                              days=prof["days"], seed=seed + rep * 101, out_dir=target, self_funded=flag)
-        events = read_events(target / "events.jsonl")
-        metrics = compute_all(events)
-        rows.append({"rep": rep, "metrics": metrics, "series": _series_of(events, metrics), "out_dir": str(target)})
-        del events
-        progress(f"    · {label} rep{rep} 走秤率 {rows[-1]['metrics']['M-04']['ratio']}")
-    return {"label": label, "scenario": scenario_id, "arm": arm["name"], "arm_index": arm_index,
-            "overrides": overrides, "self_funded": flag, "profile": prof["id"], "rows": rows}
-
-
-# ---------------------------------------------------------------------------
-# 取值：measure → 标量 / 序列
-# ---------------------------------------------------------------------------
-def measure(run: dict, name: str):
-    metrics = run["rows"][0]["metrics"]
-    series = run["rows"][0].get("series") or {}
-    if name in series:
-        values = [v for v in series[name] if isinstance(v, (int, float))]
-        return (values[0] if name in ("R6-upfront", "M-10-设备口径") else
-                (sum(values) / len(values) if values else None)), series[name]
-    if name.startswith("M-"):
-        row = metrics.get(name) or {}
-        return (row.get("value") if row.get("ratio_is_ratio") is False else row.get("ratio")), []
-    if name.startswith("survival:"):
-        rows = list(survival_judgement(metrics)["criteria"].values())
-        return rows[int(name.split(":")[1]) - 1].get("value"), []
-    raise KeyError(f"未登记的 measure：{name!r}")
-
-
-def interval(run: dict, name: str) -> tuple[float | None, float | None]:
-    """该 measure 在各次重复上的 p5/p95（**不许只报单次结果**，`§5.1`）。"""
-    values = []
-    for row in run["rows"]:
-        value = measure({"rows": [row]}, name)[0]
-        if isinstance(value, (int, float)):
-            values.append(float(value))
-    return (pct(values, INTERVAL[0]), pct(values, INTERVAL[1])) if values else (None, None)
-
+from .arm_runner import INTERVAL, arm_overrides, interval, measure, run_arm, scenario_by_id  # noqa: E402,F401  （原样转出：既有调用方与既有用例零改动）
 
 # ---------------------------------------------------------------------------
 # 判定：纯函数（合成负例可直接喂）
@@ -173,12 +63,87 @@ def unsourced(params, clause: Clause) -> list[str]:
     return out
 
 
+#: 判定饱和用的容差（序列按 6 位小数取整，比 1e-9 小好几个量级 ⇒ 不会误判）
+CEILING_TOLERANCE = 1e-9
+
+
+def saturation_periods(series: list[float], ceiling: float) -> int:
+    """序列**末尾连续**等于上限的点数（0 = 没饱和）。
+
+    为什么只看末尾：中途触顶又被拉下来不算"被夹住"，那说明指标还能动；只有**贴着上限
+    收尾**才说明观测空间已经没有了。
+    """
+    count = 0
+    for value in reversed(series):
+        if isinstance(value, (int, float)) and abs(float(value) - ceiling) <= CEILING_TOLERANCE:
+            count += 1
+        else:
+            break
+    return count
+
+
+def judge_accelerating(base: dict, series: list[float], ceiling: float | None = None) -> dict:
+    """「逐期**加速上升**」的判定（`R3-c`，2026-10-03 规格修正后）。**纯函数** ⇒ 负例可直接喂。
+
+    **饱和优先于一切形状判定**（父代理 `2026-10-03` 第二层裁定）：序列末尾连续贴住上限
+    ⇒ 斜率是**饱和的算术后果**、不是关于机制的事实 ⇒ 判 **`不可评估`**、**不是不通过**。
+    明令不得把"触顶"写成"非加速"—— 那是用判据措辞掩盖测量失效。产物里写明**触顶期数**。
+
+    不饱和时的两条要求，都要满足才算通过：
+
+    1. **单调不降** —— 不加速的下降或持平都不算「加速上升」；
+    2. **后半程斜率 > 前半程斜率** —— 线性上升**不算**加速（这是「加速」二字的全部含义）。
+
+    序列切两半：前半 = 前 `ceil(n/2)` 点、后半 = 余下点，各段用**端点斜率**
+    （`(末-首)/(点数-1)`）。少于 4 个点判 `不可评估`：两点只能判单调性，
+    三点切两半有一段只有 1 个点、斜率退化成单点增量 —— **测不到 ≠ 通过**。
+    比较用**严格大于**（无容差）：序列值域在 `[0,1]`，浮点噪声量级 ~1e-16，
+    加容差只会把「线性上升」误判成加速。
+    """
+    base = dict(base)
+    points = [float(v) for v in series if isinstance(v, (int, float))]
+    at_ceiling = saturation_periods(points, ceiling) if ceiling is not None else 0
+    if at_ceiling:
+        first_period = len(points) - at_ceiling + 1
+        base.update({"state": "不可评估",
+                     "observed": {"series": points, "ceiling": ceiling, "periods_at_ceiling": at_ceiling,
+                                  "saturated_from_period": first_period},
+                     "reason": f"序列自**第 {first_period} 期**起连续 {at_ceiling} 期贴在上限 {ceiling}"
+                               f" ⇒ 形状判据（斜率）在该档**没有观测空间**；后半程斜率 0 是**饱和的算术后果**，"
+                               f"不是关于机制的事实 ⇒ 判**不可评估**，**不可评估 ≠ 不通过**"
+                               f"（本项目明令不得写成『触顶即视为非加速』）"})
+        return base
+    if len(points) < 4:
+        base.update({"state": "不可评估", "observed": points,
+                     "reason": f"序列只有 {len(points)} 个点（需 ≥4 才谈得上『加速』）⇒ 不可评估，"
+                               "不算通过（载体要求：`market_decision_delay_periods=6` ⇒ ≥7 期 = 210 营业日）"})
+        return base
+    mid = (len(points) + 1) // 2
+    first, second = points[:mid], points[mid:]
+    slope_first = (first[-1] - first[0]) / (len(first) - 1)
+    slope_second = (second[-1] - second[0]) / (len(second) - 1)
+    drops = [i for i in range(1, len(points)) if points[i] < points[i - 1]]
+    ok = not drops and slope_second > slope_first
+    shape = (f"前半 {len(first)} 点斜率 {slope_first:+.6f}/期 · 后半 {len(second)} 点斜率 {slope_second:+.6f}/期")
+    if drops:
+        reason = f"序列非单调不降（第 {drops} 处回落）：{points}"
+    elif slope_second <= slope_first:
+        reason = (f"单调不降但**没有加速**（{shape}）：线性上升不构成『加速上升』——"
+                  f"『观测不到加速 → 死亡螺旋假设被推翻』正是这条判据要检验的反面")
+    else:
+        reason = None
+    base.update({"state": "通过" if ok else "不通过",
+                 "observed": {"series": series, "slope_first": slope_first, "slope_second": slope_second},
+                 "reason": reason})
+    return base
+
+
 def judge_clause(params, clause: Clause, a: dict, b: dict | None = None, *, arms_note: str = "") -> dict:
     """判定一条子句。**纯函数**。返回的状态 ∈ {通过, 不通过, 不可评估}。"""
     left = measure(a, clause.measure)
     base = {"clause": clause.id, "text": clause.text, "kind": clause.kind, "measure": clause.measure,
             "profile": clause.profile or a["profile"], "threshold": clause.threshold,
-            "measure_arm": clause.measure_arm,
+            "measure_arm": clause.measure_arm, "ceiling": clause.ceiling,
             "depends_on": list(clause.depends_on), "unsourced": unsourced(params, clause), "note": clause.note}
     if clause.kind == ABSOLUTE and base["unsourced"]:
         base.update({
@@ -202,10 +167,12 @@ def judge_clause(params, clause: Clause, a: dict, b: dict | None = None, *, arms
                      "state": "不可评估" if overlap is None else ("通过" if overlap else "不通过"),
                      "reason": None if overlap is not None else "区间不可得（重复次数不足或指标退化）"})
         return base
-    if clause.direction in ("decreasing", "non_increasing", "converging_high"):
+    if clause.direction in ("decreasing", "non_increasing", "converging_high", "accelerating"):
         #: 序列类子句测的是 `measure_arm` 指定的那一臂（判据文本说"哪一组"，不是臂表的 A/B 顺序）
         target = b if (clause.measure_arm == "B" and b is not None) else a
         series = [float(v) for v in (measure(target, clause.measure)[1] or []) if isinstance(v, (int, float))]
+        if clause.direction == "accelerating":
+            return judge_accelerating(base, series, clause.ceiling)
         if len(series) < 2:
             base.update({"state": "不可评估", "observed": series,
                          "reason": "序列不足 2 个点，无法判定单调性（不许把『测不到』说成『通过』）"})
@@ -323,6 +290,29 @@ def robustness_scan(params, crit, prof, base_runs: dict, *, measure_name: str = 
 # ---------------------------------------------------------------------------
 # 编排：跑完 R1~R6，落 JSON + Markdown
 # ---------------------------------------------------------------------------
+def excluded_evidence(spec, runs: dict) -> dict:
+    """**不再是判据、但仍落进产物**的序列（`§7.1`「`R3-c` 判据修订留痕」第 ⑤ 条）。
+
+    为什么留着：规格修订的理由（B 是内生决策变量、只会往上调）**必须能从产物直接复核**，
+    而不是只在提交说明里留一句结论。取 `B` 臂（若判据有 B 臂）—— 足额组的预算是平的，
+    看不出「只升不降」。
+    """
+    if not getattr(spec, "excluded_series", None):
+        return {}
+    arm_name = "B" if "B" in runs else "A"
+    run = runs.get(arm_name)
+    if run is None:
+        return {}
+    out = {}
+    for key, why in spec.excluded_series.items():
+        values = [v for v in (measure(run, key)[1] or []) if isinstance(v, (int, float))]
+        out[key] = {"arm": arm_name, "label": run["label"], "series": values,
+                    "monotone": "上升" if all(b >= a for a, b in zip(values, values[1:])) else
+                                ("下降" if all(b <= a for a, b in zip(values, values[1:])) else "非单调"),
+                    "why": why}
+    return out
+
+
 def judge_criterion(params, crit, *, seed: int = 20261002, out_root: Path | str = "data/sim/backtest",
                     with_scan: bool = True, progress=print) -> dict:
     """跑一条 `R` 判据的全部臂 → 逐子句判定 → 稳健性扫描 → 三态结论。"""
@@ -358,6 +348,8 @@ def judge_criterion(params, crit, *, seed: int = 20261002, out_root: Path | str 
     verdict, reason = verdict_of(clauses, scan)
     return {"id": spec.id, "title": spec.title, "basis": spec.basis, "question": spec.question,
             "verdict": verdict, "reason": reason, "profile": prof, "clauses": clauses, "robustness": scan,
+            "excluded_evidence": excluded_evidence(spec, runs),
+            "criterion_issue": getattr(spec, "criterion_issue", "") or "",
             "arms": {name: {"label": run["label"], "scenario": run["scenario"], "arm": run["arm"],
                             "overrides": run["overrides"], "self_funded": run["self_funded"],
                             "M-04": run["rows"][0]["metrics"]["M-04"]["ratio"],

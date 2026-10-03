@@ -21,7 +21,7 @@ from sim_support import PARAMS_PATH
 
 from sim.core.params import load_params
 from sim.verify import backtest
-from sim.verify.r_criteria import ABSOLUTE, CRITERIA, ORDERING, VERDICTS, Clause
+from sim.verify.r_criteria import ABSOLUTE, CRITERIA, CRITERIA_BY_ID, ORDERING, PROFILES, VERDICTS, Clause
 
 
 def _fake_run(value, *, series=None, label="假臂"):
@@ -171,3 +171,123 @@ def test_r6_clause_requires_a_real_cost_in_the_self_funded_arm(params):
     assert verdict["state"] == "通过"
     assert backtest.judge_clause(params, clause, _fake_run(0.0), _fake_run(0.0))["state"] == "不通过"
     print("[T-SIM-08] R6-b：自费臂一次性支出 > 出资臂（负例：两侧都是 0 时必红）")
+
+
+# ---------------------------------------------------------------------------
+# 2026-10-03 `R3-c` 规格修正的机械守卫（`docs/sim-design.md` §7.1「`R3-c` 判据修订留痕」）
+# ---------------------------------------------------------------------------
+#: `market_decision_delay_periods = 6` ⇒ 预算/结构决策 6 期后才生效 ⇒ **7 期是硬下限**（210 营业日）
+R3_MIN_DAYS = 210
+
+
+def test_r3_profile_is_long_enough_for_the_decision_delay():
+    """**档位下限守卫**：把 `R3` 的档位改短到 <210 营业日（90 日 = 3 期那一档），必须当场红。
+
+    上一轮踩过的坑就是它：90 日档里任何"按期变化"都测不到，而报告当时并没有为此判红。
+    """
+    crit = CRITERIA_BY_ID["R3"]
+    profiles = {crit.profile} | {c.profile for c in crit.clauses if c.profile}
+    for profile_id in profiles:
+        days = PROFILES[profile_id]["days"]
+        assert days >= R3_MIN_DAYS, (
+            f"R3 用到的档位 `{profile_id}` 只有 {days} 营业日（< {R3_MIN_DAYS}）"
+            f"⇒ `market_decision_delay_periods=6` 下测不到任何按期变化；"
+            f"下限依据 docs/sim-design.md §7.1「`R3-c` 判据修订留痕」第 ⑥ 条"
+        )
+    assert PROFILES[crit.profile]["days"] >= R3_MIN_DAYS
+    print(f"[T-SIM-08] R3 档位下限守卫：{sorted(profiles)} 均 ≥ {R3_MIN_DAYS} 营业日")
+
+
+def test_r3_c_no_longer_judges_the_endogenous_budget_series():
+    """`R3-c` 改判**结果量**：`B`（维护预算）不再是任何子句的判据，但序列仍留在产物里可复核。"""
+    clauses = {c.id: c for c in CRITERIA_BY_ID["R3"].clauses}
+    assert set(clauses) == {"R3-a", "R3-b", "R3-c", "R3-d"}
+    assert clauses["R3-c"].measure == "M-10-按期", "R3-c 必须判 DeviceIdleRate 的按期序列"
+    assert clauses["R3-c"].direction == "accelerating"
+    assert clauses["R3-c"].measure_arm == "B", "加速上升判的是 0.3× 组（B 臂），不是足额组"
+    for clause in clauses.values():
+        assert clause.measure != "M-17-B", "维护预算不得再作为任何子句的被判量"
+    assert "M-17-B" in CRITERIA_BY_ID["R3"].excluded_series, "被移出判据的序列必须留理由，否则修订不可复核"
+    print("[T-SIM-08] R3-c 已改为只判结果量；维护预算序列保留为 excluded_evidence（可复核证据）")
+
+
+@pytest.mark.parametrize(("series", "expected"), [
+    ([0.10, 0.12, 0.18, 0.32, 0.56, 0.90], "通过"),      # 逐期增量 0.02→0.06→0.14→0.24→0.34：斜率递增
+    ([0.70, 0.75, 0.80, 0.85, 0.90, 0.95], "不通过"),      # 线性上升：不是加速
+    ([0.90, 0.88, 0.95, 0.99, 1.0, 1.0], "不通过"),        # 有回落
+    ([0.95, 1.0, 1.0, 1.0, 1.0, 1.0], "不通过"),          # **无饱和上限时**按形状判 ⇒ 不通过
+    ([0.95, 1.0], "不可评估"),                              # 点数不足 ⇒ 测不到 ≠ 通过
+])
+def test_accelerating_judge_is_sensitive_to_the_series_shape(series, expected):
+    """**灵敏度负例**：「加速上升」的判定必须随序列形状改变。"""
+    verdict = backtest.judge_accelerating({}, series)
+    assert verdict["state"] == expected, verdict
+
+
+@pytest.mark.parametrize(("series", "expected"), [
+    ([0.947, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], "不可评估"),   # 本轮 `R3-c` 的实测形态
+    ([0.10, 0.12, 0.18, 0.32, 0.56, 0.90], "通过"),             # 不饱和 ⇒ 照常按形状判
+    ([0.70, 0.75, 0.80, 0.85, 0.90, 0.95], "不通过"),           # 不饱和且线性 ⇒ 真不通过
+    ([0.90, 1.0, 0.95, 0.60, 0.55, 0.50], "不通过"),           # 中途触顶又回落 ⇒ 不算饱和
+])
+def test_saturation_yields_unevaluable_not_failed(series, expected):
+    """**饱和 = `不可评估`，不是「不通过」**（父代理 `2026-10-03` 第二层裁定）。
+
+    最后一条是关键的**反向断言**：序列**中途**触顶又被拉回来 ⇒ 指标还能动 ⇒ 不算饱和、
+    照常按形状判。明令**不得**写成"触顶即视为非加速"——那是把不可评估偷偷转成不通过。
+    """
+    assert backtest.judge_accelerating({}, series, ceiling=1.0)["state"] == expected
+
+
+def test_saturation_evidence_records_ceiling_and_period_count():
+    """饱和档必须在产物里写明**饱和证据**（序列 + 触顶期数 + 触顶起始期），否则不可复核。"""
+    verdict = backtest.judge_accelerating({}, [0.947, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], ceiling=1.0)
+    observed = verdict["observed"]
+    assert (observed["periods_at_ceiling"], observed["saturated_from_period"]) == (7, 2)
+    assert observed["ceiling"] == 1.0
+    assert "不可评估 ≠ 不通过" in verdict["reason"], verdict["reason"]
+    assert backtest.saturation_periods([0.4, 0.4, 0.5, 0.711, 0.333], 1.0) == 0
+    assert backtest.saturation_periods([0.9, 1.0, 1.0], 1.0) == 2
+    print("[T-SIM-08] 饱和判『不可评估』并留下触顶期数证据；中途触顶回落不判饱和（负例）")
+
+
+def test_r3_c_declares_its_saturation_ceiling():
+    """`R3-c` 必须**显式声明**饱和上限（`ceiling=1.0`）：规则写在判据里，不是藏在判定器里。"""
+    clause = next(c for c in CRITERIA_BY_ID["R3"].clauses if c.id == "R3-c")
+    assert clause.ceiling == 1.0, "R3-c 没声明饱和上限 ⇒ 饱和时会被当成形状不通过"
+    assert "不可评估 ≠ 不通过" in clause.note and "触顶即视为非加速" in clause.note
+    print("[T-SIM-08] R3-c 显式声明 ceiling=1.0，判据文本里写明『不可评估 ≠ 不通过』")
+
+
+def test_r3_c_clause_wires_the_accelerating_direction_end_to_end(params):
+    """`R3-c` 的整条链路：子句声明 → `judge_clause` 走的是加速分支（不是掉进单调性分支）。"""
+    clause = next(c for c in CRITERIA_BY_ID["R3"].clauses if c.id == "R3-c")
+
+    def _arm(**series):
+        run = _fake_run(0.9)
+        run["rows"][0]["series"].update(series)
+        return run
+
+    #: ⚠️ `measure_arm="B"` ⇒ 序列挂在 **B 臂**上（0.3× 组）；挂在 A 臂上这条子句读不到值 ——
+    #: 「判据文本说的组」与「臂表顺序」搞混正是 `R4-c` 第一版的真缺陷。
+    verdict = backtest.judge_clause(params, clause, _arm(), _arm(**{"M-10-按期": [0.10, 0.12, 0.18, 0.32, 0.56, 0.90]}))
+    assert verdict["state"] == "通过", verdict
+    assert "slope_second" in verdict["observed"], "加速判定必须把两段斜率写进产物，否则不可复核"
+    #: **负例**：换成实测的饱和形态 ⇒ 必须翻成 `不可评估`（证明它读的是 `M-10-按期` 而不是预算序列）
+    ceiling = _arm(**{"M-10-按期": [0.947, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                      "M-17-B": [1.5e6, 1.68e6, 1.875e6]})
+    assert backtest.judge_clause(params, clause, _arm(), ceiling)["state"] == "不可评估"
+    print("[T-SIM-08] R3-c 整链路：不饱和且加速判通过、实测饱和形态判不可评估（负例必红）")
+
+
+def test_excluded_evidence_reports_the_rising_budget_series(params):
+    """被移出判据的预算序列**必须仍能取到值**，否则"修订留痕"就只剩一句空话。"""
+    run = _fake_run(0.9)
+    run["rows"][0]["series"]["M-17-B"] = [1500000.0, 1500000.0, 1680000.0, 1875000.0]
+    evidence = backtest.excluded_evidence(CRITERIA_BY_ID["R3"], {"B": run})
+    assert evidence["M-17-B"]["monotone"] == "上升", evidence
+    assert evidence["M-17-B"]["series"] == [1500000.0, 1500000.0, 1680000.0, 1875000.0]
+    assert "不是" in evidence["M-17-B"]["why"] or "不再" in evidence["M-17-B"]["why"]
+    #: **反向断言**：没有 `excluded_series` 的判据 ⇒ 本函数返回空（不是无条件塞一份占位）
+    assert backtest.excluded_evidence(CRITERIA_BY_ID["R1"], {"B": run}) == {}
+    print("[T-SIM-08] 被移出判据的预算序列仍落进产物并标为『上升』（负例：未声明的判据返回空）")

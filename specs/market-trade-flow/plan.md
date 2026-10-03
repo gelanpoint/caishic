@@ -176,6 +176,8 @@ market-trade-mvp/
 > │   ├── metrics_trust_cash.py # `T-SIM-06`：`M-15`~`M-22`（信任、现金流与一致性类），含 `M-20` 的两条路径对账
 > │   ├── metrics_check.py # `T-SIM-06`：复算自检三层（两条路径对账 / 非退化扰动法**抗写死** / 产物↔事件流对账）
 > │   └── report.py      # `T-SIM-06`：场景结果 → `report.md` 与 `metrics.json`/`scenarios.json`/`sensitivity.json`（纯文本，零外部资源；**2% 免责声明放显眼位置**、`R6` 三段证据、稳健与不稳健分区）
+> │   ├── svg_charts.py # `T-SIM-09`：**内联 SVG 图元原语**（转义 / 条形图 / 序列折线 / 三态标记 / 四类性质分箱）。**纯函数、无 I/O** ⇒ 灵敏度负例可直接喂；不含任何资源引用（无 `url()`、无 `xlink:href`）
+> │   └── svg_report.py # `T-SIM-09`：`sim/` 产物 → **单文件 `report.html`**（七场景对照 / `R1`~`R6` 三态 / 四类性质分解 / `V-01` 三臂），**全部 SVG 内联、零外部资源**；缺产物时该块显式显示"未生成"（**不填假数据**）
 > ├── verify/
 > │   ├── __init__.py    # 包标识
 > │   └── sensitivity.py # `T-SIM-06`：OAT（一次一参数）+ **自写 Spearman**（含并列秩）+ 分层拉丁超立方与覆盖度检验 + 结论稳健性 + 存活区域形状
@@ -193,6 +195,7 @@ market-trade-mvp/
 > │   ├── test_verify_backtest.py   # `T-SIM-08` 验收①②：六条判据**三态**（不许二态）+「无出处参数不许撑绝对阈值」是**机械**的 + 与 `T-SIM-06` 的 `r6_verdict` **逐条同源**
 > │   ├── test_verify_consistency.py # `T-SIM-08` 验收②③：model 账目**只由事件流复算** + 三处口径差**有字段有值** + **灵敏度负例**（篡改 model 一处必红）+ 端到端真起服务对账
 > │   └── test_calibration_moments.py # `T-SIM-08`：6 个矩逐一有出处 + 匹配空间**只用无出处参数** + LHS 分层覆盖度 + 越界取值自报 + 单点真跑
+> │   └── test_svg_report_no_external.py # `T-SIM-09` 验收①②③：**复用 `tests/contract/test_no_external_assets.py::scan_static_text()`** 扫生成的 `report.html` → 0 命中；**合成负例必红**（塞一个协议外链 + 一个包管理器目录引用）；缺产物时该块必须显示"未生成"而不是假数据
 > └── `sim/observe/verify_report.py` # `T-SIM-08`：**验证类报告装配**（回测 / 一致性 / 匹配矩三份产物）+ 从 `study.py` 迁来的「`R6` 三段证据装配」与「`R` 的诚实提示」（措辞只此一处）
 > ├── scenarios/
 > │   ├── S0_baseline.json · S1_commission.json · S2_enforcement.json · S3_maintenance.json ·

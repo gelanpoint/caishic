@@ -95,6 +95,18 @@ def build_parser() -> argparse.ArgumentParser:
                         help="跑 `T-SIM-08` 的档 2 匹配矩（POM；领域方法，不假称来自本项目调研）")
     parser.add_argument("--calibrate-samples", type=int, default=48,
                         help="匹配矩的采样点数（每点 = 6 个矩各跑一遍）")
+    parser.add_argument("--svg-report", action="store_true",
+                        help="`T-SIM-09`：**只读已有产物**生成单文件静态报告 `report.html`"
+                             "（内联 SVG、零外部资源；**不跑仿真**，缺产物时该块显式显示『未生成』）")
+    parser.add_argument("--svg-data", default=None,
+                        help="静态报告的产物根（缺省同 `--out-dir` 推导；"
+                             "该目录下的 `study/scenarios.json` 与 `verify/backtest/backtest.json` 是数据来源）")
+    parser.add_argument("--svg-out", default=None,
+                        help="静态报告的输出路径（缺省 `<产物根>/report.html`）")
+    parser.add_argument("--svg-study", default=None,
+                        help="逐个覆盖场景研究产物路径（缺省 `<产物根>/study/scenarios.json`）")
+    parser.add_argument("--svg-backtest", default=None,
+                        help="逐个覆盖回测产物路径（缺省 `<产物根>/verify/backtest/backtest.json`）")
     return parser
 
 
@@ -254,6 +266,11 @@ def main(argv: list[str] | None = None) -> int:
         from .verify_cli import verify_command
 
         return verify_command(args, params, base_out)
+
+    if args.svg_report:
+        from .observe.svg_report import svg_report_command
+
+        return svg_report_command(args, base_out)
 
     if args.scenario or args.integrated:
         return _run_integrated(args, params, base_out)

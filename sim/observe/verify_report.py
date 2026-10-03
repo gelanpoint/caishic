@@ -82,6 +82,27 @@ def render_robustness_section(result: dict) -> list[str]:
     return lines
 
 
+def render_excluded_section(result: dict) -> list[str]:
+    """**不再作为判据**的序列（`§7.1`「`R3-c` 判据修订留痕」第 ⑤ 条）。
+
+    必须留在报告正文里：判据被修订的理由若只存在于提交说明，读者无法复核 ——
+    「0.3× 组的维护预算逐期**单调上升**」这句话得由产物自己说。
+    """
+    evidence = result.get("excluded_evidence") or {}
+    if not evidence:
+        return []
+    lines = ["### 已移出判据、但保留在产物里的序列（**判据被修订的可复核证据**）", ""]
+    for key, item in evidence.items():
+        series = item.get("series") or []
+        head = ", ".join(_fmt(v) for v in series[:6]) + (" … " + ", ".join(_fmt(v) for v in series[-3:])
+                                                    if len(series) > 6 else "")
+        lines += [f"- `{key}`（{item.get('arm')} 臂：{item.get('label')}）实测序列：{head or '（空）'}"
+                  f" ⇒ 逐期**{item.get('monotone')}**", f"  - 不再作为判据的理由：{item.get('why')}"]
+    lines += ["", "> 完整留痕（改了什么 / 为什么 / 依据 / 档位下限 / 重跑命令）见 "
+              "`docs/sim-design.md` §7.1「`R3-c` 判据修订留痕」。", ""]
+    return lines
+
+
 def render_backtest(payload: dict) -> str:
     results = payload.get("results") or []
     lines = ["# `R1`~`R6` 回测结论（`T-SIM-08`）", "",
@@ -109,6 +130,7 @@ def render_backtest(payload: dict) -> str:
                          f"{_fmt(lo)} ~ {_fmt(hi)} | {_fmt(arm['M-03'])} | {_fmt(arm['M-15'])} |")
         lines += ["", "### 子句逐条", ""]
         lines += render_clause_section(result)
+        lines += render_excluded_section(result)
         lines += ["", "### 稳健性扫描（无出处参数推到区间端点）", ""]
         lines += render_robustness_section(result)
         lines.append("")
