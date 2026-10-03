@@ -198,6 +198,7 @@ market-trade-mvp/
 > │   └── test_svg_report_no_external.py # `T-SIM-09` 验收①②③：**复用 `tests/contract/test_no_external_assets.py::scan_static_text()`** 扫生成的 `report.html` → 0 命中；**合成负例必红**（塞一个协议外链 + 一个包管理器目录引用）；缺产物时该块必须显示"未生成"而不是假数据
 > │   └── test_merchant_learning_hygiene.py # `T-SIM-11` 验收①~④：商户学习的**卫生守卫** —— 没有实现的流水就不学习 + 退出商户不进同伴网络；**每条守卫都配"把修复关掉必须变红"的灵敏度负例**
 > │   └── test_param_table_doc.py       # `T-SIM-10` 验收②：`docs/sim-results.md` 的参数来源表必须与 `sim/observe/param_table.py` 的渲染**逐字一致**（同一份事实存两遍就是下次漂移的种子）
+> │   └── test_fix_impact_on_registered_conclusions.py # `T-SIM-12`：`V-02`/`V-03`/`V-04` 三条**逐位复现并锁死** + **调用探针实测**「Agent 层扫描不碰这两处接缝」（并证明**探针非空转**）+ **反向灵敏度负例**（把修复关掉数字仍须不变）+ 集成层信任受污染的边界守卫
 > └── `sim/observe/verify_report.py` # `T-SIM-08`：**验证类报告装配**（回测 / 一致性 / 匹配矩三份产物）+ 从 `study.py` 迁来的「`R6` 三段证据装配」与「`R` 的诚实提示」（措辞只此一处）
 > ├── observe/param_table.py   # `T-SIM-10`：**参数来源表的人读可读版**（把 `sim-design.md` §9 落成一张可核对的表；`sourced` 与 `assumed` **必须分表、一眼可分**；**纯函数** → 负例可直接喂，且文档由它渲染）
 > ├── scenarios/

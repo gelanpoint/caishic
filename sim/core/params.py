@@ -26,6 +26,15 @@ from typing import Any
 #: `sourced` 允许的 ref 形态（**故意不含 `Q-\d+`**，理由见模块 docstring）
 SOURCED_REF_RE = re.compile(r"^(?:结论 \d+|D-\d+)$")
 
+#: `ref` 里**指向《调研报告》结论号**的片段。允许裸写（`结论 4`）与方括号包裹（`[源:结论 4]`）两种形态；
+#: 也允许一条 ref 里指向多条结论 —— 真实写法是 `结论 4 / 5 / 6（时间线）`，
+#: **后续的 `/ N` 省略了重复的「结论」二字**，所以必须由第 2 组一并吃掉，否则 `5`、`6` 会被漏检
+#: （漏检的后果是"指向不存在编号"检不出来 —— 那是本函数存在的理由）。
+CONCLUSION_REF_RE = re.compile(r"结论\s*(\d+)\s*((?:[/／]\s*\d+\s*)*)")
+
+#: `Q-xx`（项目自认的待确认假设）在 `ref` 里的形态。父代理裁定：**`Q-xx` 一律 `assumed`**。
+Q_REF_RE = re.compile(r"Q-\d+")
+
 KINDS = ("sourced", "assumed")
 
 DEFAULT_PARAMS_PATH = Path(__file__).resolve().parent.parent / "calibration" / "params.json"
@@ -34,6 +43,81 @@ DEFAULT_PARAMS_PATH = Path(__file__).resolve().parent.parent / "calibration" / "
 class ParamsError(ValueError):
     """参数文件缺失、结构非法或出处不合规。**故意继承 `ValueError`**：它属于"配置错"，
     调用方（CLI）本就应当立刻失败退出，不存在"被业务代码顺手接住"的风险。"""
+
+
+# ---------------------------------------------------------------------------
+# `ref` 指向的**结论号**是否真实存在（`T-SIM-12`：出处机械对照的第一道闸门）
+# ---------------------------------------------------------------------------
+def ref_conclusion_numbers(ref) -> set[int]:
+    """从一条 `ref` 里抽出它指向的**全部结论号**。**纯函数**：`ref` 缺字段/非串 ⇒ 空集。
+
+    一条 `ref` 可以指向多条结论（`结论 4 / 5 / 6（时间线）`），那不是格式错误 ——
+    参数的出处常常是"几条事实合起来支撑一个取值"。注意 `5`、`6` 省略了重复的「结论」二字，
+    由 `CONCLUSION_REF_RE` 的第 2 组（`/ N` 续写）一并吃掉。
+    """
+    if not isinstance(ref, str):
+        return set()
+    numbers: set[int] = set()
+    for match in CONCLUSION_REF_RE.finditer(ref):
+        numbers.add(int(match.group(1)))
+        numbers.update(int(token) for token in re.findall(r"\d+", match.group(2) or ""))
+    return numbers
+
+
+def conclusion_numbers(text: str) -> set[int]:
+    """从《调研报告》原文里抽出**全部结论号**。**纯函数**：这是"结论号集合"的唯一算法。
+
+    识别形态为行首的粗体结论标题（`**结论 7：…**`）。刻意**不用**全文任意位置的 `结论 \\d+`：
+    正文里也有"结论 13、14"这样的交叉引用，把它们算进来会让"编号集合"虚高，
+    于是"ref 指向了一个不存在的结论"这类错误反而检不出来。
+    """
+    return {int(number) for number in re.findall(r"^\*\*结论\s*(\d+)\s*[：:]", text, flags=re.MULTILINE)}
+
+
+def conclusion_blocks(text: str) -> dict[int, str]:
+    """`{结论号: 该结论的正文}`。**纯函数** —— 供"参数取值 vs 报告原文"的人工对照做成机械断言。
+
+    切法：以行首粗体结论标题为起点，到下一条结论标题（或文末）为止。
+    交叉引用落在别的结论块里，故 `conclusion_blocks(…)[13]` 拿到的是结论 13 **自己的**段落。
+    """
+    heads = list(re.finditer(r"^\*\*结论\s*(\d+)\s*[：:]", text, flags=re.MULTILINE))
+    out: dict[int, str] = {}
+    for index, match in enumerate(heads):
+        end = heads[index + 1].start() if index + 1 < len(heads) else len(text)
+        out[int(match.group(1))] = text[match.start():end]
+    return out
+
+
+def ref_target_problems(entry_id: str, ref, known_conclusions: set[int]) -> list[str]:
+    """`ref` 指向的每个结论号都必须**真实存在于**报告里（空 = 合规）。**纯函数**。
+
+    这道闸门堵的是这类事故：`ref` 写 `结论 27`，而报告只到 26 —— 参数**看起来**有出处，
+    实际那个编号根本不存在。`provenance_problems` 只看形态，看不出编号是否存在；
+    两道闸门分工不同，故并存（**不是重复实现**）。
+    """
+    problems = []
+    for number in sorted(ref_conclusion_numbers(ref)):
+        if number not in known_conclusions:
+            problems.append(
+                f"参数 {entry_id} 的 `ref` 指向结论 {number}，但报告里没有这一条"
+                f"（现有结论号：{sorted(known_conclusions)}）—— 这是**指向不存在编号**，不是格式问题"
+            )
+    return problems
+
+
+def q_ref_problems(entry_id: str, kind: str, ref) -> list[str]:
+    """`ref` 里出现 `Q-xx` 时，`kind` **必须**是 `assumed`。**纯函数**（父代理 2026-10-02 裁定）。
+
+    `provenance_problems` 只在 `kind == "sourced"` 时用 `SOURCED_REF_RE` 卡掉 `Q-xx`；
+    但 `assumed` 条目也允许写 `ref`，若那里塞一个 `Q-xx` 再被下游读成"有出处"，
+    就绕过了那道闸门。故 `Q-xx` 的约束单独成条，覆盖两种 `kind`。
+    """
+    if not isinstance(ref, str) or not Q_REF_RE.search(ref):
+        return []
+    if kind == "assumed":
+        return []
+    return [f"参数 {entry_id} 的 `ref` 含 {Q_REF_RE.search(ref).group(0)}，但 `kind` = {kind!r}；"
+            "**`Q-xx` 是项目自认的待确认假设，必须归 `assumed`**"]
 
 
 def provenance_problems(entry_id: str, entry: Any, where: str) -> list[str]:
