@@ -66,6 +66,9 @@
 | 文档 | 内容 |
 |---|---|
 | [`AGENTS.md`](AGENTS.md) | 项目红线 `RL-1`~`RL-9`、命令、**现场演示硬要求**、**两条交付铁律** |
+| [`scripts/preflight.py`](scripts/preflight.py) | **上场前自检**：Python 版本 / Flask / 关键文件 / 数据目录可写性，**逐条给出可执行的修复命令** |
+| [`scripts/demo_walkthrough.py`](scripts/demo_walkthrough.py) | **六步主链真浏览器走查**：同机双窗口，逐步留证，失败即抛 |
+| [`scripts/build_submission.py`](scripts/build_submission.py) | **构建交付包**：已跟踪文件 + 离线依赖兜底 + 评委上手说明 |
 | [`docs/要求与对应.md`](docs/要求与对应.md) | **比赛要求逐条 + 我们的对应与自证位置**；含「评委最可能追问的五个问题」 |
 | [`docs/交付铁律.md`](docs/交付铁律.md) | 两条铁律各自的**真实事故现场与判别实验**（含一次"快盘红/慢盘绿"的 e2e 竞态） |
 | [`docs/PROJECT-STATE.md`](docs/PROJECT-STATE.md) | 逐批次的实测证据、四个检查点（CP-A~CP-D）签署记录、未决问题台账、变更记录 |
