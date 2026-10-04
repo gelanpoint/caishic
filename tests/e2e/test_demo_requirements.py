@@ -315,7 +315,23 @@ def test_offline_rehearsal_uses_multi_item_and_accumulates(live_server, offline_
     page.wait_for_selector(".tile")
     page.evaluate("() => localStorage.setItem('mt.offline', '0')")  # 明确在线
     page.reload()
-    page.click("#defaultStall")
+    # ⚠️ **这里原来有一句 `page.click("#defaultStall")`，已删** —— 交付前的新克隆验证抓到：
+    # 它在跟应用的初始化**赛跑**，结果是**同一个代码在不同机器上结论相反**（新克隆验证实测，
+    # 交付铁律二第 2 次兑现）：
+    #
+    #   - 点击前 `#defaultStall` 的 DOM 状态**在两个盘上逐项相同**
+    #     （w=135.69 h=46.8 / display=block / visibility=visible / tiles=0 / readyState=complete），
+    #     但 **C: 盘点击超时 5s，D: 盘点击成功**；
+    #   - 差别不在"元素不可见"，而在 **Playwright 的 stability 检查**：它要求元素几何框
+    #     在连续两帧间不变。快盘（实测 C: fsync 2ms vs D: 37ms）上应用**更快**地恢复
+    #     "已选摊位"并重排布局，检查就一直过不去 ⇒ 超时；慢盘上恰好落进静止窗口 ⇒ 通过。
+    #
+    # 而 `reload()` 之后应用**本来就会从 localStorage 恢复已选摊位并把选择器收起**，
+    # 实测 reload 后约 250ms 商品网格（`.tile`，25 个）就已就绪 ⇒ **这次点击既多余又危险**。
+    #
+    # 改成等待**确定性就绪态**：`.tile` 出现即代表"摊位已恢复 + 商品已加载"。
+    # 若摊位**没有**被恢复，`.tile` 永远不出现，用例会**响亮地失败**，而不是靠一次
+    # 时机碰运气的点击蒙混过去。
     page.wait_for_selector(".tile")
     page.locator(".tile").nth(0).click()
     page.locator(".tile").nth(1).click()
