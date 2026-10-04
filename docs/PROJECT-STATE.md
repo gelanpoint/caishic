@@ -845,3 +845,40 @@ python -m sim --svg-report --svg-study data/sim/study360/study/scenarios.json `
 | `2026-10-02` | **批次 6（仿真）③：唯一 basetemp 裁定落地 + `T-SIM-05` 市场方/监管（提交 `629d0bc`）+ 一处**严重入库缺陷**（提交 `fd72140`）**。**① basetemp 裁定（做）**：`pytest.ini` 不再写死 `--basetemp=.pytest-tmp`，改由仓库根 `conftest.py` 的 `pytest_configure` 给**每会话**独立子目录 `.pytest-tmp/session-<pid>-<8位随机>`；原 `WinError 5` 修复意图**保留**（仍显式指定 basetemp ⇒ 走 `given_basetemp` 分支、**不产生 `pytest-current`**，实测无任何符号链接/联接）；`.gitignore` 的 `.pytest-tmp/` 覆盖不变；陈旧会话目录 best-effort 清理（失败一律忽略，**绝不用一个偶发换另一个偶发**）。**证据**：连续两次全量、并发两次全量（`Start-Process` 同时跑，实测两个会话各自拿到 `session-18412-…` 与 `session-6832-…`），**四次均未出现 `WinError 32` / `WinError 5` / `ERROR at setup`**；改完**没有**重新引入 `WinError 5`（原问题未复现）。**② 严重入库缺陷（本轮自己发现，已修）**：`.gitignore` 第 15 行 `env/`（本意是虚拟环境）**未锚定**，匹配到 `sim/env/` ⇒ 实测 `git ls-files sim/env` **为空**，`T-SIM-02` 那次提交（`1778d62`）**只进了 `params.json`，整个环境层没入库**，而工作区文件都在、测试全绿 —— **本地怎么跑都发现不了，新克隆必炸**。这推翻了我此前"`T-SIM-02` 已提交"的说法。修法按**成因**改：虚拟环境规则锚定到仓库根（`/.venv/`、`/venv/`、`/env/`、`/ENV/`），并把 `sim/env/` 4 个文件补进库；**用新克隆验证**（`git clone` 到临时目录 → `sim/env/` 4 文件在位 → `tests/sim` **73 passed**），证明修的是"仓库确实完整"而不只是"本机能跑"。**③ `T-SIM-05`**：市场方按**考核口径**分配预算并带**决策迟滞**，监管抽检→发现→罚金。**实测证据**：边际 KPI 产出——装机量口径 `(扩容 0.0, 维护 0.0)`、使用率口径 `(扩容 0.0, 维护 0.400)`；**激励错配复现**（同一预算 5,000,000 分下）维护占比 **0.000 vs 1.000**；装机量口径下报修队列 **40/40 期非空、累计修好 0 台、末期可用 6/10 台**（复现"坏设备长期存在"）；**迟滞位移恰为 `max(1, D)`**（0→1、1→1、3→3、6→6 期），且使用率口径下**停摆期数与迟滞一一对应**（`{0:1, 3:3, 6:6}`）—— 这就是"没有迟滞就复现不出坏设备长期存在"的量化形式；监管抽检率 0→1.0 ⇒ 累计发现 `0→23→39→100→188→360` **单调不降**（只给序关系：结论 4 的 10% 是**验收**抽检、结论 2 罚的是**开办者**，都不是日常计量抽检率）。**本轮自查出并修掉的两个建模缺陷**：① **纯乘法预算更新在预算为 0 时永不回升**（`0×(1+adj)=0`），会锁死在"注定不修"的伪影里 ⇒ 加 `market_budget_min_cents` 保底；② 迟滞语义**鬼影 off-by-one**（写 `period + delay` 导致 `delay=0` 实测"首次生效期=1"）⇒ 显式化为 `period + max(1, delay)`（决策必在观测之后，最快下一期生效）并**断言位移量**。**④ 未归因的存疑项（交给负责人/`CP-D`）**：在**并发两次全量**与**连续两次全量**的测量环境（`Start-Process -RedirectStandardOutput`，即 pytest 输出被重定向到文件）下，`tests/e2e/test_demo_launcher.py::test_demo_launcher_starts_a_real_service`、`test_demo_requirements.py` 的两个横幅/端口用例共 **3 个转红**；而在交互式 shell（`|` 捕获）下同一批用例**全绿**（`tests/e2e` 单独 38 passed；干净全量 **367 passed**）。**根因未定**：我先怀疑"子进程按 cp936 写横幅、用例按 UTF-8 读"，但**对照实验（A 组不设 `PYTHONIOENCODING` 8 passed / B 组设 utf-8 8 passed）已把这个假设否掉**；那段 `\ufffd` 乱码经查是**我的测量脚本重定向 stdout 所致**（断言文本被 cp936 写进日志），**不是**被测服务横幅的字节。现在的领先假设是**横幅断言与横幅落盘存在竞态**（用例在 `/healthz` 通后立刻读日志，负载下横幅可能还没 flush），但**我没有证明它，故不作为结论**。这三个用例属 `CP-D` 的 `start.bat`/`scripts/launch.py` 与既有 `T-033` 走查范围，未触碰。 | `T-SIM-05`；父代理 `2026-10-02` 裁定（唯一 basetemp）；`sim/env/*`、`.gitignore`、`pytest.ini`、`conftest.py`、`sim/agents/market_admin.py`、`sim/agents/regulator.py`、`sim/env/devices.py`、`sim/calibration/params.json`（53 参数：`sourced` 11 / `assumed` 42） |
 | `2026-10-02` | **`CP-D` 现场验收第二个缺陷（与 `.bat` 那次同类）：输出编码依赖环境变量 ⇒ 父代理机器上 `364 passed, 3 failed`，我这里 `367 passed`**。**父代理实测**（他那台没有 `PYTHONUTF8`）：`tests/e2e/test_demo_launcher.py::test_demo_launcher_starts_a_real_service`、`tests/e2e/test_demo_requirements.py::test_startup_banner_prints_lan_ip_two_entries_and_data_path`、`…::test_port_in_use_is_detected_with_clear_hint` 三条失败，报错形态是 `assert '已启动' in '…\ufffd\ufffd…'`。**根因（我的机制 + 本机真实复现）**：Python 的 stdout 编码取自 `PYTHONUTF8`/`PYTHONIOENCODING`/**系统 locale**；干净环境（实测 `locale.getpreferredencoding(False) = cp936`、`sys.stdout.encoding = gbk`）下子进程把中文写成 **GBK 字节**，而捕获方按 UTF-8 解码 ⇒ 满屏替换字符。**我为什么是绿的**：我每条命令都带了 `PYTHONIOENCODING=utf-8`（本机不设时同样是 `cp936`）⇒ **靠环境变量的通过不算通过**。**先复现再修**：在 `cmd /c "set PYTHONUTF8=&& set PYTHONIOENCODING=&& python -m pytest …"` 下**复现出与父代理完全相同的三条失败**。**修法（三处，缺一不可）**：① **应用侧自定编码** —— 新增 `app/console.py::force_utf8_stdio()`：**被重定向时强制 UTF-8**（写给机器看的与 locale 无关）、**接真控制台时沿用控制台编码**（中文才显示得对）；`run.py` 与 `scripts/launch.py` 都在任何输出前调用（`start.bat` 里保留 `chcp 65001` 只是为了显示好看，逻辑**不依赖**它）；② **测试侧一律显式编码** —— 捕获子进程输出/读日志一律 `encoding="utf-8", errors="replace"`（含 `tests/contract/test_no_external_assets.py` 的 node 调用、`tests/e2e_support.py` 新增 `env_drop` 以便"先清变量再起服务"）；③ **加回归**：`tests/e2e/test_demo_launcher.py` 新增两条 —— 清掉 `PYTHONUTF8`/`PYTHONIOENCODING` 后**横幅中文完整（无 `\ufffd`）** 与 **端口占用两条中文提示完整**。**灵敏度实测**：把 `force_utf8_stdio()` 临时改成直接 `return` → 两条回归**必红**（满屏 `\ufffd`，正是父代理看到的样子）→ 还原 → 复绿。**验收基线（父代理要求：用没有该变量时的结果）**：`cmd /c "set PYTHONUTF8=&& set PYTHONIOENCODING=&& python -m pytest tests/e2e/test_demo_launcher.py tests/e2e/test_demo_requirements.py -q"` → 修前 **3 failed, 5 passed**，修后 **10 passed**；同一环境全量 `python -m pytest -q` → **369 passed**（0 failed）。**登记**：`app/console.py` 进 `plan.md` §4 与 `tasks.md` §3（`T-002` 行的验收补"不依赖编码环境变量"），`AGENTS.md` §3 增一条铁律（输出编码不许依赖环境变量 + 捕获一律显式编码 + 验收基线=清变量后仍绿）。 | 父代理 `CP-D` 复测发现；`AC-013`；机制依据 = 本机清变量后的 `cp936`/`gbk` 实测 + 修前修后对照；与 `start.bat` 那条同属"不可靠的东西不要留给环境" |
 | `2026-10-02` | **`CP-D` 由父代理签署 —— 主线批次 1~4（`T-001`～`T-036`）全部完成，四个检查点 `CP-A`/`CP-B`/`CP-C`/`CP-D` 全部签署**。**父代理独立实测**（清掉 `PYTHONUTF8`/`PYTHONIOENCODING` 后）：启动器 + 演示要求用例 **`10 passed`**、全量 **`369 passed` / 0 failed**，**与 AI 自述一致**（"自述与独立实测一致"是本轮最有价值的一点）。`AGENTS.md` §3 五条现场演示硬要求逐条有证据：① 局域网 IP `192.168.110.215`（横幅实测 + e2e 断言合法 IPv4 且与网卡一致）；② 两个入口 `/scale/` `/customer/` 均 200（另 `admin/` 与导航页亦 200）；③ 同机双窗口：真实 Chromium 两窗口，秤端成交 → 顾客窗口读到同一笔；④ 断网彩排：死代理 + 旁路 + **对照实验证明探测能区分**，**29 个请求全部指向 `127.0.0.1`、0 失败**；⑤ 端口占用：实测 `[启动失败] 端口 8055 已被占用` + 按实际端口算出的换端口建议、**cmd 解析错误串为 False**，横幅含数据文件与暂存目录路径。**验收基线（父代理要求并采用）= 清掉编码相关环境变量后仍绿**。**本轮验收换来的两条交付铁律已写进本文件「交付铁律」一节并记明来历**（症状 A：`.bat` 非 ASCII 被 cmd 按控制台代码页解析坏 → `exit=255` + `" was unexpected at this time.`；症状 B：输出编码依赖 `PYTHONUTF8`/locale → 父代理机器 `364 passed, 3 failed`、报错形态 `assert '已启动' in '…\ufffd\ufffd…'`）；另一条来自并行仿真线（`.gitignore` 的 `env/` 未锚定 → `sim/env/` 未入库 → 本地绿、新克隆必炸）。**四条铁律指向同一件事：不可靠的东西不要留给环境，本地绿不等于交付绿。** 父代理造的临时目录 `.cpd/` 已由其本人清理（无需处理）。主线到此收口；后续由父代理推进仿真环境（`T-SIM-06`~`T-SIM-10`）与提交材料，主线侧待命 | `CP-D` 签署（父代理 `2026-10-02`）；`AGENTS.md` §3；「交付铁律」两条；`AC-013` |
+
+### `2026-10-04` · 交付封版：交付包 + 现场走查 + 上场自检（三层"能不能跑"）
+
+**这一轮只做交付所需的事，不再扩功能。**
+
+#### 三层验收（缺一层都可能把演示废掉）
+
+| 层 | 问题 | 装置 | 结果 |
+|---|---|---|---|
+| ① 功能 | 演示六步走不走得通 | `scripts/demo_walkthrough.py` | 六步全通，退出码 0 |
+| ② 依赖 | 评委机器上**能不能启动** | `scripts/judge_sim.py` | 无 Flask 环境自证 → 服务 3.0s 就绪 → 四页全 200 |
+| ③ 交付 | 包解压后是不是完整 | `scripts/build_submission.py` | 206 跟踪文件 + 元数据齐全，`data/` 不进包 |
+
+**① 现场走查实测**：25 个商品图标 / 6 档预设重量 / `T-20261004-0001` **¥10.80**；
+收款码 `mtpay://pay/PAY-20261004-000001` + 脱敏 `RECV-A-01****0001`；现金笔 **T-…0002**（不同号 ⇒ 支持连续开单）；
+顾客页接口真值 **6 项全显示**、白名单外字段 **0 个**、渲染 **2 行 = 接口 2 行**；
+改价 **¥1.90→¥1.71**、退货「冲正完成」零报错；
+离线 `#pending` **1→2→3**、补传「**补传 3 笔 · 重复丢弃 0 · 失败 0 · 清除副本 3 · 剩余 0**」；
+运营端 5 个按钮逐个点击零报错、7 个分区全渲染。
+
+**② 交付包**（`D:\release\market-trade-mvp-20261004.zip`，**2.1 MB**）= `git archive HEAD` 的 206 个跟踪文件
++ `offline-deps/`（Flask 3.1.3 及硬依赖 + **`.dist-info` 元数据**）+ `交付说明.txt`。
+包名日期取 **HEAD 提交日期**（可复现、可追溯到具体提交），不是"我哪天打的包"。
+离线兜底**不进仓库**——那会破坏「运行期依赖只有 Flask」这个卖点。
+
+#### 三条交付铁律（各有一场真实事故，不变松阈值）
+
+1. **输出编码不许依赖环境变量** —— 验收基线 = 清掉 `PYTHONUTF8`/`PYTHONIOENCODING` 后仍绿；
+2. **交付前跑一次新克隆验证** —— 根目录收窄时 git 归档会静默漏文件（`data/` 被 `.gitignore` 吃掉）；
+3. **"能 import" 不等于 "跑得起来"** —— 漏 `.dist-info` ⇒ werkzeug 启动即崩。
+
+**铁律二本次再次兑现**：新克隆全量测试抓到 e2e 用例「快盘红 / 慢盘绿」的竞态。
+
+#### 回归
+
+`python -m pytest -q`（清变量基线）→ **540 passed / 0 failed**（新克隆 `202.57s`，工作区同数）。
+新增 **9** 条：`tests/e2e/test_preflight.py` 4 条 + `tests/contract/test_build_submission.py` 5 条。
