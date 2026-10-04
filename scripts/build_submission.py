@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import os
 import shutil
 import subprocess
 import sys
@@ -107,40 +108,74 @@ def extract_tracked(dest: Path) -> int:
 
 
 def copy_offline_deps(dest: Path) -> tuple[int, int]:
-    """把 Flask 及其硬依赖拷进包内。只拷包目录，不拷 dist-info 之外的东西。"""
-    import importlib.util
+    """把 Flask 及其硬依赖拷进包内。
 
-    found: list[tuple[str, Path]] = []
-    for name in OFFLINE_PACKAGES:
-        spec = importlib.util.find_spec(name)
-        if spec is None or not spec.submodule_search_locations:
-            found.append((name, Path(spec.origin).parent if spec and spec.origin else Path()))
-            continue
-        found.append((name, Path(list(spec.submodule_search_locations)[0])))
+    ⚠️⚠️ **必须连 `<pkg>-<ver>.dist-info` 一起拷**，否则离线兜底是**假绿**：
+    Werkzeug 的服务器初始化里有 `importlib.metadata.version("werkzeug")`
+    （用来拼 HTTP 响应头），缺了元数据就抛 `PackageNotFoundError`，
+    **`python run.py` 直接退出、端口永远起不来**。
+
+    代价是我自己踩过的：第一次打包只拷了包目录，用 `import flask` 一测能导入就宣布兜底成立 ——
+    **导入成功不等于跑得起来**。真去起服务才发现进程秒退、端口连不上。
+    现在验收标准是**真起服务并打三个入口页**。
+    """
+    import importlib.util
 
     target_root = dest / "offline-deps"
     target_root.mkdir(parents=True, exist_ok=True)
     copied = 0
     total = 0
     missing = []
-    for name, src in found:
-        if not src.is_dir():
+
+    for name in OFFLINE_PACKAGES:
+        spec = importlib.util.find_spec(name)
+        if spec is None:
             missing.append(name)
             continue
-        out = target_root / name
-        shutil.copytree(src, out, dirs_exist_ok=True,
-                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-        n = len([p for p in out.rglob("*") if p.is_file()])
-        copied += n
-        total += sum(p.stat().st_size for p in out.rglob("*") if p.is_file())
+
+        # ⚠️ `submodule_search_locations` 对**包**给出的是**包目录本身**
+        # （flask ⇒ ...\site-packages\flask），**不是父目录**；
+        # 对**单文件模块**给的是空列表，得退回 `origin` 的目录。
+        # 搞错这一处 ⇒ 拼出 `site-packages/flask/flask` ⇒ 七个包全判"没找到"。
+        if spec.submodule_search_locations:
+            search_roots = [Path(spec.submodule_search_locations[0]).parent]
+        elif spec.origin:
+            search_roots = [Path(spec.origin).parent]
+        else:
+            missing.append(name)
+            continue
+
+        found_any = False
+        for root in search_roots:
+            pkg_dir = root / name
+            if pkg_dir.is_dir():
+                shutil.copytree(pkg_dir, target_root / name, dirs_exist_ok=True,
+                                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+                found_any = True
+            # 元数据：<Name>-<Version>.dist-info / .egg-info —— 运行期 importlib.metadata 要读它
+            for pattern in (f"{name}-*.dist-info", f"{name}-*.egg-info"):
+                for meta in root.glob(pattern):
+                    shutil.copytree(meta, target_root / meta.name, dirs_exist_ok=True,
+                                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+                    found_any = True
+        if not found_any:
+            missing.append(name)
+
+    copied = len([p for p in target_root.rglob("*") if p.is_file()])
+    total = sum(p.stat().st_size for p in target_root.rglob("*") if p.is_file())
+
     if missing:
-        print(f"  ⚠️ 以下包没找到，已跳过：{missing}")
+        print(f"  [!] 以下包没找到，已跳过：{missing}")
     (target_root / "README.txt").write_text(
         "本目录是 Flask 3.1.3 及其运行期硬依赖的副本，供**无外网**环境使用。\n"
         "用法：把它加进模块搜索路径即可，不需要 pip install，也不修改系统。\n"
         "  Windows： set PYTHONPATH=%CD%\\offline-deps  &&  python run.py\n"
         "  Linux  ： PYTHONPATH=$PWD/offline-deps     python run.py\n"
-        "有外网时直接 python -m pip install -r requirements.txt 即可，不必用本目录。\n",
+        "有外网时直接 python -m pip install -r requirements.txt 即可，不必用本目录。\n"
+        "\n"
+        "注意：这里**同时包含各包的 <name>-<ver>.dist-info 元数据**，不是多余的。\n"
+        "Werkzeug 在服务器启动时会调 importlib.metadata.version('werkzeug') 来拼 HTTP 响应头，\n"
+        "缺了元数据就会 PackageNotFoundError，**服务直接起不来**。\n",
         encoding="utf-8",
     )
     return copied, total
