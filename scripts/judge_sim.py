@@ -12,15 +12,17 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
 
-ZIP = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(r"D:\release\market-trade-mvp-20261004.zip")
-DST = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(r"C:\mt-judge3")
-DATA = Path((sys.argv[2] if len(sys.argv) > 2 else r"C:\mt-judge3") + "-data")
+TMP = Path(tempfile.gettempdir())
+ZIP = Path(sys.argv[1]) if len(sys.argv) > 1 else None   # 必填：没有就报错，不猜本机路径
+DST = Path(sys.argv[2]) if len(sys.argv) > 2 else TMP / "mt-judge"
+DATA = DST.with_name(DST.name + "-data")
 PORT = int(sys.argv[3]) if len(sys.argv) > 3 else 8871
 PAGES = ("/scale/", "/customer/", "/admin/", "/")
 
@@ -36,6 +38,13 @@ def port_open(port, timeout=1.0):
 
 
 def main():
+    if ZIP is None or not ZIP.is_file():
+        # ⚠️ 曾经把默认值写死成开发机上的 D:\release\...，
+        # 结果在别人机器上「照着文档跑」直接失败 —— **默认路径不该假设自己是谁**。
+        print("用法：python scripts/judge_sim.py <交付包.zip> [解压目录] [端口]")
+        print(f"      当前找不到交付包：{ZIP or '(未指定)'}")
+        print("      先构建：python scripts/build_submission.py --out <输出目录>")
+        return 2
     if DST.exists():
         shutil.rmtree(DST)
     if DATA.exists():
