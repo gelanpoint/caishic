@@ -23,7 +23,6 @@ import subprocess
 import sys
 import tarfile
 import zipfile
-from datetime import date
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -206,6 +205,29 @@ def build(out_dir: Path, offline: bool, prefix: str) -> Path:
     return zip_path
 
 
+def head_commit_date() -> str:
+    """包名里的日期取 **HEAD 提交的日期**，不是"今天"。
+
+    为什么不是 `date.today()`：
+    ① **可复现** —— 同一个 commit 反复打包得到**同一个包名**，而不是"哪天打的就算哪天"；
+    ② **可追溯** —— 包名能指回具体提交，收件人一眼知道这是哪一版；
+    ③ **不违反项目时钟纪律** —— 墙钟直读只允许出现在 `app/clock.py`
+       （`tests/unit/test_clock_guard.py` 机械守卫，`scripts/` 也在扫描面内）。
+
+    取不到（不在 git 仓库里、或 `git` 不在 PATH）时退回调用方给的 `--prefix`，
+    **不静默换一个日期蒙混**。
+    """
+    proc = subprocess.run(
+        ["git", "log", "-1", "--format=%cd", "--date=format:%Y%m%d"],
+        cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    value = (proc.stdout or "").strip()
+    if proc.returncode != 0 or not value.isdigit() or len(value) != 8:
+        print("  [!] 取不到 HEAD 提交日期，请显式传 --prefix <包名>")
+        return "HEAD"
+    return value
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True, help="输出目录")
@@ -213,7 +235,7 @@ def main() -> int:
     ap.add_argument("--prefix", default=None, help="包名前缀，默认 market-trade-mvp-YYYYMMDD")
     args = ap.parse_args()
 
-    prefix = args.prefix or f"market-trade-mvp-{date.today():%Y%m%d}"
+    prefix = args.prefix or f"market-trade-mvp-{head_commit_date()}"
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"构建交付包 → {out_dir}")

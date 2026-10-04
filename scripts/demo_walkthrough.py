@@ -326,11 +326,11 @@ def main():
         try:
             for name, fn in STEPS:
                 log(f"\n=== {name} ===")
-                t0 = time.time()
+                t0 = time.monotonic()
                 state = fn(ctx, base, shots, log, result)
                 if state is not None:
                     result[name] = state
-                log(f"  ⏱ {time.time() - t0:.1f}s")
+                log(f"  ⏱ {time.monotonic() - t0:.1f}s")
         finally:
             browser.close()
     log("\n=== 走查结论：六步全部走通 ===")

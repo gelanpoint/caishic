@@ -72,10 +72,10 @@ def main():
     proc = subprocess.Popen([sys.executable, "run.py", "--port", str(PORT)],
                             cwd=str(root), env=env,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    t0 = time.time()
+    t0 = time.monotonic()
     up = False
     try:
-        while time.time() - t0 < 90:
+        while time.monotonic() - t0 < 90:
             if proc.poll() is not None:
                 out, err = proc.communicate()
                 log(f"[4] !! 进程已退出，退出码 {proc.returncode}")
@@ -91,7 +91,7 @@ def main():
         if not up:
             log("[4] !! 90s 内端口未开放（进程仍在）")
             return 1
-        log(f"[4] 服务就绪：{time.time() - t0:.1f}s")
+        log(f"[4] 服务就绪：{time.monotonic() - t0:.1f}s")
 
         results = []
         for p in PAGES:
