@@ -66,6 +66,8 @@
 | 文档 | 内容 |
 |---|---|
 | [`AGENTS.md`](AGENTS.md) | 项目红线 `RL-1`~`RL-9`、命令、**现场演示硬要求**、**两条交付铁律** |
+| [`docs/要求与对应.md`](docs/要求与对应.md) | **比赛要求逐条 + 我们的对应与自证位置**；含「评委最可能追问的五个问题」 |
+| [`docs/交付铁律.md`](docs/交付铁律.md) | 两条铁律各自的**真实事故现场与判别实验**（含一次"快盘红/慢盘绿"的 e2e 竞态） |
 | [`docs/PROJECT-STATE.md`](docs/PROJECT-STATE.md) | 逐批次的实测证据、四个检查点（CP-A~CP-D）签署记录、未决问题台账、变更记录 |
 | [`specs/market-trade-flow/tasks.md`](specs/market-trade-flow/tasks.md) | `T-001`~`T-036` 任务与验收、`AC` 覆盖矩阵、DoD |
 | [`docs/standards/`](docs/standards) | 质量阈值（含**响应时间的并发口径**）、架构、分类、NFR 基线 |
@@ -75,7 +77,12 @@
 | 文件 | 内容 |
 |---|---|
 | [`docs/sim-design.md`](docs/sim-design.md) | 831 行设计：Agent 决策模型、参数来源总表（**哪些有出处 / 哪些是假设**）、验证与校准方案 |
+| [`docs/sim-results.md`](docs/sim-results.md) | **结果说明书**：七场景、`R1`–`R6` 三态、参数来源表（`sourced`/`assumed` 分表）、五问答案卡 |
+| [`docs/sim-验证结论实况.md`](docs/sim-验证结论实况.md) | **已验证结论实况与父代理裁定**：`V-01`~`V-06`、已知限制 `L-01`/`L-02`、四类性质分解 |
 | `sim/` | 实现：`core/`（骨架/时钟/随机流）· `env/`（市场/客流/设备）· `agents/`（商户/消费者/市场方/监管）· `calibration/params.json` |
+
+**引用仿真的任何数字都必须带档位**（营业日数 / R 次数 / 参数档）——
+见 [`AGENTS.md`](AGENTS.md) §3 硬要求 6。缩减档与全量档可以差一个数量级。
 
 ---
 
