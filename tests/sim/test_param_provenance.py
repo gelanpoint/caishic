@@ -8,6 +8,9 @@
 - `assumed` → 必须有非空 `calibration`（校准思路）。
 
 本文件自带**合成负例**：直接喂合成条目给纯函数校验器，逐个断言必须判红。
+
+**取值那一层**（`sourced` 的 `value`/`range` 对不对得上报告原文里的数、推算幅度不许混进 `sourced`）
+在 `tests/sim/test_sourced_amount_table.py`；两层共用同一个权威，没有第二套校验。
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from sim_support import PARAMS_PATH, REPO_ROOT
+from sim_support import PARAMS_PATH, REPORT_PATH
 
 from sim.core.params import (
     Params, ParamsError, Q_REF_RE, conclusion_blocks, conclusion_numbers, load_params,
@@ -170,10 +173,7 @@ def test_backtest_provenance_reading_matches_the_params_file():
 # 上一任如实登记：「全部转引自 `sim-design.md` §9 与 `params.json.provenance.ref`，
 # **没有逐条打开调研报告核对原文与编号**」—— 这是当时最大的未复核面。本节把它变成机械检查。
 # ---------------------------------------------------------------------------
-#: 《调研报告》原文（`ref` 的唯一权威来源；`params.json` 的 ref 指的就是它的结论号）
-REPORT_PATH = REPO_ROOT / "docs" / "调研报告-现实情况.md"
-
-
+#: 《调研报告》原文在 `sim_support.REPORT_PATH`（全目录只写一次，避免路径漂移）
 def _report_conclusions() -> set[int]:
     return conclusion_numbers(REPORT_PATH.read_text(encoding="utf-8"))
 
@@ -263,135 +263,32 @@ def test_q_ref_marked_sourced_is_red():
 
 
 # ---------------------------------------------------------------------------
-# `T-SIM-12`：**人工对照表的可执行版本** —— `sourced` 参数的取值必须等于报告原文写的那个金额
+# `T-SIM-12`：**人工对照表的可执行版本**在 `tests/sim/test_sourced_amount_table.py`
 #
-# 上一任登记的「最大未复核面」里，编号存在性只是第一层；**取值是否就是报告里那个数**
-# 机械检查做不了（需要人判断"这个参数对应结论里的哪个量"），但**人判断完之后可以把结论固化成数据**。
-# 下表就是那份人工对照表：每行 `参数键 -> (ref 结论号, 报告原文片段, 折算后的值/区间)`。
-# 用例做两件机械的事：① 报告原文片段**必须真的出现在**那条结论里（防止表抄错 ref）；
-# ② 参数的 `value`/`range` 必须等于折算值。
-#
-# ⚠️ 本轮在这张表上查出并修掉了**一处 10 倍量级错**：`network_refit_cents_per_market`
-# 原值 12,050,000 分（= 12.05 万元），而结论 25 原文与本条目自己的 `quote` 都写 120.5 万元
-# = 120,500,000 分。`provenance_problems` 只查形态、查不出这个 —— **这正是这张表存在的理由**。
+# 上一层（本文件）管**出处字段本身**：`kind` 合不合法、`ref` 指向的结论号存不存在、`Q-xx` 有没有
+# 归 `assumed`。下一层（那一份）管**取值**：`sourced` 参数的 `value`/`range` 对不对得上报告里那个数，
+# 以及「行为有出处、幅度是推算」这类 `sourced` 的降级守卫（父代理 2026-10-03 裁定，
+# `short_weight_ratio` 由 `sourced` 降为 `assumed` 后，例外名单已清空）。
+# 两层共用同一个权威 `sim.core.params`，**没有第二套校验**；拆开只是为了让两份都不撞 400 行上限。
 # ---------------------------------------------------------------------------
-#: `参数键 -> (结论号, 报告原文里必须存在的片段, 折算后的 value, 折算后的 range 或 None)`
-SOURCED_AMOUNT_TABLE: dict[str, tuple[int, str, object, object]] = {
-    "admin_fine_market_operator_cents": (2, "市场开办者被罚 2 万元", 2_000_000, None),
-    "bank_funding_cents_3y": (19, "三年期 200 余万元", 200_000_000, None),
-    "channel_fee_rate_bp": (21, "费率是 0.38%–0.6%", 38, [38, 60]),
-    "channel_fee_rate_bp_range": (21, "费率是 0.38%–0.6%", None, [38, 60]),
-    "device_screen_unit_price_cents": (24, "摊位屏 1100 元/台", 110_000, None),
-    "merchant_cloud_software_cents_per_year": (26, "云软件 5000 元/年", 500_000, None),
-    "merchant_self_funded_scale_cents": (26, "智慧电子秤 3750 元/台", 375_000, None),
-    "network_refit_cents_per_market": (25, "合计占整个 366.9 万元标的的 33%", 120_500_000, None),
-    "scale_unit_price_cents": (23, "普通溯源秤 **1350 元/台**", 135_000, [135_000, 256_600]),
-    "subsidy_ratio_bp": (3, "智慧菜场按审计实际投入的 50% 补贴", 5_000, None),
-    "verification_sampling_bp": (4, "按照 10% 的比例抽检验收", 1_000, None),
-    "wenzhou_buyer_rate_bp_range": (12, "收取交易额的 **0.5%–6%**", None, [50, 600]),
-}
+def test_the_provenance_layers_agree_on_the_single_authority():
+    """守卫两层分工确实**共用同一个权威**，而不是各抄一份判断。
 
-
-#: `sourced` 里**取值不是报告原文里那个数**的参数（所以不在上面那张表里）。
-#: 每一个都必须在这里写明"为什么不是"，否则 `test_every_sourced_amount_param_is_in_the_table` 判红。
-DERIVED_NOT_IN_TABLE = {
-    # `结论 13` 只给出**定性**表述（"不能再搞八两秤了"），报告里**没有**任何短秤幅度数字。
-    # 取值 0.2 是把俗语「八两秤」读作 8 两 / 1 斤 = 0.8 得到的推算 —— `quote` 里已写明"分布与比例无出处"。
-    # 它仍是 `sourced`：**行为事实**（这类行为真实存在且被官方点名）有出处，**幅度**没有。
-    "short_weight_ratio",
-}
-
-
-def sourced_amount_problems(params, blocks: dict[int, str], table=None) -> list[str]:
-    """**人工对照表的判定函数**（纯函数，故合成负例可以直接喂伪造的 `Params`）。
-
-    两关都过才算过：① 报告原文里**真的**有那句话（表没把 ref 抄错）；
-    ② 参数取值真的等于它（没抄错也没算错）。
+    负例：把 `short_weight_ratio` 伪造成 `sourced`，下一层必须立刻抓住它 ——
+    证明那一份读的是同一份规则，而不是自己维护了一张分类表。
     """
-    table = SOURCED_AMOUNT_TABLE if table is None else table
-    problems: list[str] = []
-    for key, (number, fragment, value, rng) in table.items():
-        if fragment not in blocks.get(number, ""):
-            problems.append(f"{key}: 结论 {number} 原文里找不到 {fragment!r}（对照表抄错了 ref？）")
-        entry = params.parameters().get(key)
-        if entry is None:
-            problems.append(f"{key}: 参数文件里没有这一项")
-            continue
-        if value is not None and entry.get("value") != value:
-            problems.append(f"{key}: 取值 {entry.get('value')} ≠ 报告折算值 {value}")
-        if rng is not None and list(entry.get("range") or []) != list(rng):
-            problems.append(f"{key}: 区间 {entry.get('range')} ≠ 报告折算区间 {rng}")
-    return problems
+    from sim_support import REPORT_PATH
 
-
-def test_sourced_amounts_equal_the_figure_written_in_the_report():
-    """**人工对照表的机械断言**：参数取值 == 报告原文写的那个金额。"""
-    blocks = conclusion_blocks(REPORT_PATH.read_text(encoding="utf-8"))
-    problems = sourced_amount_problems(load_params(PARAMS_PATH), blocks)
-    assert problems == [], "sourced 参数的取值与报告原文对不上：\n  " + "\n  ".join(problems)
-    print(f"[T-SIM-12] {len(SOURCED_AMOUNT_TABLE)} 个 sourced 参数的取值 == 报告原文金额（逐条核对通过）")
-
-
-def test_every_sourced_amount_param_is_in_the_table():
-    """**防漏守卫**：`sourced` 参数**每一个**都必须在这张对照表里有行（或在下面的例外名单里）。
-
-    漏一行就等于放弃一个参数的复核，而漏了不会有人发现 —— 故让它显式爆炸。
-    """
-    params = load_params(PARAMS_PATH)
-    missing = sorted(set(params.sourced_ids()) - set(SOURCED_AMOUNT_TABLE) - set(DERIVED_NOT_IN_TABLE))
-    assert missing == [], (
-        f"这些 sourced 参数既不在金额对照表、也没登记进 DERIVED_NOT_IN_TABLE（取值不是报告里的原数）：{missing}"
-    )
-    print(f"[T-SIM-12] {len(params.sourced_ids())} 个 sourced 参数全部有交代；"
-          f"例外 {sorted(DERIVED_NOT_IN_TABLE)}（取值来自报告原文之外的推算，已在 quote 里写明）")
-
-
-def test_amount_table_goes_red_when_a_value_contradicts_the_report():
-    """**灵敏度负例**：把取值改回本轮修掉的那个 **10 倍错** ⇒ 判定函数必须报出问题。
-
-    负例必须**真跑判定函数**才算数：只断言"伪造值 ≠ 期望值"证明不了这张表会红。
-    用**内存里的 `Params`** 改（不碰磁盘），证明它读的是参数而不是自己抄了一份常量。
-    """
-    blocks = conclusion_blocks(REPORT_PATH.read_text(encoding="utf-8"))
     raw = json.loads(PARAMS_PATH.read_text(encoding="utf-8"))
-    key = "network_refit_cents_per_market"
-    _number, _fragment, value, _rng = SOURCED_AMOUNT_TABLE[key]
-    assert sourced_amount_problems(Params(raw, "合成文件"), blocks) == [], "负例前提：伪造前必须先合规"
-    raw["parameters"][key]["value"] = 12_050_000  # 本轮修掉的 10 倍量级错（= 12.05 万元）
-    problems = sourced_amount_problems(Params(raw, "合成文件"), blocks)
-    assert any(key in problem for problem in problems), f"退回 10 倍错值却没判红：{problems}"
-    assert f"{value}" in problems[0], f"报错信息应当点出正确值 {value}：{problems[0]}"
-    print(f"[T-SIM-12] 负例：`network_refit` 退回 12,050,000 分（10 倍错）⇒ 判红（{problems[0]}）")
+    entry = raw["parameters"]["short_weight_ratio"]
+    assert entry["provenance"]["kind"] == "assumed", (
+        "`short_weight_ratio` 已被父代理裁定降为 `assumed`（行为事实有出处、幅度是推算 ⇒ 不是 sourced）")
+    assert provenance_problems("short_weight_ratio", entry, "合成") == [], "降级后的条目必须先合规"
+    assert entry["provenance"].get("calibration"), "assumed 必须有校准思路"
+    assert "结论" in str(entry["provenance"].get("ref")), "行为事实的出处不能一起丢掉"
 
-
-def test_amount_table_goes_red_when_a_ref_points_at_the_wrong_conclusion():
-    """**灵敏度负例（第二问）**：把对照表某行的结论号抄错 ⇒ 必须判红（防止"表抄错 ref"静默通过）。"""
+    # `conclusion_blocks` 必须真的能从报告里切出结论 13 —— 否则 `ref` 只是个好看的字符串
     blocks = conclusion_blocks(REPORT_PATH.read_text(encoding="utf-8"))
-    wrong = {**SOURCED_AMOUNT_TABLE,
-             "subsidy_ratio_bp": (12, SOURCED_AMOUNT_TABLE["subsidy_ratio_bp"][1], 5_000, None)}
-    problems = sourced_amount_problems(load_params(PARAMS_PATH), blocks, table=wrong)
-    assert problems and "抄错了 ref" in problems[0], f"把结论 3 的原文错记成结论 12 却没判红：{problems}"
-    print(f"[T-SIM-12] 负例：把 `subsidy_ratio_bp` 的出处错记为结论 12 ⇒ 判红（{problems[0]}）")
-
-
-def test_conclusion_block_slices_only_its_own_paragraph():
-    """**负例的前提守卫**：`conclusion_blocks(13)` 不得串进结论 26 的正文（否则对照表会抄到邻居的数）。"""
-    blocks = conclusion_blocks(REPORT_PATH.read_text(encoding="utf-8"))
-    assert set(blocks) == set(range(1, 27)), f"结论块不完整：{sorted(blocks)}"
-    assert "八两秤" in blocks[13], "结论 13 的正文没切到"
-    assert "云软件 5000 元/年" not in blocks[13], "结论 13 的块里串进了结论 26 的原文 ⇒ 切分坏了"
-    assert "云软件 5000 元/年" in blocks[26], "结论 26 的正文没切到"
-    assert "普通溯源秤" not in blocks[26], "结论 26 的块里串进了结论 23 的原文 ⇒ 切分坏了"
-    print("[T-SIM-12] 结论块按标题切分：13/26 各自只含自己的原文（未串到邻居）")
-
-
-def test_derived_not_in_table_entries_declare_their_derivation():
-    """**例外名单的守卫**：不在金额表里的 `sourced` 参数，`quote` 必须写明"怎么来的"。"""
-    params = load_params(PARAMS_PATH)
-    for key in sorted(DERIVED_NOT_IN_TABLE):
-        quote = str((params.parameters()[key]["provenance"] or {}).get("quote") or "")
-        assert "无出处" in quote or "推算" in quote, (
-            f"{key} 不在金额对照表里，`quote` 却没说清取值怎么来的：{quote!r}"
-        )
-        assert "结论" in str(params.parameters()[key]["provenance"]["ref"]), f"{key} 的 ref 必须仍指向报告结论"
-    print(f"[T-SIM-12] 例外名单 {sorted(DERIVED_NOT_IN_TABLE)}：quote 均写明推算来源与『无出处』")
+    assert "八两秤" in blocks.get(13, ""), "ref 指向的结论 13 切不到正文"
+    print("[T-SIM-12] 出处两层（字段形态 / 取值折算）共用 `sim.core.params` 一个权威；"
+          "`short_weight_ratio` 已降 `assumed` 且 `ref` 仍指向结论 13")

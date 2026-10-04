@@ -14,7 +14,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 SIM_DIR = REPO_ROOT / "sim"
+
+#: 仿真参数文件（`provenance` 的机器权威；出处校验见 `tests/sim/test_param_provenance.py`）
 PARAMS_PATH = SIM_DIR / "calibration" / "params.json"
+
+#: 《调研报告》原文 —— `provenance.ref` 里的 `结论 N` **唯一**指向的东西。
+#: 放在这里而不是各用例文件各写一遍：同一路径写两遍就是下次漂移的种子
+#: （`docs/PROJECT-STATE.md` 已记过一次"同一份事实存两遍"的事故）。
+REPORT_PATH = REPO_ROOT / "docs" / "调研报告-现实情况.md"
 
 #: 演示数据文件（仿真**绝不允许**触碰它；由用例做运行前后哈希比对）。
 #: ⚠️ 文件名带**点**：`market_trade.sqlite3`。本常量第一版写成 `market_trade_sqlite3`（下划线），
