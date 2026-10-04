@@ -55,7 +55,7 @@ DELIVERY_README = """\
       python -m pip install -r requirements.txt
 
   情况 B · 机器没有外网（现场常见）
-      本包内已带 offline-deps/（Flask 3.1.3 及其硬依赖，约 5 MB），**不需要联网安装**：
+      本包内已带 offline-deps/（Flask 3.1.3 及其硬依赖，约 2 MB），**不需要联网安装**：
           Windows ： set PYTHONPATH=%CD%\\offline-deps  &&  python run.py
           Linux   ： PYTHONPATH=$PWD/offline-deps     python run.py
       这条路只是把该目录加进模块搜索路径，**不修改系统、不写注册表**。
@@ -65,8 +65,10 @@ DELIVERY_README = """\
   它会检查 Python 版本、Flask 可用性、数据目录可写性，并把可执行的修复命令直接打出来。
 
 【想看验证过程】
-  python -m pytest -q          # 531 项测试，约 3~5 分钟
+  python -m pytest -q          # 540 项测试，约 3~5 分钟
   证据：docs/走查证据/（六步主链真浏览器走查的实测记录与复现命令）
+  评委环境仿真：python scripts/judge_sim.py <本包解压出来的目录>
+  上场前自检：python scripts/preflight.py
 
 【不要做什么】
   · 不要接外网资源：前端**零 CDN、零外部字体/图标库**，这是硬约束，有机械检查盯着；
@@ -74,7 +76,7 @@ DELIVERY_README = """\
 
 【文档从哪看起】
   README.md                    30 秒跑起来 + 六步演示路径 + 关键设计判断
-  提交说明.md                  方案摘要（可直接作为邮件正文）
+  docs/提交说明.md             方案摘要（**可直接作为邮件正文**）
   docs/要求与对应.md           比赛要求逐条 + 我们的对应与自证位置
   docs/走查证据/README.md      演示到底能不能跑通的实测记录
   docs/调研报告-现实情况.md    26 条实地结论 + 30 处来源链接
