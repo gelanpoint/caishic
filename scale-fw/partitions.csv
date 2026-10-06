@@ -1,0 +1,33 @@
+# 秤端固件分区表（ESP32-S3，**假设 8MB Flash**）。
+#
+# ⚠️ 本文件**未在本机验证**（本机没有 ESP-IDF）：验证边界只有**静态检查 + 人工评审**（见 README「验证边界」）。
+#    分区表是否真的被 ESP-IDF 接受，须在装好 ESP-IDF 的环境用 `idf.py partition-table` 核对。
+#
+# 累加自洽（逐行 offset + size = 下一行 offset）：
+#   bootloader        0x000000 .. 0x008000   （ESP-IDF 固定，不写入分区表）
+#   分区表自身         0x008000 .. 0x009000   （0x1000；CONFIG_PARTITION_TABLE_OFFSET 默认 0x8000）
+#   nvs       0x009000 + 0x006000 = 0x00F000
+#   phy_init  0x00F000 + 0x001000 = 0x010000
+#   factory   0x010000 + 0x400000 = 0x410000   （app，4MB）
+#   littlefs  0x410000 + 0x3F0000 = 0x800000   （storage，3.9375MB）
+#   → 合计 0x800000 = 8MB，**恰好填满**；相邻分区首尾相接（offset == 上一行 end）⇒ 无空洞、无重叠。
+#   → app 与 storage 的偏移都是 0x10000（64KB）对齐。
+#
+# 设计取舍（写清楚，免得后人靠猜）：
+#   1. **不做 OTA**：只有 `factory` 一个 app 槽，故**没有 `otadata`**。若日后要 OTA，
+#      必须重排本表（otadata + 两个 app 槽），storage 相应缩水 —— 那是一次真正的架构变更，不是改个数。
+#   2. **LittleFS 必须用独立 storage 分区**：ESP-IDF 没有 `littlefs` 子类型，`esp_littlefs` 按**标签**
+#      查分区，子类型写 `spiffs` 是通行做法（`main/store/store.c` 的 `partition_label = "littlefs"`
+#      与本表 Name 一致）。**塞进 app 分区会随固件更新被擦掉**，而暂存队列必须活过更新
+#      （`NFR-014` 绝不静默丢弃 / `RL-9`）。
+#   3. `nvs` 24KB：设备身份 + 幂等键序号 + WiFi 口令（`store.c` 的 NVS 命名空间 `scale`）。
+#   4. 容量假设 **8MB**（ESP32-S3-N8R8）：该型号标识的**唯一出处**是 `main/net/sync.h` 的
+#      `#define SYNC_HARDWARE_REV "esp32s3-n8r8"`（`main/net/sync.c` 的激活请求用它填 `hardware_rev`）。
+#      ⚠️ 若换成 16MB 模组，须**先改 `SYNC_HARDWARE_REV`**（它是上报给中台的硬件标识，不能与实际不符），
+#      再把富余的 8MB 加到 `littlefs`（或新增分区），**不要**无理由扩大 app 槽。
+#
+# Name,     Type, SubType, Offset,   Size,      Flags
+nvs,        data, nvs,     0x9000,   0x6000,
+phy_init,   data, phy,     0xF000,   0x1000,
+factory,    app,  factory, 0x10000,  0x400000,
+littlefs,   data, spiffs,  0x410000, 0x3F0000,

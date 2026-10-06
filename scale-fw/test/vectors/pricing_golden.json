@@ -1,0 +1,915 @@
+{
+  "format": "caishic-scale-pricing-golden/v1",
+  "do_not_edit": "本文件是产物：由 scripts/gen_pricing_vectors.py 生成，禁止手改（AC-029）",
+  "generated_by": "scripts/gen_pricing_vectors.py",
+  "authority": "app/domain/pricing.py",
+  "authority_sha256": "5dfbb3a5ef56b76e4fb0ae967a90e01ef51d73b43053a1e1cb5e237f5640ce0f",
+  "formula": "amount_cents = half_up_div(unit_price_cents * weight_grams, 1000)",
+  "rounding": "half_up_not_bankers",
+  "limits": {
+    "max_items": 20,
+    "max_weight_grams": 50000,
+    "confirm_threshold_percent": 50
+  },
+  "counts": {
+    "half_up": 25,
+    "amount": 53,
+    "total": 9,
+    "price_change": 10,
+    "round_off": 6,
+    "weight_range": 6,
+    "items_count": 6
+  },
+  "vector_count": 115,
+  "vectors": [
+    {
+      "id": "half_up-001",
+      "kind": "half_up",
+      "numerator": 0,
+      "denominator": 1000,
+      "quotient": 0
+    },
+    {
+      "id": "half_up-002",
+      "kind": "half_up",
+      "numerator": 1,
+      "denominator": 1000,
+      "quotient": 0
+    },
+    {
+      "id": "half_up-003",
+      "kind": "half_up",
+      "numerator": 499,
+      "denominator": 1000,
+      "quotient": 0
+    },
+    {
+      "id": "half_up-004",
+      "kind": "half_up",
+      "numerator": 500,
+      "denominator": 1000,
+      "quotient": 1
+    },
+    {
+      "id": "half_up-005",
+      "kind": "half_up",
+      "numerator": 501,
+      "denominator": 1000,
+      "quotient": 1
+    },
+    {
+      "id": "half_up-006",
+      "kind": "half_up",
+      "numerator": 999,
+      "denominator": 1000,
+      "quotient": 1
+    },
+    {
+      "id": "half_up-007",
+      "kind": "half_up",
+      "numerator": 1000,
+      "denominator": 1000,
+      "quotient": 1
+    },
+    {
+      "id": "half_up-008",
+      "kind": "half_up",
+      "numerator": 1499,
+      "denominator": 1000,
+      "quotient": 1
+    },
+    {
+      "id": "half_up-009",
+      "kind": "half_up",
+      "numerator": 1500,
+      "denominator": 1000,
+      "quotient": 2
+    },
+    {
+      "id": "half_up-010",
+      "kind": "half_up",
+      "numerator": 2500,
+      "denominator": 1000,
+      "quotient": 3
+    },
+    {
+      "id": "half_up-011",
+      "kind": "half_up",
+      "numerator": 999999,
+      "denominator": 1000,
+      "quotient": 1000
+    },
+    {
+      "id": "half_up-012",
+      "kind": "half_up",
+      "numerator": 1,
+      "denominator": 3,
+      "quotient": 0
+    },
+    {
+      "id": "half_up-013",
+      "kind": "half_up",
+      "numerator": 2,
+      "denominator": 3,
+      "quotient": 1
+    },
+    {
+      "id": "half_up-014",
+      "kind": "half_up",
+      "numerator": 3,
+      "denominator": 3,
+      "quotient": 1
+    },
+    {
+      "id": "half_up-015",
+      "kind": "half_up",
+      "numerator": 5,
+      "denominator": 3,
+      "quotient": 2
+    },
+    {
+      "id": "half_up-016",
+      "kind": "half_up",
+      "numerator": 7,
+      "denominator": 2,
+      "quotient": 4
+    },
+    {
+      "id": "half_up-017",
+      "kind": "half_up",
+      "numerator": 8,
+      "denominator": 2,
+      "quotient": 4
+    },
+    {
+      "id": "half_up-018",
+      "kind": "half_up",
+      "numerator": -1,
+      "denominator": 1000,
+      "quotient": 0
+    },
+    {
+      "id": "half_up-019",
+      "kind": "half_up",
+      "numerator": -500,
+      "denominator": 1000,
+      "quotient": 0
+    },
+    {
+      "id": "half_up-020",
+      "kind": "half_up",
+      "numerator": -501,
+      "denominator": 1000,
+      "quotient": -1
+    },
+    {
+      "id": "half_up-021",
+      "kind": "half_up",
+      "numerator": -1000,
+      "denominator": 1000,
+      "quotient": -1
+    },
+    {
+      "id": "half_up-022",
+      "kind": "half_up",
+      "numerator": -1500,
+      "denominator": 1000,
+      "quotient": -1
+    },
+    {
+      "id": "half_up-023",
+      "kind": "half_up",
+      "numerator": -2500,
+      "denominator": 1000,
+      "quotient": -2
+    },
+    {
+      "id": "half_up-024",
+      "kind": "half_up",
+      "numerator": -1499,
+      "denominator": 1000,
+      "quotient": -1
+    },
+    {
+      "id": "half_up-025",
+      "kind": "half_up",
+      "numerator": -3,
+      "denominator": -2,
+      "quotient": 2
+    },
+    {
+      "id": "amount-001",
+      "kind": "amount",
+      "unit_price_cents": 320,
+      "weight_grams": 780,
+      "amount_cents": 250
+    },
+    {
+      "id": "amount-002",
+      "kind": "amount",
+      "unit_price_cents": 320,
+      "weight_grams": 0,
+      "amount_cents": 0
+    },
+    {
+      "id": "amount-003",
+      "kind": "amount",
+      "unit_price_cents": 320,
+      "weight_grams": 1,
+      "amount_cents": 0
+    },
+    {
+      "id": "amount-004",
+      "kind": "amount",
+      "unit_price_cents": 500,
+      "weight_grams": 1,
+      "amount_cents": 1
+    },
+    {
+      "id": "amount-005",
+      "kind": "amount",
+      "unit_price_cents": 499,
+      "weight_grams": 1,
+      "amount_cents": 0
+    },
+    {
+      "id": "amount-006",
+      "kind": "amount",
+      "unit_price_cents": 1,
+      "weight_grams": 1,
+      "amount_cents": 0
+    },
+    {
+      "id": "amount-007",
+      "kind": "amount",
+      "unit_price_cents": 1,
+      "weight_grams": 500,
+      "amount_cents": 1
+    },
+    {
+      "id": "amount-008",
+      "kind": "amount",
+      "unit_price_cents": 3,
+      "weight_grams": 500,
+      "amount_cents": 2
+    },
+    {
+      "id": "amount-009",
+      "kind": "amount",
+      "unit_price_cents": 5,
+      "weight_grams": 100,
+      "amount_cents": 1
+    },
+    {
+      "id": "amount-010",
+      "kind": "amount",
+      "unit_price_cents": 7,
+      "weight_grams": 100,
+      "amount_cents": 1
+    },
+    {
+      "id": "amount-011",
+      "kind": "amount",
+      "unit_price_cents": 1,
+      "weight_grams": 499,
+      "amount_cents": 0
+    },
+    {
+      "id": "amount-012",
+      "kind": "amount",
+      "unit_price_cents": 2,
+      "weight_grams": 250,
+      "amount_cents": 1
+    },
+    {
+      "id": "amount-013",
+      "kind": "amount",
+      "unit_price_cents": 320,
+      "weight_grams": 50000,
+      "amount_cents": 16000
+    },
+    {
+      "id": "amount-014",
+      "kind": "amount",
+      "unit_price_cents": 1,
+      "weight_grams": 50000,
+      "amount_cents": 50
+    },
+    {
+      "id": "amount-015",
+      "kind": "amount",
+      "unit_price_cents": 0,
+      "weight_grams": 50000,
+      "amount_cents": 0
+    },
+    {
+      "id": "amount-016",
+      "kind": "amount",
+      "unit_price_cents": 9999,
+      "weight_grams": 50000,
+      "amount_cents": 499950
+    },
+    {
+      "id": "amount-017",
+      "kind": "amount",
+      "unit_price_cents": 198,
+      "weight_grams": 1230,
+      "amount_cents": 244
+    },
+    {
+      "id": "amount-018",
+      "kind": "amount",
+      "unit_price_cents": 160,
+      "weight_grams": 250,
+      "amount_cents": 40
+    },
+    {
+      "id": "amount-019",
+      "kind": "amount",
+      "unit_price_cents": 250,
+      "weight_grams": 1000,
+      "amount_cents": 250
+    },
+    {
+      "id": "amount-020",
+      "kind": "amount",
+      "unit_price_cents": 1200,
+      "weight_grams": 750,
+      "amount_cents": 900
+    },
+    {
+      "id": "amount-021",
+      "kind": "amount",
+      "unit_price_cents": 88,
+      "weight_grams": 330,
+      "amount_cents": 29
+    },
+    {
+      "id": "amount-022",
+      "kind": "amount",
+      "unit_price_cents": 65535,
+      "weight_grams": 1,
+      "amount_cents": 66
+    },
+    {
+      "id": "amount-023",
+      "kind": "amount",
+      "unit_price_cents": 100000,
+      "weight_grams": 999,
+      "amount_cents": 99900
+    },
+    {
+      "id": "amount-024",
+      "kind": "amount",
+      "unit_price_cents": 108181,
+      "weight_grams": 32818,
+      "amount_cents": 3550284
+    },
+    {
+      "id": "amount-025",
+      "kind": "amount",
+      "unit_price_cents": 160335,
+      "weight_grams": 11024,
+      "amount_cents": 1767533
+    },
+    {
+      "id": "amount-026",
+      "kind": "amount",
+      "unit_price_cents": 116441,
+      "weight_grams": 28740,
+      "amount_cents": 3346514
+    },
+    {
+      "id": "amount-027",
+      "kind": "amount",
+      "unit_price_cents": 20147,
+      "weight_grams": 5088,
+      "amount_cents": 102508
+    },
+    {
+      "id": "amount-028",
+      "kind": "amount",
+      "unit_price_cents": 44829,
+      "weight_grams": 4114,
+      "amount_cents": 184427
+    },
+    {
+      "id": "amount-029",
+      "kind": "amount",
+      "unit_price_cents": 56215,
+      "weight_grams": 6386,
+      "amount_cents": 358989
+    },
+    {
+      "id": "amount-030",
+      "kind": "amount",
+      "unit_price_cents": 153889,
+      "weight_grams": 23516,
+      "amount_cents": 3618854
+    },
+    {
+      "id": "amount-031",
+      "kind": "amount",
+      "unit_price_cents": 92603,
+      "weight_grams": 30056,
+      "amount_cents": 2783276
+    },
+    {
+      "id": "amount-032",
+      "kind": "amount",
+      "unit_price_cents": 198117,
+      "weight_grams": 15178,
+      "amount_cents": 3007020
+    },
+    {
+      "id": "amount-033",
+      "kind": "amount",
+      "unit_price_cents": 14175,
+      "weight_grams": 45035,
+      "amount_cents": 638371
+    },
+    {
+      "id": "amount-034",
+      "kind": "amount",
+      "unit_price_cents": 95209,
+      "weight_grams": 44180,
+      "amount_cents": 4206334
+    },
+    {
+      "id": "amount-035",
+      "kind": "amount",
+      "unit_price_cents": 12611,
+      "weight_grams": 31171,
+      "amount_cents": 393097
+    },
+    {
+      "id": "amount-036",
+      "kind": "amount",
+      "unit_price_cents": 172333,
+      "weight_grams": 16345,
+      "amount_cents": 2816783
+    },
+    {
+      "id": "amount-037",
+      "kind": "amount",
+      "unit_price_cents": 68007,
+      "weight_grams": 40971,
+      "amount_cents": 2786315
+    },
+    {
+      "id": "amount-038",
+      "kind": "amount",
+      "unit_price_cents": 90417,
+      "weight_grams": 17011,
+      "amount_cents": 1538084
+    },
+    {
+      "id": "amount-039",
+      "kind": "amount",
+      "unit_price_cents": 121611,
+      "weight_grams": 8272,
+      "amount_cents": 1005966
+    },
+    {
+      "id": "amount-040",
+      "kind": "amount",
+      "unit_price_cents": 86773,
+      "weight_grams": 10341,
+      "amount_cents": 897320
+    },
+    {
+      "id": "amount-041",
+      "kind": "amount",
+      "unit_price_cents": 159727,
+      "weight_grams": 21109,
+      "amount_cents": 3371677
+    },
+    {
+      "id": "amount-042",
+      "kind": "amount",
+      "unit_price_cents": 22585,
+      "weight_grams": 9213,
+      "amount_cents": 208076
+    },
+    {
+      "id": "amount-043",
+      "kind": "amount",
+      "unit_price_cents": 163091,
+      "weight_grams": 986,
+      "amount_cents": 160808
+    },
+    {
+      "id": "amount-044",
+      "kind": "amount",
+      "unit_price_cents": 151677,
+      "weight_grams": 43672,
+      "amount_cents": 6624038
+    },
+    {
+      "id": "amount-045",
+      "kind": "amount",
+      "unit_price_cents": 148663,
+      "weight_grams": 48908,
+      "amount_cents": 7270810
+    },
+    {
+      "id": "amount-046",
+      "kind": "amount",
+      "unit_price_cents": 195841,
+      "weight_grams": 8876,
+      "amount_cents": 1738285
+    },
+    {
+      "id": "amount-047",
+      "kind": "amount",
+      "unit_price_cents": 80155,
+      "weight_grams": 46877,
+      "amount_cents": 3757426
+    },
+    {
+      "id": "amount-048",
+      "kind": "amount",
+      "unit_price_cents": 115461,
+      "weight_grams": 18235,
+      "amount_cents": 2105431
+    },
+    {
+      "id": "amount-049",
+      "kind": "amount",
+      "unit_price_cents": 121407,
+      "weight_grams": 39134,
+      "amount_cents": 4751142
+    },
+    {
+      "id": "amount-050",
+      "kind": "amount",
+      "unit_price_cents": 105993,
+      "weight_grams": 26356,
+      "amount_cents": 2793552
+    },
+    {
+      "id": "amount-051",
+      "kind": "amount",
+      "unit_price_cents": 88803,
+      "weight_grams": 6322,
+      "amount_cents": 561413
+    },
+    {
+      "id": "amount-052",
+      "kind": "amount",
+      "unit_price_cents": 140493,
+      "weight_grams": 46385,
+      "amount_cents": 6516768
+    },
+    {
+      "id": "amount-053",
+      "kind": "amount",
+      "unit_price_cents": 137223,
+      "weight_grams": 26565,
+      "amount_cents": 3645329
+    },
+    {
+      "id": "total-001",
+      "kind": "total",
+      "line_amounts": [
+        250
+      ],
+      "round_off_cents": 0,
+      "items_total_cents": 250,
+      "total_cents": 250
+    },
+    {
+      "id": "total-002",
+      "kind": "total",
+      "line_amounts": [
+        250,
+        130
+      ],
+      "round_off_cents": 0,
+      "items_total_cents": 380,
+      "total_cents": 380
+    },
+    {
+      "id": "total-003",
+      "kind": "total",
+      "line_amounts": [
+        250,
+        130
+      ],
+      "round_off_cents": 30,
+      "items_total_cents": 380,
+      "total_cents": 350
+    },
+    {
+      "id": "total-004",
+      "kind": "total",
+      "line_amounts": [
+        250,
+        130
+      ],
+      "round_off_cents": 380,
+      "items_total_cents": 380,
+      "total_cents": 0
+    },
+    {
+      "id": "total-005",
+      "kind": "total",
+      "line_amounts": [
+        250,
+        130
+      ],
+      "round_off_cents": 500,
+      "items_total_cents": 380,
+      "total_cents": 0
+    },
+    {
+      "id": "total-006",
+      "kind": "total",
+      "line_amounts": [
+        1
+      ],
+      "round_off_cents": 1,
+      "items_total_cents": 1,
+      "total_cents": 0
+    },
+    {
+      "id": "total-007",
+      "kind": "total",
+      "line_amounts": [
+        99999,
+        1,
+        1
+      ],
+      "round_off_cents": 0,
+      "items_total_cents": 100001,
+      "total_cents": 100001
+    },
+    {
+      "id": "total-008",
+      "kind": "total",
+      "line_amounts": [
+        1200,
+        340,
+        78
+      ],
+      "round_off_cents": 18,
+      "items_total_cents": 1618,
+      "total_cents": 1600
+    },
+    {
+      "id": "total-009",
+      "kind": "total",
+      "line_amounts": [
+        0,
+        0
+      ],
+      "round_off_cents": 0,
+      "items_total_cents": 0,
+      "total_cents": 0
+    },
+    {
+      "id": "price_change-001",
+      "kind": "price_change",
+      "original_unit_price_cents": 320,
+      "final_unit_price_cents": 320,
+      "weight_grams": 780,
+      "final_amount_cents": 250,
+      "needs_confirm": false,
+      "total_cents": 250
+    },
+    {
+      "id": "price_change-002",
+      "kind": "price_change",
+      "original_unit_price_cents": 320,
+      "final_unit_price_cents": 300,
+      "weight_grams": 780,
+      "final_amount_cents": 234,
+      "needs_confirm": false,
+      "total_cents": 234
+    },
+    {
+      "id": "price_change-003",
+      "kind": "price_change",
+      "original_unit_price_cents": 320,
+      "final_unit_price_cents": 1000,
+      "weight_grams": 780,
+      "final_amount_cents": 780,
+      "needs_confirm": true,
+      "total_cents": 780
+    },
+    {
+      "id": "price_change-004",
+      "kind": "price_change",
+      "original_unit_price_cents": 320,
+      "final_unit_price_cents": 480,
+      "weight_grams": 780,
+      "final_amount_cents": 374,
+      "needs_confirm": false,
+      "total_cents": 374
+    },
+    {
+      "id": "price_change-005",
+      "kind": "price_change",
+      "original_unit_price_cents": 320,
+      "final_unit_price_cents": 481,
+      "weight_grams": 780,
+      "final_amount_cents": 375,
+      "needs_confirm": true,
+      "total_cents": 375
+    },
+    {
+      "id": "price_change-006",
+      "kind": "price_change",
+      "original_unit_price_cents": 320,
+      "final_unit_price_cents": 160,
+      "weight_grams": 780,
+      "final_amount_cents": 125,
+      "needs_confirm": false,
+      "total_cents": 125
+    },
+    {
+      "id": "price_change-007",
+      "kind": "price_change",
+      "original_unit_price_cents": 320,
+      "final_unit_price_cents": 159,
+      "weight_grams": 780,
+      "final_amount_cents": 124,
+      "needs_confirm": true,
+      "total_cents": 124
+    },
+    {
+      "id": "price_change-008",
+      "kind": "price_change",
+      "original_unit_price_cents": 320,
+      "final_unit_price_cents": 0,
+      "weight_grams": 780,
+      "final_amount_cents": 0,
+      "needs_confirm": true,
+      "total_cents": 0
+    },
+    {
+      "id": "price_change-009",
+      "kind": "price_change",
+      "original_unit_price_cents": 0,
+      "final_unit_price_cents": 500,
+      "weight_grams": 780,
+      "final_amount_cents": 390,
+      "needs_confirm": false,
+      "total_cents": 390
+    },
+    {
+      "id": "price_change-010",
+      "kind": "price_change",
+      "original_unit_price_cents": 198,
+      "final_unit_price_cents": 250,
+      "weight_grams": 1230,
+      "final_amount_cents": 308,
+      "needs_confirm": false,
+      "total_cents": 308
+    },
+    {
+      "id": "round_off-001",
+      "kind": "round_off",
+      "line_amounts": [
+        250
+      ],
+      "round_off_cents": 50,
+      "items_total_cents": 250,
+      "total_cents": 200
+    },
+    {
+      "id": "round_off-002",
+      "kind": "round_off",
+      "line_amounts": [
+        250
+      ],
+      "round_off_cents": 0,
+      "items_total_cents": 250,
+      "total_cents": 250
+    },
+    {
+      "id": "round_off-003",
+      "kind": "round_off",
+      "line_amounts": [
+        250
+      ],
+      "round_off_cents": 250,
+      "items_total_cents": 250,
+      "total_cents": 0
+    },
+    {
+      "id": "round_off-004",
+      "kind": "round_off",
+      "line_amounts": [
+        250
+      ],
+      "round_off_cents": 999,
+      "items_total_cents": 250,
+      "total_cents": 0
+    },
+    {
+      "id": "round_off-005",
+      "kind": "round_off",
+      "line_amounts": [
+        244
+      ],
+      "round_off_cents": 4,
+      "items_total_cents": 244,
+      "total_cents": 240
+    },
+    {
+      "id": "round_off-006",
+      "kind": "round_off",
+      "line_amounts": [
+        500
+      ],
+      "round_off_cents": 1,
+      "items_total_cents": 500,
+      "total_cents": 499
+    },
+    {
+      "id": "weight_range-001",
+      "kind": "weight_range",
+      "weight_grams": 0,
+      "max_weight_grams": 50000,
+      "priceable": false
+    },
+    {
+      "id": "weight_range-002",
+      "kind": "weight_range",
+      "weight_grams": 1,
+      "max_weight_grams": 50000,
+      "priceable": true
+    },
+    {
+      "id": "weight_range-003",
+      "kind": "weight_range",
+      "weight_grams": 2,
+      "max_weight_grams": 50000,
+      "priceable": true
+    },
+    {
+      "id": "weight_range-004",
+      "kind": "weight_range",
+      "weight_grams": 49999,
+      "max_weight_grams": 50000,
+      "priceable": true
+    },
+    {
+      "id": "weight_range-005",
+      "kind": "weight_range",
+      "weight_grams": 50000,
+      "max_weight_grams": 50000,
+      "priceable": true
+    },
+    {
+      "id": "weight_range-006",
+      "kind": "weight_range",
+      "weight_grams": 50001,
+      "max_weight_grams": 50000,
+      "priceable": false
+    },
+    {
+      "id": "items_count-001",
+      "kind": "items_count",
+      "item_count": 0,
+      "max_items": 20,
+      "ok": false
+    },
+    {
+      "id": "items_count-002",
+      "kind": "items_count",
+      "item_count": 1,
+      "max_items": 20,
+      "ok": true
+    },
+    {
+      "id": "items_count-003",
+      "kind": "items_count",
+      "item_count": 2,
+      "max_items": 20,
+      "ok": true
+    },
+    {
+      "id": "items_count-004",
+      "kind": "items_count",
+      "item_count": 19,
+      "max_items": 20,
+      "ok": true
+    },
+    {
+      "id": "items_count-005",
+      "kind": "items_count",
+      "item_count": 20,
+      "max_items": 20,
+      "ok": true
+    },
+    {
+      "id": "items_count-006",
+      "kind": "items_count",
+      "item_count": 21,
+      "max_items": 20,
+      "ok": false
+    }
+  ]
+}

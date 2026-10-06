@@ -1,0 +1,27 @@
+## 秤端固件主组件的依赖清单（ESP-IDF 组件管理器）。
+##
+## ⚠️ 本文件**未在本机验证**：本机没有 ESP-IDF、没有组件管理器、不联网拉取，
+##    验证边界只有**静态检查 + 人工评审**（见 README「验证边界」）。**不得**宣称构建通过。
+##
+## ⚠️ **组件名与版本号都是"待核定"的占位，不是已核定的结论。**
+##    - 本机无法确认注册表里的实际组件名，也无法确认可用版本；
+##    - 故这里**故意**写 `"*"`（任意版本），而不是填一个看起来已验证、实则臆造的精确版本号；
+##    - **核定方法**：在装好 ESP-IDF 的环境执行 `idf.py reconfigure`，按**实际报错**确定组件名与版本，
+##      然后**同时**更新本文件与 `main/CMakeLists.txt` 的 `REQUIRES`（两处必须逐项一致，
+##      对不上就是"声明了却拿不到"）。
+##
+## 最可能对不上的地方：`littlefs` 在注册表里是 `joltwallet/littlefs`，其**组件名**通常是
+## `joltwallet__littlefs`（命名空间 + 双下划线）。若 `idf.py reconfigure` 报 unknown component，
+## 就把**本文件与 REQUIRES 里的 `littlefs` 一起**改成实际组件名；`lvgl` / `esp_lvgl_port` 同理。
+##
+## 与 `main/CMakeLists.txt` 的对应关系（逐项一致）：
+##   dependencies.littlefs      ↔ REQUIRES littlefs      （ADR-0006 §3.2 的落盘方案 esp_littlefs）
+##   dependencies.lvgl          ↔ REQUIRES lvgl          （ADR-0006 §3.4 认可的 UI 路径）
+##   dependencies.esp_lvgl_port ↔ REQUIRES esp_lvgl_port （LVGL 的显示 / 触摸移植层）
+##
+## 未列 `idf:` 版本约束：本机无从得知将使用的 ESP-IDF 版本，写一个区间就是臆造。
+## 补做构建验证时，按实际 IDF 版本在此处补上（或明确不约束）。
+dependencies:
+  littlefs: "*"
+  lvgl: "*"
+  esp_lvgl_port: "*"
