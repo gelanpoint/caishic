@@ -161,6 +161,13 @@ def run_live(params, config: LiveRunConfig, out_dir: Path | str) -> dict:
                     session = adapter.create_session(stall_no)["session_token"]
                     sessions[stall_no] = session
                 products[stall_no] = adapter.list_products(session)
+                # 契约 §3.32（`REQ-049`/`AC-039`，`2026-10-06` 新增）：上架／下架端点必须被
+                # **真实调用**一次，否则判据①的端点覆盖会缺一条。首日取该摊位首件商品
+                # **下架再上架** —— 必须还原，否则后续场景看到的在售集合会变、交易日流水随之改变。
+                if day_index == 0 and stall_no == stall_nos[0] and products[stall_no]:
+                    probe_id = int(products[stall_no][0]["id"])
+                    adapter.set_product_status(session, probe_id, status="inactive")
+                    adapter.set_product_status(session, probe_id, status="active")
                 adapter.put_price_list(session, business_date, copy_previous=True)
                 adapter.get_price_list(session, business_date)
 

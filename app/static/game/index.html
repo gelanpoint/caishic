@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>演示游戏 · 菜市场俯视角像素风</title>
+<!--
+  演示游戏页面（T-GAME-03；REQ-044~REQ-047）。硬约束（AGENTS.md §3 硬要求 4 / REQ-025）：
+  **本页与全部资源一律为仓库内本地文件** —— 无外链脚本、无外链样式、无外部字体、无远程图片，
+  不使用任何前端库（没有 Phaser / pixi / 框架），只有原生 HTML + CSS + JS + canvas。
+
+  脚本用**有序 `<script>` 顺序加载**（不是 `type="module"`），与仓库既有前端（`/scale/` 的
+  `offline.js` + `scale.js`）保持同一种写法：每个文件一个 IIFE，把模块挂到 `window` 上的一个名字。
+  理由见 `docs` 里的交接说明：无需构建、无 import map、`node --check` 与既有检查方式一致。
+-->
+<link rel="stylesheet" href="/static/game/css/game.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <h1>菜市场演示游戏<span class="tag">俯视角像素风</span></h1>
+    <div class="sub">悬停摊位 → 看在售商品与单价；商家视角点智能秤 → 调价 / 上架 / 下架（真实端点）</div>
+  </div>
+  <div class="tabs" id="viewTabs"><!-- 视角按钮由 panels.js 按唯一定义生成 --></div>
+  <div class="badges">
+    <span class="badge" id="artBadge">美术资源加载中…</span>
+    <span class="badge" id="dataBadge">摊位数据加载中…</span>
+    <button id="refreshBtn" class="ghost">刷新数据</button>
+  </div>
+</header>
+
+<main>
+  <section class="stage-col">
+    <div class="card caption">
+      <div id="viewCaption" class="caption-text">—</div>
+      <ul id="viewActions" class="actions"></ul>
+    </div>
+    <div class="stage" id="stage">
+      <canvas id="gameCanvas" width="1152" height="704"></canvas>
+      <div id="tooltip" class="tooltip hide">
+        <div class="tip-head" id="tooltipTitle">—</div>
+        <div id="tooltipList" class="tip-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="side">
+    <div class="card">
+      <h2 id="infoTitle">未选中</h2>
+      <div id="infoBody" class="body">
+        <div class="muted">点地图上的摊位 / 智能秤 / 顾客 / 管理员，或把鼠标挪到某个商家上看它在售的商品。</div>
+      </div>
+    </div>
+    <div class="card">
+      <h2 id="opsTitle">操作面板</h2>
+      <div id="opsBody" class="body">
+        <div class="muted">商家视角点智能秤 → 打开该摊位的调价 / 上下架面板。</div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>操作记录</h2>
+      <div id="logList" class="log"></div>
+    </div>
+    <div class="card note">
+      <p><strong>验证边界</strong>（<code>spec.md</code> §6 第 15 条）：顾客 NPC 的走动是<strong>本地演示逻辑</strong>，
+         不代表真实并发，也不代表真实顾客行为。</p>
+      <p>页面里的摊位、商品、单价、看板数字<strong>全部</strong>来自既有服务端端点
+         （§3.25 看板 / §3.5 商品 / §3.3 价目表 / §3.18 摊位信息 / §3.30 指标 / §3.31 留痕），
+         前端不硬编码、不做估算。本页面不新增任何服务端能力（<code>NFR-016</code>）。</p>
+      <p>美术资源缺失时自动降级为色块 + 名字标签，页面照常可用。</p>
+    </div>
+  </aside>
+</main>
+
+<div id="toast" class="toast hide"></div>
+<noscript><p class="noscript">本页面需要 JavaScript 才能渲染地图与调用接口。</p></noscript>
+
+<!-- 加载顺序即依赖顺序：api → sprites → map → entities → render → panels → ops → main -->
+<script src="/static/game/js/api.js"></script>
+<script src="/static/game/js/sprites.js"></script>
+<script src="/static/game/js/map.js"></script>
+<script src="/static/game/js/entities.js"></script>
+<script src="/static/game/js/render.js"></script>
+<script src="/static/game/js/panels.js"></script>
+<script src="/static/game/js/ops.js"></script>
+<script src="/static/game/js/main.js"></script>
+</body>
+</html>

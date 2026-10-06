@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -134,6 +135,7 @@ def test_static_pages_local_asset_paths_resolve_as_served_urls():
         "scale/index.html": "/scale/",
         "admin/index.html": "/admin/",
         "customer/index.html": "/customer/",
+        "game/index.html": "/game/",
     }
     checked = 0
     for rel, page_url in served.items():
@@ -142,12 +144,12 @@ def test_static_pages_local_asset_paths_resolve_as_served_urls():
             if value.startswith(("#", "mailto:")):
                 continue
             path = urljoin(page_url, value).split("?", 1)[0]
-            # 服务端的真实规则**只有三条**（其余一律 404）：`/`、三个页面路由、`/static/<p>`。
+            # 服务端的真实规则：`/`、四个目录式页面路由、`/static/<p>`（其余一律 404）。
             # ⚠️ **不能**用"映射不到就退回 `app/static/<path>`"这种宽松兜底 —— 第一版正是这么写的，
             # 于是 `/js/scale.js` 又能"在磁盘上找到文件"、缺陷照样漏过（本轮负例把它抓了出来）。
             if path == "/":
                 target = STATIC_DIR / "index.html"
-            elif path in ("/scale/", "/admin/", "/customer/"):
+            elif path in ("/scale/", "/admin/", "/customer/", "/game/"):
                 target = STATIC_DIR / path.strip("/") / "index.html"
             elif path.startswith("/static/"):
                 target = STATIC_DIR / path[len("/static/"):]
@@ -227,3 +229,121 @@ def test_scanner_flags_external_dependency_samples(sample: str, expected_hint: s
 def test_scanner_does_not_flag_local_relative_paths():
     """反向负例：**站内相对路径不得误报** —— 否则只能靠"别写检查"来让 CI 变绿。"""
     assert scan_static_text(CLEAN_SAMPLE, "干净样例") == []
+
+
+# ---------------------------------------------------------------------------
+# `/game/` 的**经 JS 引用**的资源（`task-18` 追加）
+#
+# 原用例 `test_static_pages_local_asset_paths_resolve_as_served_urls` 只扫 HTML 的 `src`/`href`。
+# 而演示游戏的**精灵资源不经 HTML**：`sprites.js` 里 `SPRITE_DIR + "manifest.json"` 与
+# `SPRITE_DIR + sheet.file` 是**用 JS 拼出来的**。⇒ 只扫 HTML 的检查对它们**完全无覆盖**：
+# 谁把 `SPRITE_DIR` 从 `/static/game/sprites/` 改成相对路径 `sprites/`，浏览器就会去请求
+# `/game/sprites/manifest.json`（服务端没有这个路由 ⇒ 404），而按 `sprites.js` 的设计
+# **失败会静默降级成色块** —— 页面不报错、检查也不红，正是"加了个页面却没人扫它的资源"。
+# ---------------------------------------------------------------------------
+
+GAME_DIR = STATIC_DIR / "game"
+SPRITE_DIR = GAME_DIR / "sprites"
+GAME_JS_DIR = GAME_DIR / "js"
+PROBE_PREFIX = "__sensitivity_probe"
+
+#: 服务端**真实**路由规则（与上面那条用例同一份口径，不另立一套）
+PAGE_ROUTES = ("/", "/scale/", "/admin/", "/customer/", "/game/")
+PAGE_URL = "/game/"
+
+
+def resolve_served_path(page_url: str, reference: str) -> str | None:
+    """按**浏览器的方式**把页面里的引用解析成服务端路径；`None` = 服务端没有这个路由。
+
+    故意**不**做"映射不到就退回 `app/static/<path>`"的宽松兜底（第一版正是这么写的，
+    于是 `/js/scale.js` 又能"在磁盘上找到文件"、缺陷照样漏过）。
+    """
+    from urllib.parse import urljoin
+
+    path = urljoin(page_url, reference).split("?", 1)[0]
+    return path if path in PAGE_ROUTES or path.startswith("/static/") else None
+
+
+def sprite_base_from_js() -> str:
+    """从 `sprites.js` 读精灵取图基址（判据的一部分，不靠猜）。"""
+    text = (GAME_JS_DIR / "sprites.js").read_text(encoding="utf-8")
+    match = re.search(r'var\s+SPRITE_DIR\s*=\s*"([^"]+)"', text)
+    assert match, "`sprites.js` 里找不到 `SPRITE_DIR` —— 取图基址必须可机械读取"
+    return match.group(1)
+
+
+def game_referenced_urls() -> list[str]:
+    """`/game/` 页真正会去取的资源：HTML 的 `src`/`href` **+ JS 拼出来的精灵资源**。"""
+    page = (GAME_DIR / "index.html").read_text(encoding="utf-8")
+    urls = list(re.findall(r'(?:src|href)="([^"]+)"', page))
+    base = sprite_base_from_js()
+    manifest = json.loads((SPRITE_DIR / "manifest.json").read_text(encoding="utf-8"))
+    urls.append(base + "manifest.json")
+    urls.extend(base + sheet["file"] for sheet in manifest["sheets"].values())
+    return urls
+
+
+def test_game_page_and_js_referenced_assets_are_served(client):
+    """`AC-037` / `AC-034`：`/game/` 引用的**每一个**资源（含 JS 拼的）都要真能取到。"""
+    urls = game_referenced_urls()
+    assert len(urls) >= 15, f"只解析到 {len(urls)} 个引用，太少（清单可能被改动）：{urls}"
+    for value in urls:
+        path = resolve_served_path(PAGE_URL, value)
+        assert path is not None, (
+            f"`/game/` 引用 `{value}`：浏览器会请求站外/不存在的路由（服务端只有 `/`、页面路由与 `/static/<路径>`）"
+        )
+        assert client.get(path).status_code == 200, f"`{value}` 解析成 `{path}`，服务端取不到（非 200）"
+
+
+def test_game_sprite_base_is_an_absolute_static_path():
+    """取图基址**必须**是 `/static/...` 绝对路径 —— 相对路径会被浏览器解析到 `/game/...`（404）。"""
+    base = sprite_base_from_js()
+    assert base.startswith("/static/"), f"`SPRITE_DIR` 必须是 `/static/...` 绝对路径，实际 `{base}`"
+    assert resolve_served_path(PAGE_URL, base) == base
+
+
+def test_game_manifest_sheets_exist_on_disk_and_inside_their_sheets():
+    """清单自洽：每个 sheet 文件存在，且每个精灵矩形落在其 sheet 内（尺寸口径的唯一权威）。"""
+    manifest = json.loads((SPRITE_DIR / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["sprites"], "manifest 里没有任何精灵"
+    for name, sheet in manifest["sheets"].items():
+        assert (SPRITE_DIR / sheet["file"]).is_file(), f"sheet `{name}` 的文件不存在：{sheet['file']}"
+    for name, sprite in manifest["sprites"].items():
+        sheet = manifest["sheets"][sprite["sheet"]]
+        assert sprite["x"] + sprite["w"] <= sheet["w"], f"精灵 `{name}` 横向越出 sheet"
+        assert sprite["y"] + sprite["h"] <= sheet["h"], f"精灵 `{name}` 纵向越出 sheet"
+
+
+def test_sensitivity_relative_sprite_base_would_404_in_a_browser():
+    """**灵敏度负例（纯函数，不落盘）**：把基址换成相对路径 ⇒ 必须被判成"服务端没有这个路由"。
+
+    这条证明上面的判据**能失败**：`sprites/` 从 `/game/` 解析出 `/game/sprites/...`，
+    而服务端只有 `/static/...` 与页面路由 ⇒ 必须返回 `None`（判红），不得被宽松兜底救活。
+    """
+    assert resolve_served_path(PAGE_URL, "sprites/") is None, "相对基址必须判红（否则判据是摆设）"
+    assert resolve_served_path(PAGE_URL, "sprites/manifest.json") is None
+    assert resolve_served_path(PAGE_URL, "/static/game/sprites/manifest.json") is not None
+    assert resolve_served_path(PAGE_URL, "./css/game.css") is None, "相对 CSS 引用同样会 404"
+
+
+def test_sensitivity_probe_cdn_script_in_game_dir_turns_the_scan_red():
+    """负例：往 `app/static/game/js/` 塞一个带 CDN 的脚本 ⇒ `AC-037` 扫描**必红**（用完即删）。
+
+    这条同时证明**扫描面真的覆盖了 `/game/`**（不是只扫老目录）。
+    """
+    probe = GAME_JS_DIR / f"{PROBE_PREFIX}_cdn.js"
+    probe.write_text('var s = document.createElement("script");\n'
+                     's.src = "https://cdn.example.com/game-lib.js";\n', encoding="utf-8")
+    try:
+        hits = scan_static_tree()
+        assert hits, "往 `/game/js/` 塞 CDN 脚本后扫描必须变红 —— 否则 `/game/` 不在扫描面内"
+        assert any("__sensitivity_probe_cdn.js" in hit for hit in hits), hits
+    finally:
+        probe.unlink()
+    assert scan_static_tree() == [], "负例用完必须还原（删除探针后扫描必须复绿）"
+
+
+def test_no_sensitivity_probe_left_behind():
+    """守卫：探针一个都不许留在仓库里（负例崩溃/中断时由这条兜住）。"""
+    leftovers = [p.relative_to(REPO_ROOT).as_posix() for p in STATIC_DIR.rglob(f"{PROBE_PREFIX}*")]
+    assert leftovers == [], f"灵敏度探针没清干净：{leftovers}"

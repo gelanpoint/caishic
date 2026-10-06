@@ -12,7 +12,7 @@
 
 ## 端点清单从哪来
 
-`ENDPOINTS` 是契约 §2 端点总表的**内置副本**（冻结契约的 31 条，按契约顺序）。
+`ENDPOINTS` 是契约 §2 端点总表的**内置副本**（冻结契约的 32 条，按契约顺序）。
 `tests/sim/test_live_endpoints.py` 会把这份副本与 `specs/market-trade-flow/contracts/rest-api.md`
 §2 表**双向逐条比对** —— 契约改了而这里没改（或反过来），立刻变红。
 **不解析 Markdown 来跑**：契约文档不是运行期依赖，它只用来做一致性比对。
@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlencode
 
-#: 契约 §2 端点总表（31 条，顺序与契约一致；编号即契约里的序号）
+#: 契约 §2 端点总表（32 条，顺序与契约一致；编号即契约里的序号）
 ENDPOINTS: tuple[tuple[str, str], ...] = (
     ("GET", "/healthz"),
     ("POST", "/api/merchant/session"),
@@ -61,6 +61,10 @@ ENDPOINTS: tuple[tuple[str, str], ...] = (
     ("GET", "/api/admin/reconciliation"),
     ("GET", "/api/admin/metrics/usage"),
     ("GET", "/api/admin/audit-logs"),
+    # 契约 §2 第 32 条（`2026-10-06` 新增，`REQ-049`/`AC-039`）：上架／下架本摊位商品。
+    # 由演示游戏需求反查发现的**已建模却未实现**的能力缺口（`product.status` 字段与索引
+    # 自 `0001_init.sql` 起就存在，却无任何端点能改它）。**按契约顺序追加在末尾**。
+    ("POST", "/api/merchant/products/{product_id}/status"),
 )
 
 #: 端点键 = `METHOD 模板`；覆盖清单的记账单位
@@ -257,6 +261,16 @@ class LiveAdapter:
 
     def list_products(self, session: str):  # §3.5
         return self.client.request("GET", "/api/merchant/products", headers={SESSION_HEADER: session},
+                                   expect=(200,))[1]
+
+    def set_product_status(self, session: str, product_id: int, *, status: str):  # §3.32
+        """上架／下架本摊位商品（`REQ-049`/`AC-039`）。`status` 合法取值 `active` / `inactive`。
+
+        路径参数用**字符串**拼接（与契约 §2 表一致）：本仓既有惯例是**不用** `<int:...>`
+        转换器 —— 坏标识若在路由层就被拦掉，会变成契约之外的 404，掩盖领域层的错误码。
+        """
+        return self.client.request("POST", f"/api/merchant/products/{product_id}/status",
+                                   body={"status": status}, headers={SESSION_HEADER: session},
                                    expect=(200,))[1]
 
     def create_transaction(self, session: str, items: list, idempotency_key: str):  # §3.6

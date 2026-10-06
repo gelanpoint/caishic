@@ -167,6 +167,20 @@ def create_app(*, serve_scale_ui: bool = True) -> Flask:
         """顾客扫码页（不登录）。"""
         return _page("customer")
 
+    # ---- 演示游戏（`REQ-044`，`2026-10-06`） ---------------------------
+    # **两种形态都注册**：它是纯展示层（只读 + 复用既有端点，`NFR-016`），
+    # 不依赖秤端界面归谁托管，故不受 `serve_scale_ui` 影响。
+    # 与上面三个页面同类，**不是接口**（契约 §2 不登记页面）⇒ 须一并登记进
+    # 契约测试的 `NON_API_ROUTES` 豁免表，否则路由表比对会红。
+    @app.get("/game/")
+    def game_page():
+        """俯视角像素风演示游戏：扮演商家 / 顾客 / 管理员（`REQ-044`~`REQ-049`）。
+
+        **验证边界**：页面里的顾客 NPC 是**本地演示逻辑**，不代表真实并发
+        （`spec.md` §6 第 15 条）；像素美术是**脚本程序生成**的，不是美术师手绘。
+        """
+        return _page("game")
+
     # ---- 业务错误 → 契约 §1.2 响应 -------------------------------------
     @app.errorhandler(TradeError)
     def handle_trade_error(err: TradeError):

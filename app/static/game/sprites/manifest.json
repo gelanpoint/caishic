@@ -1,0 +1,262 @@
+{
+  "sheets": {
+    "items": {
+      "file": "items.png",
+      "h": 36,
+      "w": 72
+    },
+    "people": {
+      "file": "people.png",
+      "h": 78,
+      "w": 72
+    },
+    "props": {
+      "file": "props.png",
+      "h": 34,
+      "w": 68
+    },
+    "scales": {
+      "file": "scales.png",
+      "h": 26,
+      "w": 52
+    },
+    "stalls": {
+      "file": "stalls.png",
+      "h": 34,
+      "w": 136
+    },
+    "terrain": {
+      "file": "terrain.png",
+      "h": 18,
+      "w": 72
+    }
+  },
+  "sprites": {
+    "item_0": {
+      "h": 16,
+      "sheet": "items",
+      "w": 16,
+      "x": 1,
+      "y": 1
+    },
+    "item_1": {
+      "h": 16,
+      "sheet": "items",
+      "w": 16,
+      "x": 19,
+      "y": 1
+    },
+    "item_2": {
+      "h": 16,
+      "sheet": "items",
+      "w": 16,
+      "x": 37,
+      "y": 1
+    },
+    "item_3": {
+      "h": 16,
+      "sheet": "items",
+      "w": 16,
+      "x": 55,
+      "y": 1
+    },
+    "item_4": {
+      "h": 16,
+      "sheet": "items",
+      "w": 16,
+      "x": 1,
+      "y": 19
+    },
+    "item_5": {
+      "h": 16,
+      "sheet": "items",
+      "w": 16,
+      "x": 19,
+      "y": 19
+    },
+    "item_6": {
+      "h": 16,
+      "sheet": "items",
+      "w": 16,
+      "x": 37,
+      "y": 19
+    },
+    "item_7": {
+      "h": 16,
+      "sheet": "items",
+      "w": 16,
+      "x": 55,
+      "y": 19
+    },
+    "person_admin_down": {
+      "h": 24,
+      "sheet": "people",
+      "w": 16,
+      "x": 1,
+      "y": 53
+    },
+    "person_admin_left": {
+      "h": 24,
+      "sheet": "people",
+      "w": 16,
+      "x": 37,
+      "y": 53
+    },
+    "person_admin_right": {
+      "h": 24,
+      "sheet": "people",
+      "w": 16,
+      "x": 55,
+      "y": 53
+    },
+    "person_admin_up": {
+      "h": 24,
+      "sheet": "people",
+      "w": 16,
+      "x": 19,
+      "y": 53
+    },
+    "person_boss_down": {
+      "h": 24,
+      "sheet": "people",
+      "w": 16,
+      "x": 1,
+      "y": 1
+    },
+    "person_boss_left": {
+      "h": 24,
+      "sheet": "people",
+      "w": 16,
+      "x": 37,
+      "y": 1
+    },
+    "person_boss_right": {
+      "h": 24,
+      "sheet": "people",
+      "w": 16,
+      "x": 55,
+      "y": 1
+    },
+    "person_boss_up": {
+      "h": 24,
+      "sheet": "people",
+      "w": 16,
+      "x": 19,
+      "y": 1
+    },
+    "person_customer_down": {
+      "h": 24,
+      "sheet": "people",
+      "w": 16,
+      "x": 1,
+      "y": 27
+    },
+    "person_customer_left": {
+      "h": 24,
+      "sheet": "people",
+      "w": 16,
+      "x": 37,
+      "y": 27
+    },
+    "person_customer_right": {
+      "h": 24,
+      "sheet": "people",
+      "w": 16,
+      "x": 55,
+      "y": 27
+    },
+    "person_customer_up": {
+      "h": 24,
+      "sheet": "people",
+      "w": 16,
+      "x": 19,
+      "y": 27
+    },
+    "prop_computer": {
+      "h": 32,
+      "sheet": "props",
+      "w": 32,
+      "x": 1,
+      "y": 1
+    },
+    "prop_crate": {
+      "h": 16,
+      "sheet": "props",
+      "w": 16,
+      "x": 35,
+      "y": 1
+    },
+    "scale_active": {
+      "h": 24,
+      "sheet": "scales",
+      "w": 24,
+      "x": 27,
+      "y": 1
+    },
+    "scale_idle": {
+      "h": 24,
+      "sheet": "scales",
+      "w": 24,
+      "x": 1,
+      "y": 1
+    },
+    "stall_0": {
+      "h": 32,
+      "sheet": "stalls",
+      "w": 32,
+      "x": 1,
+      "y": 1
+    },
+    "stall_1": {
+      "h": 32,
+      "sheet": "stalls",
+      "w": 32,
+      "x": 35,
+      "y": 1
+    },
+    "stall_2": {
+      "h": 32,
+      "sheet": "stalls",
+      "w": 32,
+      "x": 69,
+      "y": 1
+    },
+    "stall_3": {
+      "h": 32,
+      "sheet": "stalls",
+      "w": 32,
+      "x": 103,
+      "y": 1
+    },
+    "tile_floor": {
+      "h": 16,
+      "sheet": "terrain",
+      "w": 16,
+      "x": 1,
+      "y": 1
+    },
+    "tile_grass": {
+      "h": 16,
+      "sheet": "terrain",
+      "w": 16,
+      "x": 37,
+      "y": 1
+    },
+    "tile_path": {
+      "h": 16,
+      "sheet": "terrain",
+      "w": 16,
+      "x": 19,
+      "y": 1
+    },
+    "tile_water": {
+      "h": 16,
+      "sheet": "terrain",
+      "w": 16,
+      "x": 55,
+      "y": 1
+    }
+  },
+  "tile_px": 16,
+  "version": 1
+}

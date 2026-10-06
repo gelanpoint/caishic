@@ -4,7 +4,7 @@
 
 | 判据 | 用例 | 形式 |
 | --- | --- | --- |
-| ① 31/31 端点覆盖 | `test_criterion_1_all_31_endpoints_called` | 由**实际请求**反推的清单 + 独立对契约 §2 表 |
+| ① 全端点覆盖 | `test_criterion_1_all_endpoints_called` | 由**实际请求**反推的清单 + 独立对契约 §2 表 |
 | ② 全营业日 `balanced=true` | `test_criterion_2_every_day_balanced` | 逐日读对账三线与 `diff_cents` |
 | ③ 幂等重放不产生新交易 | `test_criterion_3_idempotent_replay` | 交易号不变 + 列表 `total` 不变 |
 | ④ 敏感扫描零命中 | `test_criterion_4_sensitive_scan_zero_hits` | 复用 `tests/contract/sensitive_scan.py` 扫**真收到过的响应体** |
@@ -34,7 +34,7 @@ from sim.bridge.server_launcher import system_tree_digest
 from sim.core.params import load_params
 
 #: live 跑批的天数：**必须 30**（走得到月末 ⇒ `POST/GET /api/admin/settlements` 这两个端点
-#: 才有机会被调用 ⇒ 31/31 才可能成立）。这是端点覆盖的约束，不是"取整好看"。
+#: 才有机会被调用 ⇒ 全部端点才可能被覆盖）。这是端点覆盖的约束，不是"取整好看"。
 LIVE_DAYS = 30
 
 
@@ -82,19 +82,19 @@ def _response_bodies(report: dict) -> list:
 # ---------------------------------------------------------------------------
 # 六条判据
 # ---------------------------------------------------------------------------
-def test_criterion_1_all_31_endpoints_called(live):
-    """① 31/31 端点被**真实调用**至少一次（清单由实际请求反推，不接受手写勾选）。"""
+def test_criterion_1_all_endpoints_called(live):
+    """① 全部端点被**真实调用**至少一次（清单由实际请求反推，不接受手写勾选）。"""
     coverage = live["coverage"]
-    assert coverage["expected_count"] == 31, "契约就是 31 个端点"
-    assert coverage["covered_count"] == 31, f"缺 {coverage['missing']}"
+    assert coverage["expected_count"] == 32, "契约就是 32 个端点"
+    assert coverage["covered_count"] == 32, f"缺 {coverage['missing']}"
     assert coverage["missing"] == []
     assert coverage["unmatched"] == [], "有请求没匹配到任何契约端点"
     assert set(coverage["covered"]) == {f"{m} {p}" for m, p in ENDPOINTS}
     # 产物路径可机读：覆盖清单单独落一份 JSON（判据①要求的"机读产物"）
     coverage_json = Path(live["report_path"]).with_name("coverage.json")
     assert coverage_json.is_file(), "覆盖清单必须落成独立 JSON 供第三方核对"
-    assert json.loads(coverage_json.read_text(encoding="utf-8"))["covered_count"] == 31
-    print(f"[判据①] 31/31 端点被真实调用（HTTP 调用 {live['calls']} 次）；清单：{coverage_json}")
+    assert json.loads(coverage_json.read_text(encoding="utf-8"))["covered_count"] == 32
+    print(f"[判据①] 32/32 端点被真实调用（HTTP 调用 {live['calls']} 次）；清单：{coverage_json}")
 
 
 def test_criterion_2_every_day_balanced(live):

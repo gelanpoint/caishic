@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | 文档性质 | **设计文档（本阶段只出设计，不写实现）** |
-| 服务对象 | 已验证完成的 `market-trade-flow` MVP（`app/` **31 个端点**；本次设计开工时实测 `python -m pytest tests/contract -q` → **238 passed / 0 failed，7.26s**。全量 `pytest -q` 另有 1 条性能门禁因数据目录在 `D:` 卷而红，**根因是磁盘 fsync、不是接口实现**，见 `docs/PROJECT-STATE.md`「下一步动作」第 1 条） |
+| 服务对象 | 已验证完成的 `market-trade-flow` MVP（`app/` **31 个端点**（**历史记录，勿改**：这是 `2026-10-03` 设计开工时的事实；`2026-10-06` 已增至 **32** 条 —— 新增 §2 第 32 条上下架端点，`REQ-049`/`AC-039`）；本次设计开工时实测 `python -m pytest tests/contract -q` → **238 passed / 0 failed，7.26s**。全量 `pytest -q` 另有 1 条性能门禁因数据目录在 `D:` 卷而红，**根因是磁盘 fsync、不是接口实现**，见 `docs/PROJECT-STATE.md`「下一步动作」第 1 条） |
 | 主要输入 | `docs/调研报告-现实情况.md`（26 条结论 + 30 条链接，**以下简称《报告》**）· `specs/market-trade-flow/discovery.md`（D-01～D-14）· `specs/market-trade-flow/spec.md` · `specs/market-trade-flow/contracts/rest-api.md` · `specs/market-trade-flow/data-model.md` §5.1 · `docs/adr/0003` / `0004` |
 | 硬约束 | **完全离线可跑**（禁 LLM / 禁外部服务 / 禁 CDN）· **Python 标准库为准**（运行期白名单只有 `Flask`，见 `ADR-0003` / `ADR-0004`）· 静态产物零外部资源（复用 `tests/contract/test_no_external_assets.py`） |
 | 状态 | 待评审（**未实现**） |
@@ -60,7 +60,7 @@
         │                              └─ live_adapter.py   （stdlib http.client）──┐ │          │
         └──────────────────────────────────────────────────────────────────────────┼─┼──────────┘
                                                                                    │ │
-                    HTTP（31 端点，唯一跨侧接口，只读契约，不 import app）        │ │
+                    HTTP（32 端点，唯一跨侧接口，只读契约，不 import app）        │ │
                                                                                    ▼ │
         ┌──────────────────────────── 主系统（不改业务逻辑） ────────────────────────┐ │
         │  app/（Flask + sqlite3）· run.py（子进程启动，MT_DATA_DIR 指向隔离目录）    │ │
@@ -72,7 +72,7 @@
 **为什么把"只走 HTTP"写成最高优先级原则**（而不是图省事 import `app.create_app()`）：
 
 1. `--mode=live` 的全部说服力在于"**这套设计真的能跑**"。若 sim 直接调领域层函数，它证明的只是"领域函数能跑"，**端点、会话鉴权、错误码、幂等、日聚合这些契约行为全部绕过了** —— 那就退化成了另一份纸上模型。
-2. **唯一耦合面 = 契约被冻结的那 31 个端点**（`rest-api.md` §2）。契约一旦是唯一接口，仿真跑通就等于给契约做了一次**业务级压测**，这是可对第三方交代的证据。
+2. **唯一耦合面 = 契约被冻结的那 32 个端点**（`rest-api.md` §2）。契约一旦是唯一接口，仿真跑通就等于给契约做了一次**业务级压测**，这是可对第三方交代的证据。
 3. 反向收益：sim **不能**顺手"改一点 app 让它好跑"。任何"让仿真跑通"的 app 侧改动都必须走 `RL-1/RL-2`（先改 spec，再改代码），这就挡住了"为了跑出好看结果而改被测系统"这条最危险的路。
 4. **机械可检查**：`tests/sim/test_sim_no_app_import.py` 用标准库 `ast` 扫描 `sim/**` 的全部 `import`，断言不存在 `app` / `run` / `werkzeug` 导入 —— 沿用项目 `T-007` 的做法，**并带灵敏度负例**（故意在某模块 `import app` → 必红）。
 
@@ -101,7 +101,7 @@ sim/                                  ← 仿真包（**只依赖标准库**）
 │   └── trust.py                      ← 信任更新与恢复半衰期
 ├── bridge/
 │   ├── model_adapter.py              ← 进程内"记账世界"（快，敏感性用）
-│   ├── live_adapter.py               ← HTTP 客户端（stdlib http.client），31 端点
+│   ├── live_adapter.py               ← HTTP 客户端（stdlib http.client），32 端点
 │   └── server_launcher.py            ← 子进程拉起 run.py（隔离 MT_DATA_DIR）+ /healthz 就绪探测
 ├── observe/
 │   ├── metrics.py                    ← §6 全部指标（含分子分母）
@@ -149,14 +149,14 @@ data/sim/<run_id>/                    ← 产物（`.gitignore` 已忽略 data/�
 > `test_verify_sensitivity.py`（自写 Spearman 并列秩 + LHS 分层 + OAT + 稳健性）。
 
 > **落地实况（`T-SIM-07` 同步，2026-10-03）** —— `sim/bridge/` 新增 6 个文件，语义边界是
-> 「怎么把被测系统安全拉起来」/「怎么按契约打 31 个端点」/「怎么逐日编排」/「怎么装载佣金口径」
+> 「怎么把被测系统安全拉起来」/「怎么按契约打 32 个端点」/「怎么逐日编排」/「怎么装载佣金口径」
 > /「怎么汇报与判定」/「命令行分支」；拆开的原因是 `quality-gates.md` §1.2 的 400 行门禁
 > （`Q-16` 裁定：按语义拆分、不放宽阈值）：
 >
 > | 文件 | 职责 | 实测行数 |
 > | --- | --- | --- |
 > | `server_launcher.py` | 子进程拉起 `run.py`：**隔离 `MT_DATA_DIR` 落 `C:`** + 独立端口 + `/healthz` 就绪探测（超时上限；进程早退即报错并附日志尾）+ **业务日时钟文件**（`MT_CLOCK_FILE`，按 `T-SIM-00` 已确立的接缝推进，**不另造一套**）+ 被测系统树指纹 | 285 |
-> | `live_adapter.py` | **31 个端点的 stdlib（`http.client`）客户端**，**不引任何新依赖**；端点覆盖**由实际请求反推**（拿真实路径去匹配契约模板，**不接受调用方自报**「我调过」） | 398 |
+> | `live_adapter.py` | **32 个端点的 stdlib（`http.client`）客户端**，**不引任何新依赖**；端点覆盖**由实际请求反推**（拿真实路径去匹配契约模板，**不接受调用方自报**「我调过」） | 398 |
 > | `live_run.py` | 日/月编排：场景装载 → 日初配置 → 逐笔成交 → 日终聚合/对账/指标/看板/留痕 → 月末结算 | 343 |
 > | `live_scenario.py` | 场景臂 → **要写进系统的佣金口径**（`PUT /api/admin/commission-rules`）与「库里已有同样一条口径」的**显式**处置 | 126 |
 > | `live_evidence.py` | 证据落盘（`live_report.json` / `coverage.json` / `live_responses.jsonl`）+ **六条判据的判定**（纯函数 ⇒ 灵敏度负例可直接喂） | 208 |
@@ -169,14 +169,14 @@ data/sim/<run_id>/                    ← 产物（`.gitignore` 已忽略 data/�
 >    **这不动摇 `Q1` 的序关系结论**（1bp 与 200bp 仍差 200 倍），但「0%」这个字面值在 live 模式下
 >    **不存在**，引用时必须带这句。**要精确表达 0% 须改契约或数据模型，属系统侧改动。**
 > 2. **「当日最后一笔固定走收款码」**：若把 `POST /api/mock/payment/callback` 的出现交给随机数，
->    「31/31 全覆盖」就变成碰运气的事（`cash_share=0.7`、每天 2 笔时整轮一次都不出现的概率 ≈ 0.09）。
+>    「32/32 全覆盖」就变成碰运气的事（`cash_share=0.7`、每天 2 笔时整轮一次都不出现的概率 ≈ 0.09）。
 >    覆盖判据不能靠运气，故留一个**确定性**样本。
 > 3. **`PUT /api/admin/commission-rules` 的语义是「新增一条口径」**（`data-model.md` §2.14 保留历史生效期），
 >    对已有该口径的库再跑必然 `MT-1012`。live 模式对「库里那条与本次完全一致」的情形**复用并在报告里标明**
 >    （`reused_existing_rule`），不一致则**原样抛错** —— 不静默改口径、也不换个费率蒙混过去。
 >
 > **live 实测（2026-10-03，`python -m sim --mode=live --scenario=S1 --live-arm=0 --live-days=30 --live-txns=4`）**：
-> HTTP 调用 **2082 次** / 营业日 **30** 天 ⇒ 判据①**31/31**、判据②**30/30 天 `balanced=true`**、
+> HTTP 调用 **2082 次** / 营业日 **30** 天 ⇒ 判据①**31/31**（**历史实测，勿改**：`2026-10-03` 时契约是 31 条；`2026-10-06` 增至 32 ⇒ 该行数字须按**同一交付配置** `--live-days=30 --live-txns=4` 重跑才能更新。我复测用的 `tests/sim` pytest 配置是 `txns_per_day=2`，得 **1760 次 / 32-32**，**两者不可互换**）、判据②**30/30 天 `balanced=true`**、
 > 判据③重发后**同一交易号**且列表 `total` 不变（HTTP **201 → 200**）、判据⑤数据目录落在
 > **`C:\mt-sim\live-S1-…`**（实测 **p50 19.6ms / p95 40.6ms**，样本 2082）、判据⑥`app/**`（33 文件）与
 > `specs/**`（6 文件）树指纹**运行前后一致**；判据④由 `tests/sim/test_live_run.py` 复用
@@ -221,7 +221,7 @@ consumer agent 选摊（logit，§3.3）
     ▼ observe/metrics → CSV/JSON/HTML（纯静态）
 ```
 
-**31 个端点必须全部被真实调用至少一次**（`--mode=live` 的完成定义之一，见 §8 `T-SIM-07`）。其中三个"非业务流"端点（`/healthz`、`/api/admin/categories`、`/api/admin/aliases`）由**日初配置阶段**调用；`PUT /api/admin/commission-rules` 由**场景装载阶段**调用 —— 这样"抽佣 0% / 2% / 温州式"就不是 sim 里的一个变量，而是**真的写进系统佣金口径**，`--mode=live` 下的佣金数字由 `app/domain/commission.py` 算出（而不是 sim 自己算一遍）。**这一点是"live 模式不是纸上模型"的关键证据。**
+**32 个端点必须全部被真实调用至少一次**（`--mode=live` 的完成定义之一，见 §8 `T-SIM-07`）。其中三个"非业务流"端点（`/healthz`、`/api/admin/categories`、`/api/admin/aliases`）由**日初配置阶段**调用；`PUT /api/admin/commission-rules` 由**场景装载阶段**调用 —— 这样"抽佣 0% / 2% / 温州式"就不是 sim 里的一个变量，而是**真的写进系统佣金口径**，`--mode=live` 下的佣金数字由 `app/domain/commission.py` 算出（而不是 sim 自己算一遍）。**这一点是"live 模式不是纸上模型"的关键证据。**
 
 ### 2.4 确定性可复现（仿真可信度的地基）
 
@@ -260,12 +260,12 @@ consumer agent 选摊（logit，§3.3）
 
 | | `--mode=model` | `--mode=live` |
 | --- | --- | --- |
-| 交易落库 | sim 进程内的"记账世界"（`model_adapter.py`） | **真实 HTTP** 打到 `app/` 的 31 个端点 |
+| 交易落库 | sim 进程内的"记账世界"（`model_adapter.py`） | **真实 HTTP** 打到 `app/` 的 32 个端点 |
 | 佣金/日聚合/结算/三指标 | sim 按 `data-model.md` §5.1 同一口径复算 | **由系统算**（`commission.py` / `metrics.py` / `settlement.py`） |
 | 速度 | 见下方「性能预算」（**先算账，不拍脑袋**） | 慢（受 HTTP 与 SQLite 写盘限制，参照项目实测：`D:` 盘 p50 297ms/请求 → **1 营业日全量 ≈ 分钟级；360 日 ≈ 小时级**） |
 | 用途 | 敏感性分析、存活区域扫描、蒙特卡洛置信区间 | **证明"这套设计真的能跑"**：契约行为、幂等、对账等式、日聚合/结算链路 |
 | 业务日推进 | 仿真时钟自由推进 | **必须**依赖 `T-SIM-00` 的时钟接缝；未获批时只能跑 1 个真实营业日 |
-| 完成定义 | 同 seed 逐字节可复现 + §7.1/§7.2 判据 | 31/31 端点被调用 + `reconciliation.balanced=true` 全营业日成立 + §7.3 一致性容差内 |
+| 完成定义 | 同 seed 逐字节可复现 + §7.1/§7.2 判据 | 32/32 端点被调用 + `reconciliation.balanced=true` 全营业日成立 + §7.3 一致性容差内 |
 
 **性能预算（这一节的数字是算术，不是承诺；先用一次实测标定再定目标）**
 
@@ -293,8 +293,8 @@ consumer agent 选摊（logit，§3.3）
 
 | 关系 | 约定 | 由什么保证 |
 | --- | --- | --- |
-| 接口 | **只有 HTTP 31 端点** | `tests/sim/test_sim_no_app_import.py`（ast 扫描 + 负例） |
-| app 业务逻辑 | **不改**；唯一例外是 `T-SIM-00` 的时钟接缝（须先改 spec，`RL-1/RL-2`） | 评审 + `T-SIM-00` 的验收（31 端点/路由表比对/敏感扫描/契约测试全绿且集合不变） |
+| 接口 | **只有 HTTP 32 端点** | `tests/sim/test_sim_no_app_import.py`（ast 扫描 + 负例） |
+| app 业务逻辑 | **不改**；唯一例外是 `T-SIM-00` 的时钟接缝（须先改 spec，`RL-1/RL-2`） | 评审 + `T-SIM-00` 的验收（32 端点/路由表比对/敏感扫描/契约测试全绿且集合不变） |
 | 运行期依赖 | sim **只用标准库**；`tests/sim` 用 `pytest`（开发期，已在 `requirements-dev.txt`）。**不新增任何运行期依赖 → 不需要为"依赖范围"新增 ADR**（`ADR-0004` §3 的两期边界不变） | `tests/sim/test_sim_deps_isolation.py`（负例：`import numpy` 必红） |
 | `run.py` | **不得** import `sim`（仿真不是启动路径） | **在 `tests/sim/` 新开一条同构的 ast 检查**（照 `T-007` 的做法 + 负例）—— **不改 `tests/contract/` 的任何文件**：那里的用例收集数与红绿分布是冻结的（`Q-16` 的处理纪律），新断言放新目录 |
 | 数据 | sim 只用 `data/sim/<run_id>/`；绝不触碰演示库 | 运行前后演示库哈希对比（`T-SIM-01` 验收） |
@@ -819,7 +819,7 @@ for d in business_days(n_days):                       # T0
 | `reconciliation.balanced` | 全营业日 `true` | `AC-003` |
 
 **外加三条硬证据（live 模式自己的）**：
-1. **31/31 端点被真实调用**（覆盖率清单落盘，缺一不可）；
+1. **32/32 端点被真实调用**（覆盖率清单落盘，缺一不可）；
 2. **幂等真的生效**：故意重放同一 `Idempotency-Key` 与同一支付回调 → 笔数不变、`replayed/is_duplicate` 出现（`AC-010`）；
 3. **敏感字段零命中**：对 live 模式跑出的全部响应体与数据库文件跑一次敏感扫描 —— **现成可复用的三个原语**：`tests/contract/sensitive_scan.py::scan_json_for_sensitive(payload, where)`、`scan_text_for_sensitive(text, where)`、`scan_db_file(db_path)` → 与 `AC-012` 同一判据，**不另立一套正则**（同一个规则写两遍就是下次漂移的种子）。
 
@@ -866,7 +866,7 @@ for d in business_days(n_days):                       # T0
 | `T-SIM-04` | **消费者 Agent**（logit 选摊 + 扫码 + 信任更新） | `sim/agents/consumer.py`、`sim/rules/trust.py` | ① 持续空壳下 `T` 单调不增；② 有真实来源下 `T` 收敛到高位；③ **不对称性可观测**：同样的正/负冲击，负冲击后的恢复时间长于正冲击；④ 解析 `t_half` 与仿真实测拟合值一致（<5% 偏差）；⑤ 负例：把 `η⁻=η⁺` → `R4` 的"空壳组不得恢复"判据必红 | T-SIM-02 | 1 人日 |
 | `T-SIM-05` | **市场方 Agent**（预算锚定调整+迟滞、排队、投诉响应、继续/放弃、**考核口径开关**）+ **监管 Agent**（季度） | `sim/agents/market_admin.py`、`regulator.py` | ① 预算腰斩 ⇒ `W_q` 单调上升；② 考核口径 = 装机量时 `B* → 0`，= 使用率时 `B* > 0`（**这是可被反驳的设计论证，必须能跑出来**）；③ 无迟滞时 `R3` 复现不出来（对照实验） | T-SIM-02 | 1 人日 |
 | `T-SIM-06` | model 适配器 + §6 全部指标 + 6 场景 + 敏感性（OAT + LHS + 自写 Spearman） | `sim/bridge/model_adapter.py`、`sim/observe/metrics.py`、`sim/verify/sensitivity.py`、`sim/scenarios/*.json` | ① **每个指标的分子分母可由 `events.jsonl` 明细逐条复算**（第三方核对脚本，与 `AC-005` 同精神）；② 负例：把某指标的分子写死成常量 → 复算检查必红（照 `Q-19` 的教训）；③ LHS 覆盖度检验（分层不退化） | T-SIM-03/04/05 | 1.5 人日 |
-| `T-SIM-07` | **live 适配器**：31 端点的 stdlib HTTP 客户端 + 子进程拉起 `run.py` + 就绪探测 + 隔离 `MT_DATA_DIR` + 业务日推进 | `sim/bridge/live_adapter.py`、`server_launcher.py` | ① **31/31 端点调用覆盖率清单**（缺一即红）；② 全部营业日 `reconciliation.balanced=true`；③ 幂等重放不产生新交易；④ 敏感扫描零命中；⑤ 数据目录在 `C:`（若在 `D:`，须记录实测 p50/p95 并说明是否降级）；⑥ 运行前后 `app/**`、`specs/**` 哈希不变 | T-SIM-00/06 | 1.5 人日 |
+| `T-SIM-07` | **live 适配器**：32 端点的 stdlib HTTP 客户端 + 子进程拉起 `run.py` + 就绪探测 + 隔离 `MT_DATA_DIR` + 业务日推进 | `sim/bridge/live_adapter.py`、`server_launcher.py` | ① **32/32 端点调用覆盖率清单**（缺一即红）；② 全部营业日 `reconciliation.balanced=true`；③ 幂等重放不产生新交易；④ 敏感扫描零命中；⑤ 数据目录在 `C:`（若在 `D:`，须记录实测 p50/p95 并说明是否降级）；⑥ 运行前后 `app/**`、`specs/**` 哈希不变 | T-SIM-00/06 | 1.5 人日 |
 | `T-SIM-08` | **验证器**：`R1`–`R6` 回测 + §7.3 一致性 + 校准（POM 匹配矩） | `sim/verify/backtest.py`、`consistency.py`、`sim/calibration/params.json` | ① `R1`–`R6` 逐条产出"成立/不成立/不稳健"三态结论，**不许只有二态**；② 一致性容差 ≤ 1 分/1 笔；③ **灵敏度负例**：篡改 model 一处 → 一致性必红；④ 参数出处字段机械校验（`test_param_provenance.py`） | T-SIM-06/07 | 1.5 人日 |
 | `T-SIM-09` | 纯静态可视化（内联 SVG，无 JS 库、无字体外链）+ 报告自检 | `sim/observe/svg_report.py`、`tests/sim/test_svg_report_no_external.py` | ① 复用 `test_no_external_assets.scan_static_text()` 扫描 `report.html` → 0 命中；② **合成负例**（直接复用该模块的 `EXTERNAL_SAMPLES`，或塞一个 `https://` 与一个 `node_modules` 引用）必红；③ 断网环境（死代理）打开报告，视觉完整 | T-SIM-06 | 1 人日 |
 | `T-SIM-10` | 文档与答辩材料：结果说明书、参数来源表（§9 落地为可读表）、五问的答案卡（含"不稳健"标记） | `docs/sim-results.md`（运行后产出）、`sim/calibration/params.json` 的可读版 | ① 每个被引用的数字都能点到《报告》的具体结论号或标注为假设；② 独立复核（**另起一个会话**逐条核对引用，按 `RL-4` 的对立评审做法） | 全部 | 1 人日 |
@@ -959,12 +959,13 @@ for d in business_days(n_days):                       # T0
 | --- | --- | --- |
 | 完全离线可跑、禁 LLM / 外部服务 / CDN | 决策全靠"效用 + 离散选择 + EWMA + 阈值规则"；无任何模型/API 调用；报告为内联 SVG | ① `tests/sim/test_sim_deps_isolation.py`（ast 扫描 import，禁 `requests`/`openai`…，负例必红）；② `tests/sim/test_svg_report_no_external.py`（复用 `scan_static_text`，合成负例必红）；③ 死代理环境下跑一次全流程 |
 | Python 标准库为主 | **sim 只用标准库**（`random`/`statistics`/`http.client`/`json`/`csv`/`argparse`/`ast`/`hashlib`/`queue`）；统计与抽样**自写**（Spearman、分位、LHS 各约 30 行）；`pytest` 只在 `tests/sim`（开发期，已在 `requirements-dev.txt`） | 同上 ①；**不新增运行期依赖 ⇒ 不需要新 ADR**（`ADR-0004` §3 边界不变） |
-| 两种运行模式 | §2.6；`model` 用于敏感性与蒙特卡洛，`live` 用于"真的调用 31 端点" | `T-SIM-06` / `T-SIM-07` 的验收 |
+| 两种运行模式 | §2.6；`model` 用于敏感性与蒙特卡洛，`live` 用于"真的调用 32 端点" | `T-SIM-06` / `T-SIM-07` 的验收 |
 | 纯静态可视化、无外部资源 | 报告用内联 SVG + 极简内联 CSS；不引任何 JS 库、不引字体、不引 `//host` | `test_svg_report_no_external.py`（含 4 个合成负例） |
 
 ## 12. 附录 C：与 `spec.md` 的关系（不改规格的部分与必须改的部分）
 
 - **不改**：`REQ-001`～`REQ-032` 一条不改；31 个端点一个不增不减；`AC-001`～`AC-023` 一条不改。仿真**消费**规格，不修改规格。
+  > **`2026-10-06` 注记（勿误读）**：契约后来增至 **32** 个端点（新增 §2 第 32 条上下架端点，`REQ-049`/`AC-039`），但**上述原则未被破坏** —— 那次改动是**按 `RL-1` 先改规格、再改实现**的**人工立项**，`sim/**` 全程只消费契约、从未改过规格。原句保留为 `2026-10-03` 的设计时事实。
 - **必须改（`RL-2`，先改规格再改代码）**：仅 `T-SIM-00` 一项 —— 业务日时钟可注入。建议在 `spec.md` §3 增设一条 REQ（或作为 `REQ-018` 的补充），并在 `discovery.md` 补一条 `D-15` 留痕。**理由**：`--mode=live` 的跨月结论需要一个可推进的业务日，而现行实现把 `business_date` 写死为 `date.today()`（`app/domain/pricing.py` 第 152 行）。**若不接受该改动，则 `--mode=live` 只能证明"一天能跑"，`Q1`/`Q4`/`Q5` 的跨月结论全部降级为 model 模式结论** —— 这个取舍必须由负责人拍板，不由仿真侧自行决定。
 - **登记为未决项（不改契约）**：仿真若发现契约缺少必要字段（例如"市场总交易笔数"这类外部基准，即 `Q-15`），按项目惯例**登记未决项**，不动冻结契约。
 

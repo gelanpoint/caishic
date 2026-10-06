@@ -1,0 +1,150 @@
+/* 演示游戏样式（T-GAME-03）。零外部资源：无外部字体、无图床、无 CDN（REQ-025 / AC-037）。
+   字体只用系统自带中文字体族；像素风靠 canvas 的整数倍放大 + image-rendering: pixelated。 */
+
+:root {
+  --bg: #10161a;
+  --panel: #182026;
+  --panel2: #1e282f;
+  --line: #2c3a42;
+  --fg: #e8eef0;
+  --muted: #93a5ad;
+  --accent: #4fd1a5;
+  --accent2: #ffd666;
+  --danger: #ff7a6b;
+  --warn: #ffc46b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+h1 { font-size: 18px; margin: 0; }
+h2 { font-size: 13px; margin: 0 0 8px; color: var(--accent); }
+h4 { font-size: 12px; margin: 10px 0 6px; color: var(--accent2); }
+code { background: #223037; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+
+/* ---- 顶部：标题 / 视角按钮组 / 状态徽标 ---- */
+.top {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel);
+  position: sticky; top: 0; z-index: 5;
+}
+.brand .sub { color: var(--muted); font-size: 12px; }
+.tag {
+  display: inline-block; font-size: 11px; border: 1px solid var(--line); border-radius: 999px;
+  padding: 1px 8px; color: var(--muted); margin-left: 8px; vertical-align: 2px;
+}
+.tabs { display: flex; gap: 6px; }
+.tab {
+  background: var(--panel2); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 16px; font-size: 13px; cursor: pointer;
+}
+.tab:hover { border-color: var(--accent); }
+.tab.active { background: var(--accent); color: #0c1512; border-color: var(--accent); font-weight: 700; }
+.badges { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.badge {
+  font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px;
+  color: var(--muted); background: var(--panel2);
+}
+.badge.on { color: var(--accent); border-color: var(--accent); }
+.badge.warn { color: var(--warn); border-color: var(--warn); }
+.badge.err { color: var(--danger); border-color: var(--danger); }
+
+/* ---- 布局：地图 + 右侧面板 ---- */
+main { display: flex; gap: 12px; padding: 12px; align-items: flex-start; }
+.stage-col { flex: 1 1 auto; min-width: 0; }
+.side { flex: 0 0 360px; display: flex; flex-direction: column; gap: 12px; }
+@media (max-width: 1180px) {
+  /* 窄屏：地图在上、面板在下。**必须 `align-items: stretch`** —— 默认的 `flex-start` 会让
+     `.stage-col` 按内容（画布原始宽度）撑开，于是 `max-width: 100%` 失去参照、地图被横向截掉。 */
+  main { flex-direction: column; align-items: stretch; }
+  .stage-col { width: 100%; }
+  .side { flex: 1 1 auto; width: 100%; }
+}
+
+.card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 12px; margin-bottom: 12px;
+}
+.card.caption { margin-bottom: 10px; }
+.caption-text { font-size: 12px; }
+.actions { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
+.actions li { margin: 1px 0; }
+.note { color: var(--muted); font-size: 12px; }
+.note p { margin: 0 0 6px; }
+
+/* ---- 舞台与画布 ---- */
+.stage { position: relative; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: #0b1013; }
+/* 显示尺寸由 JS 设置（width:100% + max-width:原生宽度 + height:auto）；
+   CSS 这里只负责像素锐利与布局，不再写死宽高 —— 窄窗口下地图整幅可见，不会被截掉。 */
+#gameCanvas {
+  display: block; image-rendering: pixelated; image-rendering: crisp-edges;
+  width: 100%; height: auto; cursor: crosshair;
+}
+
+/* ---- 悬停清单（AC-035）---- */
+.tooltip {
+  position: absolute; z-index: 4; pointer-events: none; min-width: 170px; max-width: 260px;
+  background: rgba(14, 20, 24, 0.96); border: 1px solid var(--accent); border-radius: 8px;
+  padding: 8px 10px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+.tooltip.hide { display: none; }
+.tip-head { font-size: 12px; color: var(--accent2); margin-bottom: 6px; }
+.tip-list { max-height: 240px; overflow: auto; }
+.tip-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+.tip-row:nth-child(odd) { background: rgba(255, 255, 255, 0.03); }
+.tip-name { color: var(--fg); }
+.tip-price { color: var(--accent); font-variant-numeric: tabular-nums; }
+
+/* ---- 面板内容 ---- */
+.body { max-height: 340px; overflow: auto; }
+.muted { color: var(--muted); font-size: 12px; }
+.kv { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 1px 0; }
+.kv b { font-variant-numeric: tabular-nums; }
+.err { color: var(--danger); }
+.ok { color: var(--accent); }
+
+/* ---- 商家操作行（AC-036）---- */
+.op-head { border-top: 1px solid var(--line); padding-top: 8px; }
+.op-row {
+  display: flex; align-items: center; gap: 6px; padding: 3px 0; border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+}
+.op-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-price { flex: 0 0 auto; color: var(--accent); font-variant-numeric: tabular-nums; font-size: 12px; }
+.op-input {
+  flex: 0 0 74px; width: 74px; background: #0d1418; color: var(--fg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; font-size: 12px;
+}
+.op-list { max-height: 200px; overflow: auto; }
+.result { font-size: 12px; margin: 6px 0; min-height: 18px; }
+
+/* ---- 按钮 ---- */
+button { font-family: inherit; cursor: pointer; }
+.ghost, .primary {
+  border-radius: 6px; padding: 3px 10px; font-size: 12px; border: 1px solid var(--line);
+  background: var(--panel2); color: var(--fg);
+}
+.ghost:hover { border-color: var(--accent); }
+.primary { background: var(--accent); color: #0c1512; border-color: var(--accent); font-weight: 700; }
+
+/* ---- 操作记录 ---- */
+.log { max-height: 220px; overflow: auto; font-size: 12px; }
+.log-line { border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding: 2px 0; color: var(--muted); }
+.log-line.err { color: var(--danger); }
+
+/* ---- 轻提示 ---- */
+.toast {
+  position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+  background: #0f1a17; border: 1px solid var(--accent); color: var(--fg);
+  border-radius: 8px; padding: 8px 16px; font-size: 13px; z-index: 9; max-width: 80vw;
+}
+.toast.err { border-color: var(--danger); color: var(--danger); }
+.toast.hide { display: none; }
+.noscript { padding: 12px; color: var(--warn); }

@@ -123,6 +123,28 @@ def list_products(conn: sqlite3.Connection, stall_id: int) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def set_product_status(conn: sqlite3.Connection, stall_id: int, product_id, body) -> dict:
+    """契约 §3.32：上架 / 下架本摊位商品（`REQ-049` / `AC-039`）；不存在 `MT-1009`、越权
+    `MT-1004`（**不写库**）、`status` 只认 `data-model.md` §2.6 的 `active`/`inactive`。
+    `product_id` 按字符串接收（本仓惯例：不加 `<int:...>`，否则坏标识会变成契约外的 404）。"""
+    if not isinstance(body, dict):
+        raise TradeError("MT-1008", "请求体必须是 JSON 对象")
+    if not str(product_id).isdigit():
+        raise TradeError("MT-1008", "`product_id` 必须是整数", {"field": "product_id"})
+    status = body.get("status")
+    if status not in ("active", "inactive"):
+        raise TradeError("MT-1008", "`status` 必须是 active/inactive 之一", {"field": "status", "allowed": ["active", "inactive"]})
+    pid = int(product_id)
+    row = conn.execute("SELECT stall_id FROM product WHERE id = ?", (pid,)).fetchone()
+    if row is None:
+        raise TradeError("MT-1009", f"商品不存在：{pid}", {"product_id": pid})
+    if row["stall_id"] != stall_id:
+        raise TradeError("MT-1004", "不得改动其他摊位的商品", {"product_id": pid})
+    conn.execute("UPDATE product SET status = ? WHERE id = ? AND stall_id = ?", (status, pid, stall_id))
+    conn.commit()
+    return dict(conn.execute(f"SELECT {PRODUCT_FIELDS} FROM product WHERE id = ?", (pid,)).fetchone())
+
+
 # ---------------------------------------------------------------------------
 # §3.3 / §3.4 价目表
 # ---------------------------------------------------------------------------

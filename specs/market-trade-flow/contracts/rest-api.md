@@ -59,6 +59,7 @@
 | 29 | `/api/admin/reconciliation` | GET | 对账：核验「订单总额 = 支付流水 = 分账明细」 | `REQ-020`、`AC-003` |
 | 30 | `/api/admin/metrics/usage` | GET | 导出**三个**使用率指标（摊位使用率 / 现金交易占比 / 价目表维护率） | `REQ-022`、`AC-005` |
 | 31 | `/api/admin/audit-logs` | GET | 查询资金链路留痕（只读，只增不改） | `NFR-009` |
+| 32 | `/api/merchant/products/{product_id}/status` | POST | 上架／下架本摊位商品（改 `product.status`） | `REQ-049`、`AC-039` |
 
 ## 3. 端点详情
 
@@ -384,6 +385,20 @@
 - 查询参数: `stall_no`（可选）、`event_type`（可选）、`from`/`to`（可选）。
 - 响应(200): 分页对象，元素对应 §2.18。**不提供任何写接口**。
 - 可能错误: `MT-1008`(422)。
+
+### 3.32 POST `/api/merchant/products/{product_id}/status`
+
+- 说明: 上架 / 下架本摊位商品（改 `product.status`）。下架后该商品不再出现在秤端商品列表（§3.5）、秤端字典（§3.3 的 `status = active` 过滤）与「价目表维护率」的在售商品集合（[../data-model.md](../data-model.md) §2.7）中。关联: `REQ-049`、`AC-039`。
+- 请求头: `X-Stall-Session`（必填）。
+- 路径参数: `product_id`（integer，商品主键）。
+- 请求体:
+
+| 字段 | 类型 | 必填 | 传输层约束 | 语义与校验 |
+| --- | --- | --- | --- | --- |
+| `status` | string | 是 | 枚举 `active` / `inactive` | 合法取值取自 [../data-model.md](../data-model.md) §2.6；其余值 → `MT-1008` |
+
+- 响应(200): 更新后的商品对象（字段同 §2.6：`id` / `stall_id` / `name` / `category_id` / `icon_key` / `hotkey` / `status`）。**幂等**：重复设置同一 `status` 仍回 200，不产生其他副作用。
+- 可能错误: `MT-1005`(401)、`MT-1004`(403 其他摊位的商品)、`MT-1008`(422 `status` 或 `product_id` 不合法)、`MT-1009`(404 商品不存在)。
 
 ## 4. 统一错误码表
 

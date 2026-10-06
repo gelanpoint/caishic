@@ -1,9 +1,9 @@
 """`T-SIM-07`：端点清单与覆盖记账的机械检查（`docs/sim-design.md` §2.3 / §8 `T-SIM-07` 判据①）。
 
-## 为什么清单要"双向逐条比对"而不是"数一下有 31 条"
+## 为什么清单要"双向逐条比对"而不是"数一下有多少条"
 
 `sim/bridge/live_adapter.py` 里内置了一份契约 §2 端点总表的副本（`ENDPOINTS`）。
-如果只断言"有 31 条"，那么**契约加了第 32 个端点而 sim 没跟**、或者 **sim 里那一条路径写错了**，
+如果只断言"有 N 条"，那么**契约加了端点而 sim 没跟**、或者 **sim 里那一条路径写错了**，
 两边都会绿 —— 那正是 `T-036` 家族反复出现的"检查退化成摆设"。
 
 所以这里做两件事：
@@ -65,16 +65,16 @@ def contract_endpoints() -> list[tuple[str, str]]:
 
 
 def test_sim_manifest_matches_contract_both_ways():
-    """`sim` 内置的 31 个模板 ↔ 契约 §2 表：**双向逐条相等**（顺序也算）。"""
+    """`sim` 内置的 32 个模板 ↔ 契约 §2 表：**双向逐条相等**（顺序也算）。"""
     expected = contract_endpoints()
-    assert len(ENDPOINTS) == 31, f"契约是 31 个端点，sim 里内置了 {len(ENDPOINTS)} 个"
+    assert len(ENDPOINTS) == 32, f"契约是 32 个端点，sim 里内置了 {len(ENDPOINTS)} 个"
     assert list(ENDPOINTS) == expected, (
         "sim 内置的端点清单与契约 §2 表不一致：\n"
         f"  仅 sim 有：{[e for e in ENDPOINTS if e not in expected]}\n"
         f"  仅契约有：{[e for e in expected if e not in ENDPOINTS]}\n"
         f"  顺序不同处：{[i for i, (a, b) in enumerate(zip(ENDPOINTS, expected)) if a != b][:5]}"
     )
-    assert len(set(ENDPOINT_KEYS)) == 31, "端点键有重复 —— 覆盖清单会把两个端点记成同一个"
+    assert len(set(ENDPOINT_KEYS)) == 32, "端点键有重复 —— 覆盖清单会把两个端点记成同一个"
     print(f"[T-SIM-07] 端点清单与契约 §2 表双向逐条一致：{len(ENDPOINTS)} 条")
 
 

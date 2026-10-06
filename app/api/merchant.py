@@ -1,5 +1,6 @@
 """秤端（摊主）端点组：契约 §3.2 会话、§3.3/§3.4 价目表、§3.5 商品、§3.6 创建交易并计价、
-§3.7 交易列表、§3.8 交易详情、§3.9 改价/抹零、§3.10 确认收款、§3.11 退货冲正、§3.12 商户看板。
+§3.7 交易列表、§3.8 交易详情、§3.9 改价/抹零、§3.10 确认收款、§3.11 退货冲正、§3.12 商户看板、
+§3.32 商品上架/下架。
 
 关联：`REQ-002`、`REQ-003`、`REQ-004`、`REQ-005`、`REQ-006`、`REQ-007`、`REQ-008`、`REQ-009`、
 `REQ-010`、`REQ-012`、`REQ-013`、`REQ-021`、`REQ-026`、`REQ-027`、`REQ-028`、`REQ-032`；
@@ -39,6 +40,7 @@ from ..domain.catalog import (
     list_products,
     require_session,
     set_price_list,
+    set_product_status,
 )
 from ..domain.metrics import stall_daily_dashboard
 from ..domain.offline import queue_status, stage_transaction, sync_queue
@@ -87,6 +89,22 @@ def list_stall_products():
     conn = current_db()
     stall = _bound_stall(conn)
     return jsonify(list_products(conn, stall["stall_id"])), 200
+
+
+@bp.post("/api/merchant/products/<product_id>/status")
+def set_stall_product_status(product_id):
+    """契约 §3.32：改本摊位商品的 `product.status`（`active` ↔ `inactive`，`REQ-049` / `AC-039`）。
+
+    下架后该商品自动从 §3.5 商品列表、秤端字典（§3.3 的 `status = 'active'` 过滤）与悬停清单消失 ——
+    没有"第二处开关"要同步。越权 / 不存在 / 非法取值的判定全在
+    `app/domain/catalog.set_product_status`（本层不重写规则，也不把路径参数再解析一遍）。
+    """
+    conn = current_db()
+    stall = _bound_stall(conn)
+    return (
+        jsonify(set_product_status(conn, stall["stall_id"], product_id, request.get_json(silent=True))),
+        200,
+    )
 
 
 # ---------------------------------------------------------------------------

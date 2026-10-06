@@ -93,10 +93,15 @@ market-trade-mvp/
 │   │   ├── scale_ingest.py       # **形态 2（`T-SCALE-06`）**：交易上报（`POST .../transactions`）；**在线与补传共用同一端点**
 │   │   └── scale_settle.py       # **形态 2（`T-SCALE-07`）**：收款确认与退货申请（`POST .../{transaction_no}/settle`、`.../refund`）；`qr_payload` 指向**中台顾客页**
 │   ├── static/                   # 纯静态前端（无构建、无 CDN，全部本地文件）
-│   │   ├── index.html            # 入口导航（列出操作端与顾客扫码页两个入口）
+│   │   ├── index.html            # 入口导航（列出操作端与顾客扫码页两个入口；`REQ-044` 追加演示游戏入口卡片）
 │   │   ├── scale/                # 秤端页面与脚本（选品 → 称重计价 → 收款 → 凭证展示）
 │   │   ├── admin/                # 运营端页面与脚本（字典、价目表、佣金口径、看板、结算单）
 │   │   ├── customer/             # 顾客扫码页（支付与信息查看；不登录）
+│   │   ├── game/                 # **演示游戏（`REQ-044`~`REQ-049`，`2026-10-06` 新增）**：俯视角像素风经营模拟 —— 扮演商家/顾客/管理员、悬停看摊位在售商品、点智能秤调价与上/下架
+│   │   │   ├── index.html        # 游戏页面（canvas 地图 + 视角切换 + 信息面板）
+│   │   │   ├── js/               # 原生 JS 引擎（地图/精灵/实体/面板/API 分层；**每文件 ≤400 行**）
+│   │   │   ├── css/              # 游戏样式（像素风；**不引外部字体**）
+│   │   │   └── sprites/          # **美术资源产物**：PNG 精灵表 + `manifest.json`（精灵名与矩形，**由脚本生成、禁止手改**）
 │   │   ├── js/                   # 原生 JS（含离线/在线状态可视标识与显式切换；REQ-014）
 │   │   └── css/                  # 样式（适配手机宽度；不引外部字体或样式库）
 ├── data/                         # 运行时数据目录（SQLite 文件与离线暂存文件；不入库，见 .gitignore）
@@ -105,6 +110,7 @@ market-trade-mvp/
 │   ├── gen_seed.py               # 种子数据生成器：按**确定性构造规则**生成 ./app/seed_data/seed.json（**产物可复算**：删掉种子文件后重跑本脚本必须逐字节还原；`--check` 与现有文件比对不写入）。规则、规模依据与自检写在该文件 docstring，**改种子必须同步改它**
 │   ├── reset_demo.py             # 重置演示数据：删除数据文件并重跑种子导入（NFR-003/NFR-004 的恢复手段）
 │   └── scale_host_runner.py      # **主机侧秤端运行器（形态 2，`T-SCALE-17` 新增）**：可独立启动的秤端进程 —— 激活 → 拉字典与价目表 → 本地计价（**调用真 `scale-fw/core`**，非 Python 复刻）→ 本地暂存 → 恢复后按 `staged_at` 升序补传；中台不可达时仍能启动并完成本地暂存。**不是硬件在环**（`Q-21`），该边界须写在其说明里
+│   └── gen_game_art.py           # **演示游戏美术生成器（`T-GAME-02` 新增）**：用标准库 `zlib` + `struct` 手写 PNG（**本机无 PIL/Pillow 且不许装**），产出精灵表与 `manifest.json`。**产物可复算**：删掉产物重跑必须逐字节还原（不写 `tIME` chunk、压缩参数固定）。**像素画是程序生成，不是美术师手绘**
 └── tests/
     ├── contract/                 # 契约测试：先于实现编写，对齐 ./contracts/
     ├── unit/                     # 领域逻辑单测（含涉钱路径的用例级对账测试）
@@ -127,7 +133,7 @@ market-trade-mvp/
     │   ├── test_scenarios_and_r6.py  # `T-SIM-06` 7 个场景：对照只差声明变量 + 每个声明变量都必须真的被 sim 源码读到 + **`R6` 反例必须被执行**（自费组结果如实报告，三态判定不许写死）。**改名来历**：原名 `test_scenarios.py` 与 `tests/e2e/test_scenarios.py` **同名撞车**（pytest 无 `__init__.py` 时按 basename 认模块 ⇒ 全量收集直接 ERROR，与 `T-031` 那次 `conftest` 撞车同类），故按"避免同名"改名登记
     │   └── test_verify_sensitivity.py # `T-SIM-06` 敏感性：自写 Spearman（含并列秩）+ LHS 分层不退化 + OAT 单因子可辨（均带负例）
     │   ├── test_live_endpoints.py      # `T-SIM-07` 端点清单：`sim` 内置的 31 个模板 ↔ 契约 §2 表**双向逐条比对**（漂移即红）+ 覆盖缺口的灵敏度负例
-    │   └── test_live_run.py            # `T-SIM-07` live 实跑：真起 `run.py` 子进程 → **六条判据逐条实测**（31/31、全营业日对账、幂等重放、敏感扫描零命中、数据目录在 `C:`、树指纹不变）+ 每条判据的**灵敏度负例**
+    │   └── test_live_run.py            # `T-SIM-07` live 实跑：真起 `run.py` 子进程 → **六条判据逐条实测**（32/32、全营业日对账、幂等重放、敏感扫描零命中、数据目录在 `C:`、树指纹不变）+ 每条判据的**灵敏度负例**
     ├── e2e/                      # AC-001 ~ AC-024 的端到端验证
     │   └── test_offline_wait_helpers.py # 秤端等待助手的**确定性**自检（假 page，无浏览器）：`#pending` 为 `—` 时必须带上下文报错、数值时必须解析正确、超时必须转成断言（`2026-10-02` 裁定③）
     └── perf/                     # 并发与响应时间压测脚本（NFR-001 与继承基线的验证）
@@ -135,7 +141,7 @@ market-trade-mvp/
 
 > **多智能体仿真包（`sim/`，`docs/sim-design.md`；`T-SIM-01`/`T-SIM-02` 于 `2026-10-02` 开始按批次创建）**：
 > **只依赖 Python 标准库**（不新增运行期依赖，`ADR-0004` 的两期边界不变）；**不得被 `run.py` 或 `app/**` 引用**；
-> **唯一跨侧接口是 HTTP 契约的 31 个端点**（`sim/**` 不得 `import app`，机械检查带灵敏度负例）。
+> **唯一跨侧接口是 HTTP 契约的 32 个端点**（`sim/**` 不得 `import app`，机械检查带灵敏度负例）。
 > 本目录为**目录级授权**，内部文件由 `./tasks.md` §3 的 `T-SIM-01`/`T-SIM-02` 逐文件授权；
 > 其余计划文件（`agents/`、`rules/`、`bridge/`、`observe/`、`verify/`、`scenarios/`）在 `docs/sim-design.md` §2.2 已设计，
 > **由后续批次 `T-SIM-03`~`T-SIM-10` 各自登记后再创建**（未登记的不得出现）。
@@ -170,7 +176,7 @@ market-trade-mvp/
 > │   ├── scenario.py    # `T-SIM-06`：场景装载与**"对照实验只差声明变量"的机械校验**（`scenario_problems` 是纯函数，负例可直接喂）
 > │   ├── study.py       # `T-SIM-06`：7 个场景 × 臂的驱动器 + 全局 OAT / 每个场景**本场景指标**的 OAT / LHS 秩相关 / 结论稳健性 → 报告
 > │   ├── server_launcher.py # `T-SIM-07`：子进程拉起 `run.py`（**隔离 `MT_DATA_DIR`（落 `C:`）** + 独立端口 + `/healthz` 就绪探测与超时上限）+ **业务日时钟文件**（`MT_CLOCK_FILE`，`REQ-033`）+ 被测系统树指纹（`app/**`、`specs/**`）
-> │   ├── live_adapter.py# `T-SIM-07`：31 个端点的 **stdlib**（`http.client`）HTTP 客户端；端点覆盖**由实际请求反推**（拿路径去匹配契约模板，不自报"我调过"）
+> │   ├── live_adapter.py# `T-SIM-07`：32 个端点的 **stdlib**（`http.client`）HTTP 客户端；端点覆盖**由实际请求反推**（拿路径去匹配契约模板，不自报"我调过"）
 > │   ├── live_run.py    # `T-SIM-07`：live 模式的**日/月编排**（场景装载 = 真 `PUT` 佣金口径 → 日初配置 → 逐笔成交 → 日终聚合/对账 → 月末结算）
 > │   ├── live_scenario.py # `T-SIM-07`：**场景 → 系统佣金口径**的装载与"库里已有同样一条口径"的显式处置（拆出原因 = 400 行门禁）
 > │   ├── live_cli.py    # `T-SIM-07`：`--mode=live` 的命令行分支与**六条判据的一行式汇报**（拆出原因 = 400 行门禁）
