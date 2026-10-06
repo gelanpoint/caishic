@@ -10,6 +10,13 @@
 用法：
     python run.py                # 默认 0.0.0.0:8000（可用环境变量 MT_HOST / MT_PORT 覆盖）
     python run.py --port 8010    # 换端口启动（演示机上被占用时的第一选择）
+    python run.py --mode split   # 【分离形态】只启动中台：不托管 /scale/ 秤端界面，
+                                 #   另开一个终端跑 `python scripts/scale_host_runner.py` 当秤端
+
+形态说明（`ADR-0005` §4 第 5 条「分离形态是新增启动方式」，`T-SCALE-17`）：
+    - **形态 1 `single`（默认）**：单机 all-in-one，中台顺带托管秤端页面，行为与从前**逐字节一致**；
+    - **形态 2 `split`**：中台 × 1 ↔ 秤端 × N。中台只提供 7 个秤端接入端点 + 运营端 + 顾客页，
+      **不注册 `/scale/`**（秤端界面归秤端固件）；秤端是独立进程，经**真实 HTTP** 对接。
 """
 
 from __future__ import annotations
@@ -97,6 +104,39 @@ def print_startup_banner(host: str, port: int, lan_ip: str) -> None:
     print(_LINE)
 
 
+def print_split_banner(host: str, port: int, lan_ip: str) -> None:
+    """打印**分离形态**的中台启动信息（`T-SCALE-17`）。
+
+    与形态 1 的横幅刻意不同：这里**不打印 `/scale/` 入口**（分离形态下该路由不存在，
+    打印一个 404 的地址是误导），改为打印**秤端接入基址**与**启动秤端的命令**。
+    """
+    local = f"http://127.0.0.1:{port}"
+    remote = f"http://{lan_ip}:{port}"
+    print(_LINE)
+    print(f" {config.APP_NAME} —— 中台已启动【分离形态 · split】")
+    print(_LINE)
+    print(" 本进程是**中台**：只提供秤端接入端点 + 运营端 + 顾客页。")
+    print(" 秤端是**独立进程**（ESP32-S3 固件；本机可用主机侧运行器模拟），二者经真实 HTTP 对接。")
+    print("-" * 68)
+    print(f" 秤端接入基址（给秤端用）  {remote}/api/scale/v1/")
+    print(f"   本地回环               {local}/api/scale/v1/")
+    print("-" * 68)
+    print(f" 运营端                    {local}/admin/")
+    print(f" 顾客扫码页                {local}/customer/")
+    print(f" 入口导航页                {local}/")
+    print(" 秤端界面                  **本形态不托管**（`/scale/` 返回 404 —— 归秤端固件）")
+    print("-" * 68)
+    print(" 启动一个秤端（另开一个终端；中台没起来也能先起秤端）：")
+    print(f"   python scripts/scale_host_runner.py --mid {local}")
+    print("   想模拟多商家就多开几个终端、用不同的 --device-id（如 SC-000001 / SC-000002 …）")
+    print("-" * 68)
+    print(f" 数据文件：{config.DB_PATH}")
+    print(f" 暂存目录：{config.OFFLINE_STAGING_DIR}")
+    print("-" * 68)
+    print(" 停止服务：Ctrl+C")
+    print(_LINE)
+
+
 def main(argv: list[str] | None = None) -> int:
     # 输出编码自己定：被重定向时强制 UTF-8，接真控制台时沿用控制台编码（见 app/console.py）。
     # **不依赖 PYTHONUTF8 / PYTHONIOENCODING / locale** —— 靠环境变量的"通过"在别人机器上会变成乱码。
@@ -108,9 +148,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--host", default=config.HOST, help="监听地址（0.0.0.0 表示所有网卡）")
     parser.add_argument("--port", type=int, default=config.PORT, help="监听端口")
+    parser.add_argument(
+        "--mode",
+        choices=("single", "split"),
+        default="single",
+        help="single=形态 1 单机 all-in-one（默认，行为与从前逐字节一致）；split=形态 2 只起中台",
+    )
     args = parser.parse_args(argv)
 
     host, port = args.host, args.port
+    split = args.mode == "split"
 
     # ---- 端口占用检测（硬要求 5：明确提示，而不是抛一个看不懂的异常栈） ----
     # 注意：0.0.0.0 可能与"仅绑定 127.0.0.1 的进程"共存，故两处都探测，避免漏报。
@@ -141,8 +188,11 @@ def main(argv: list[str] | None = None) -> int:
     seed_summary = import_seed()
     print(f"[种子] {summary_line(seed_summary)}")
 
-    app = create_app()
-    print_startup_banner(host, port, lan_ip)
+    app = create_app(serve_scale_ui=not split)
+    if split:
+        print_split_banner(host, port, lan_ip)
+    else:
+        print_startup_banner(host, port, lan_ip)
 
     # use_reloader=False：避免调试重载器把进程 fork 成两个，导致"端口莫名被占用"的现场误判。
     app.run(host=host, port=port, threaded=True, use_reloader=False)
