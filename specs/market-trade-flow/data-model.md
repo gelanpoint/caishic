@@ -3,7 +3,7 @@
 - 特性目录: specs/market-trade-flow/
 - 需求规格: [spec.md](./spec.md) / 技术方案: [plan.md](./plan.md)
 - 存储: SQLite（WAL 模式），经 Python 标准库 `sqlite3` 访问（来源: [plan.md](./plan.md) §1、ADR-0003）
-- 日期: 2026-09-30
+- 日期: 2026-09-30（**形态 2 同步: 2026-10-06**，迁移 `0002_market_scope.sql` / `0003_device.sql` / `0004_audit_event_types.sql`）
 - 接口契约: [contracts/](./contracts/)（端点、错误码定义与请求/响应字段一律以该目录为准，本文件只定义**持久化字段**）
 
 ## 0. 全局约定（全表适用，先读）
@@ -26,9 +26,11 @@
 
 | 实体 | 表名 | 职责（一句话） | 主要服务的 REQ |
 | --- | --- | --- | --- |
+| 市场 | `market` | 市场（租户）档案：市场维度的落点，八张业务表的归属对象 | `REQ-035` |
 | 商户 | `merchant` | 摊主档案：姓名、联系方式、在营状态 | `REQ-001` |
 | 摊位 | `stall` | 摊位档案与收款标识（脱敏）；秤端绑定的主体 | `REQ-001`、`REQ-024` |
 | 秤端摊位会话 | `stall_session` | 秤端「已绑定摊位」的会话，落实摊主只能访问本摊位数据 | `REQ-032`、`NFR-007` |
+| 设备 | `device` | 秤端设备注册与「市场 + 摊位」绑定、设备令牌摘要（形态 2） | `REQ-036` |
 | 标准品类 | `category` | 品类字典（记账口径的标准分类） | `REQ-002`、`REQ-014` |
 | 摊位品类别名 | `stall_category_alias` | 「摊位别名 → 标准品类」映射，按标准品类记账 | `REQ-002` |
 | 商品 | `product` | 摊位商品档案（可标价对象） | `REQ-003`、`REQ-004` |
@@ -45,6 +47,9 @@
 | 摊位信用档案 | `stall_credit` | 「标价一致率」等信用指标的档案（对顾客可见） | `REQ-008` |
 | 审计日志 | `audit_log` | **只增不改**的资金链路留痕：改价、退货冲正、离线补传、幂等命中 | `NFR-009`、`REQ-007`、`REQ-013`、`REQ-015` |
 | 迁移执行记录 | `schema_migration` | 基础设施表：记录已执行的迁移脚本，保证启动时按序补齐、不重复执行 | 实现便利（`AC-013` 一条启动命令） |
+
+> **实体共 21 个**（`0001_init.sql` 的 19 个 + 形态 2 新增 2 个）：`market` 由 `0002_market_scope.sql` 引入、
+> `device` 由 `0003_device.sql` 引入；字段表见 §2.20 / §2.21，索引见 §6。本清单与 `sqlite_master` 的表清单逐条同名。
 
 > **改价留痕落在哪里**：`REQ-007` 要求记录「原价、改后价、改价时间、操作摊位」。本模型**不另建** `price_change_log` 表，
 > 而是把该事件作为 `audit_log` 中 `event_type = price_change` 的一条记录（载荷含上述四项 + 明细行引用），
@@ -65,18 +70,20 @@
 | `status` | TEXT | 是 | 枚举：`active`（在营）/ `inactive`（停用）（`REQ-001`） | `active` | 在营状态 |
 | `created_at` | TEXT | 是 | ISO-8601 | 当前时间 | |
 | `updated_at` | TEXT | 是 | ISO-8601 | 当前时间 | |
+| `market_id` | INTEGER | 是 | 市场归属；`NOT NULL DEFAULT 1`（既有行由 SQLite 就地回填默认市场）；**无 `REFERENCES`**，原因见 §2.20 注 | 1 | 所属市场（`REQ-035`） |
 
 ### 2.2 摊位（`stall`）
 
 | 字段 | 类型 | 必填 | 校验规则（来源） | 默认值 | 说明 |
 | --- | --- | --- | --- | --- | --- |
 | `id` | INTEGER | 是 | 主键自增 | 无 | |
-| `stall_no` | TEXT | 是 | 全表唯一；长度 1~16（`REQ-001` 按摊位查询） | 无 | 摊位号 |
+| `stall_no` | TEXT | 是 | **市场内唯一**：`ux_stall_no` = (`market_id`, `stall_no`)；长度 1~16（`REQ-001` 按摊位查询、`REQ-035` 市场维度） | 无 | 摊位号 |
 | `merchant_id` | INTEGER | 是 | 外键 → `merchant.id`（`REQ-001`） | 无 | 所属商户 |
 | `name` | TEXT | 否 | 长度 ≤50（实现便利） | NULL | 摊位展示名 |
 | `payment_receiver_token` | TEXT | 是 | **脱敏值**：仅允许掩码形式（如首 4 位 + `****` + 末 4 位），长度 ≤32；**不得存完整收款账号**（`REQ-024`/`NFR-012`） | 无 | 收款标识（脱敏） |
 | `status` | TEXT | 是 | 枚举：`active` / `inactive`（`REQ-001`） | `active` | 在营状态 |
 | `created_at` | TEXT | 是 | ISO-8601 | 当前时间 | |
+| `market_id` | INTEGER | 是 | 市场归属；`NOT NULL DEFAULT 1`（既有行由 SQLite 就地回填默认市场）；**无 `REFERENCES`**，原因见 §2.20 注 | 1 | 所属市场（`REQ-035`） |
 
 > 本表**不冗余**「当期价目表是否存在」这类派生标记（`REQ-022` 的价目表维护率由 `price_item` 计算），避免第二份事实来源。
 
@@ -96,10 +103,11 @@
 | 字段 | 类型 | 必填 | 校验规则（来源） | 默认值 | 说明 |
 | --- | --- | --- | --- | --- | --- |
 | `id` | INTEGER | 是 | 主键自增 | 无 | |
-| `code` | TEXT | 是 | 全表唯一；长度 1~16 | 无 | 品类编码（记账键） |
+| `code` | TEXT | 是 | **市场内唯一**：`ux_category_code` = (`market_id`, `code`)；长度 1~16 | 无 | 品类编码（记账键；`REQ-035` 市场维度） |
 | `name` | TEXT | 是 | 长度 1~32（`REQ-002`） | 无 | 标准品类名 |
 | `status` | TEXT | 是 | 枚举：`active` / `inactive` | `active` | |
 | `created_at` | TEXT | 是 | ISO-8601 | 当前时间 | |
+| `market_id` | INTEGER | 是 | 市场归属；`NOT NULL DEFAULT 1`（既有行由 SQLite 就地回填默认市场）；**无 `REFERENCES`**，原因见 §2.20 注 | 1 | 所属市场（`REQ-035`） |
 
 ### 2.5 摊位品类别名（`stall_category_alias`）
 
@@ -134,6 +142,7 @@
 | `hotkey` | TEXT | 否 | 长度 1~4（`REQ-004`） | NULL | 秤端快捷键 |
 | `status` | TEXT | 是 | 枚举：`active` / `inactive`（`REQ-004` 摊位停用商品不出现在秤端） | `active` | |
 | `created_at` | TEXT | 是 | ISO-8601 | 当前时间 | |
+| `market_id` | INTEGER | 是 | 市场归属；`NOT NULL DEFAULT 1`（既有行由 SQLite 就地回填默认市场）；**无 `REFERENCES`**，原因见 §2.20 注 | 1 | 所属市场（`REQ-035`） |
 
 ### 2.7 价目表项（`price_item`）
 
@@ -147,6 +156,7 @@
 | `source` | TEXT | 是 | 枚举：`manual`（逐条调整）/ `copied_previous_day`（复制上一营业日）（`REQ-003`） | `manual` | 来源可追溯 |
 | `created_at` | TEXT | 是 | ISO-8601 | 当前时间 | |
 | `updated_at` | TEXT | 是 | ISO-8601 | 当前时间 | 逐条调整会更新本行（价目表不属资金留痕表，允许更新） |
+| `market_id` | INTEGER | 是 | 市场归属；`NOT NULL DEFAULT 1`（既有行由 SQLite 就地回填默认市场）；**无 `REFERENCES`**，原因见 §2.20 注 | 1 | 所属市场（`REQ-035`） |
 
 ### 2.8 交易（`transaction`）
 
@@ -252,6 +262,7 @@
 | `effective_from` | TEXT | 是 | `YYYY-MM-DD`（`REQ-017`、`REQ-018` 按日重算） | 无 | |
 | `effective_to` | TEXT | 否 | `YYYY-MM-DD`；为空表示长期有效 | NULL | |
 | `created_at` | TEXT | 是 | ISO-8601 | 当前时间 | 佣金按**实收金额**计算（`REQ-017`），不按标价 |
+| `market_id` | INTEGER | 是 | 市场归属；`NOT NULL DEFAULT 1`（既有行由 SQLite 就地回填默认市场）；**无 `REFERENCES`**，原因见 §2.20 注 | 1 | 所属市场（`REQ-035`） |
 
 ### 2.15 日聚合（`daily_aggregate`）
 
@@ -267,6 +278,7 @@
 | `refund_amount_cents` | INTEGER | 是 | ≥0（`REQ-013` 退货后同步减少） | 0 | 退货冲正额 |
 | `commission_amount_cents` | INTEGER | 是 | ≥0（`REQ-017`、`REQ-018`） | 0 | 佣金 |
 | `recomputed_at` | TEXT | 是 | ISO-8601 | 当前时间 | |
+| `market_id` | INTEGER | 是 | 市场归属；`NOT NULL DEFAULT 1`（既有行由 SQLite 就地回填默认市场）；**无 `REFERENCES`**，原因见 §2.20 注 | 1 | 所属市场（`REQ-035`） |
 
 ### 2.16 结算单（`settlement`）
 
@@ -281,6 +293,7 @@
 | `commission_amount_cents` | INTEGER | 是 | ≥0；同上（`AC-023`） | 无 | |
 | `version` | INTEGER | 是 | ≥1；重算生成新行、旧行保留（`Q-10` 可追溯、不可物理删除） | 1 | |
 | `generated_at` | TEXT | 是 | ISO-8601 | 当前时间 | |
+| `market_id` | INTEGER | 是 | 市场归属；`NOT NULL DEFAULT 1`（既有行由 SQLite 就地回填默认市场）；**无 `REFERENCES`**，原因见 §2.20 注 | 1 | 所属市场（`REQ-035`） |
 
 ### 2.17 摊位信用档案（`stall_credit`）
 
@@ -303,7 +316,7 @@
 | 字段 | 类型 | 必填 | 校验规则（来源） | 默认值 | 说明 |
 | --- | --- | --- | --- | --- | --- |
 | `id` | INTEGER | 是 | 主键自增 | 无 | |
-| `event_type` | TEXT | 是 | 枚举：`price_change` / `refund_applied` / `refund_duplicate_hit` / `offline_backfilled` / `offline_duplicate_discarded` / `payment_callback_duplicate_hit` / `staging_write_failed` / `offline_threshold_warned` / `commission_rule_changed`（`NFR-009`、`REQ-007`、`REQ-013`、`REQ-015`、`REQ-016`、`REQ-029`、`REQ-030`） | 无 | 事件类型 |
+| `event_type` | TEXT | 是 | 枚举：`price_change` / `refund_applied` / `refund_duplicate_hit` / `offline_backfilled` / `offline_duplicate_discarded` / `payment_callback_duplicate_hit` / `staging_write_failed` / `offline_threshold_warned` / `commission_rule_changed` / `scale_amount_mismatch`（`NFR-009`、`REQ-007`、`REQ-013`、`REQ-015`、`REQ-016`、`REQ-029`、`REQ-030`、`REQ-038`/`AC-030`） | 无 | 事件类型；`scale_amount_mismatch` 由 `0004_audit_event_types.sql` 扩入白名单，载荷含设备号、幂等键、秤端上报金额、中台重算金额与逐行差异（契约 `scale-midplatform.md` §5 第 4 条） |
 | `stall_id` | INTEGER | 否 | 外键 → `stall.id`；操作摊位（`REQ-007`） | NULL | |
 | `ref_table` | TEXT | 是 | 枚举：`transaction` / `transaction_item` / `payment` / `refund` / `offline_queue` / `commission_rule`（`NFR-009` 可追溯） | 无 | |
 | `ref_id` | INTEGER | 是 | 被引用行的主键 | 无 | |
@@ -313,6 +326,11 @@
 
 > **只增不改由数据库强制**：迁移脚本中建立触发器 `audit_log_no_update` / `audit_log_no_delete`，
 > 对 `audit_log` 的 `UPDATE` / `DELETE` 直接 `RAISE(ABORT, ...)`；应用层不提供任何修改接口（`NFR-009`、宪法 §4）。
+>
+> **扩展 `event_type` 白名单须重建本表**（`0004_audit_event_types.sql`，`AC-030`）：SQLite 改不了 CHECK 约束，
+> 只能「建新表 → 逐行搬移（含主键）→ `DROP` 旧表 → 换名 → 原样重建两个触发器与 §6 的 `ix_audit_ref` / `ix_audit_stall_time`」。
+> **顺序是硬要求**：`DROP TABLE` 会连带删掉两条索引，换名前建会同名撞车、换名后不建即静默丢索引；
+> 且**不得放宽任何既有约束**（`actor` 长度、`ref_id` / `payload_json` 的 `NOT NULL`、`ref_table` 白名单逐字段照抄）。
 
 ### 2.19 迁移执行记录（`schema_migration`，基础设施表）
 
@@ -323,6 +341,61 @@
 | `applied_at` | TEXT | 是 | ISO-8601 | 当前时间 | |
 
 > 本表无业务语义，只保证启动时**按序补齐且不重复执行**（`AC-013` 一条启动命令）。
+
+### 2.20 市场（`market`）—— 形态 2 新增（`REQ-035`）
+
+| 字段 | 类型 | 必填 | 校验规则（来源） | 默认值 | 说明 |
+| --- | --- | --- | --- | --- | --- |
+| `id` | INTEGER | 是 | 主键自增 | 无 | 市场（租户）主键；默认市场**显式为 `1`**，与各表 `market_id` 的 `DEFAULT 1` 对齐 |
+| `market_code` | TEXT | 是 | 全表唯一：`ux_market_code` = (`market_code`)；长度 1~16（`REQ-035`） | 无 | 市场编码；契约 `scale-midplatform.md` §3.1 响应体的 `market.market_code` 即本列 |
+| `name` | TEXT | 是 | 长度 1~50（`REQ-035`） | 无 | 市场名（契约 §3.1 的 `market.name`） |
+| `status` | TEXT | 是 | 枚举：`active` / `inactive`（`0002_market_scope.sql` 的 CHECK） | `active` | 市场停用后其设备激活被拒（`app/domain/device.py`） |
+
+> **市场维度是本期的已落地维度，不是预留**（`REQ-035`）。**带 `market_id` 的是这 8 张表**：
+> `merchant` / `stall` / `category` / `product` / `price_item` / `commission_rule` / `daily_aggregate` / `settlement`
+> （前 7 张即 `REQ-035` 点名的归属对象；`category` 是第 8 张 —— `0002_market_scope.sql` 把 `ux_category_code` 改为
+> **市场内唯一**，品类编码只在市场内唯一，故必须记录归属）。其余表**不带 `market_id`**，其市场归属经 `stall` 传递
+> （`REQ-035` 未点名它们，故不为此扩列）。
+>
+> **`market_id` 一律不带 `REFERENCES`（有意为之，不得擅自补外键）**：SQLite 明确禁止
+> `ALTER TABLE ... ADD COLUMN` 添加「带非 NULL 默认值的外键列」（实测报错
+> `Cannot add a REFERENCES column with non-NULL default value`，`PRAGMA foreign_keys = ON`）。
+> 故这 8 列的完整性由「**默认市场行必然存在**」（本表由 `0002` 写入 `id = 1`）+ **应用层归属校验**保证，
+> 而不是外键；`NOT NULL DEFAULT 1` 同时完成**回填** —— SQLite 给既有行填默认值，既有单市场数据全部落到市场 1。
+>
+> **本期只装载一个市场**（`REQ-035`）：默认市场为 `id = 1` / `market_code = 'M-0001'` / `name = '示例菜市场'` / `status = 'active'`。
+> 装载第二个市场是**纯 DML**（`INSERT` 一行市场 + 带 `market_id` 插业务行），**不需要任何 DDL** —— `AC-026` 以此取证。
+>
+> **本表不含任何 `*_at` 列（有意为之，不得擅自补）**：默认市场行由迁移写入，而迁移取不到 `REQ-033` 的注入时钟；
+> 若加一个由 `datetime('now','localtime')` 填充的 `created_at`，就会新增一处 `T-SIM-00` 已钉死的时钟缺口
+> （`tests/unit/test_clock_guard.py` 的枚举集合会变红）。本表没有任何 `REQ` / `AC` / 契约端点需要创建时间。
+
+### 2.21 设备（`device`）—— 形态 2 新增（`REQ-036`）
+
+| 字段 | 类型 | 必填 | 校验规则（来源） | 默认值 | 说明 |
+| --- | --- | --- | --- | --- | --- |
+| `id` | INTEGER | 是 | 主键自增 | 无 | |
+| `device_id` | TEXT | 是 | 全表唯一：`ux_device_id` = (`device_id`)；长度 1~32（`REQ-036`） | 无 | 设备标识（出厂烧录；契约 §3.1 请求体的 `device_id`） |
+| `token_digest` | TEXT | 是 | **长度必须 = 64**（sha256 十六进制）；**明文令牌绝不入库**（`REQ-036`、`NFR-012`、`RL-5` 同口径） | 无 | 设备令牌摘要；`length = 64` 的 CHECK 是数据库层最后一道闸门 |
+| `market_id` | INTEGER | 是 | ≥1；**无 `REFERENCES`**，原因见 §2.20 注 | 无 | 授权范围的市场侧（`REQ-036`） |
+| `stall_id` | INTEGER | 是 | ≥1；**无 `REFERENCES`**，原因见 §2.20 注 | 无 | 授权范围的摊位侧（`REQ-036`） |
+| `firmware_version` | TEXT | 否 | 长度 ≤32（契约 §3.1 请求体） | NULL | 固件版本 |
+| `hardware_rev` | TEXT | 否 | 长度 ≤32（契约 §3.1 请求体） | NULL | 硬件版本 |
+| `status` | TEXT | 是 | 枚举：`registered`（预注册待激活）/ `active`（已激活）/ `disabled`（运维解绑，`MT-2005` 的处置路径） | `registered` | 取值由 `0003_device.sql` 的 CHECK 约束 |
+| `last_heartbeat_at` | TEXT | 否 | ISO-8601；NULL = 尚未心跳（与「心跳过」可区分） | NULL | 心跳时间（契约 §3.2） |
+| `created_at` | TEXT | 是 | ISO-8601；**不设 SQL 默认值**，由应用层经 `app/db.py::now_iso()`（`REQ-033` 时钟接缝）写入 | 无 | 见下方注 |
+| `activated_at` | TEXT | 否 | ISO-8601；首次激活时写入；**重复激活不改绑定、也不刷新本列**（契约 §3.1） | NULL | 首次激活时间 |
+
+> **`*_at` 列不设 SQL 默认值（有意为之）**：设备行由应用层写入（`app/domain/device.py`），
+> `created_at` 若交给 `datetime('now','localtime')` 就又多一处注入时钟管不到的缺口
+> （`T-SIM-00` 已把这类缺口枚举钉死在 `tests/unit/test_clock_guard.py`）。
+>
+> **(`market_id`, `stall_id`) 不设唯一约束（有意为之）**：绑定唯一性由 `ux_device_id` 保证
+> （一台设备只有一个绑定），但一个摊位**允许有替换机 / 备用机** —— 把摊位也做成唯一会在「换秤」时
+> 把新设备直接挡在库外（`IntegrityError` → 500），而 `REQ-036` 与契约都没有要求「一个摊位只能有一台设备」。
+>
+> **授权只来自本表**：`market_id` / `stall_id` 是设备注册时的绑定，即该设备的授权范围；
+> 请求体或路径里的 `stall_id` / `market_id` **一律不采信**（契约 §1 第 6 条、`REQ-032`）。
 
 ## 3. 实体关系
 
@@ -344,6 +417,8 @@
 - `stall` 1 — N `settlement`：`settlement.stall_id` → `stall.id`；结算单 = 期内 `is_current = 1` 的日聚合之和。
 - `stall` 1 — 1 `stall_credit`：信用档案为摊位维度单份。
 - `audit_log` 通过 `ref_table` + `ref_id` **弱引用**上述表（不建外键：留痕不得因业务行删除而受限，`NFR-009`）。
+- `market` 1 — N `merchant` / `stall` / `category` / `product` / `price_item` / `commission_rule` / `daily_aggregate` / `settlement`：各表 `market_id` **弱引用** `market.id`（**不建外键**，原因见 §2.20 注）；`AC-026` 的「两市场互不可见、互不串账」要求每条读路径都按 `market_id` 过滤。
+- `market` 1 — N `device`、`stall` 1 — N `device`：`device` 的 (`market_id`, `stall_id`) 是注册时的绑定、即该设备的授权范围（`REQ-036`）；**不设唯一约束**（允许替换机 / 备用机，见 §2.21 注），绑定唯一性由 `ux_device_id` 保证。
 - **无顾客实体**：系统不采集可识别顾客身份的信息（`spec.md` §5 边界，`REQ-023`）。
 
 ## 4. 状态机
@@ -442,6 +517,7 @@
 | 实体 | 说明 |
 | --- | --- |
 | `merchant` / `stall` / `stall_session` / `category` / `stall_category_alias` / `product` / `price_item` | 用 `status` 或 `is_active` 字段表达启停，无流转约束 |
+| `market` / `device` | 用 `status` 表达启停；`device.status` 的取值（`registered` / `active` / `disabled`）由 `0003_device.sql` 的 CHECK 约束，**本期不设 §4 流转表**（激活 / 解绑的处置见契约 `scale-midplatform.md` §3.1 与 §4 的 `MT-2005`） |
 | `transaction_item` / `payment_callback_log` / `refund` / `audit_log` | 写入即终态的事实行（`audit_log` 由触发器禁止修改） |
 | `daily_aggregate` | 可重算快照：用 `revision` + `is_current` 表达版本，无状态流转 |
 | `commission_rule` | 用 `effective_from` / `effective_to` 表达有效期，无状态流转 |
@@ -491,10 +567,10 @@
 
 | 索引名 | 表 | 字段 | 类型 | 服务的查询 / 约束 |
 | --- | --- | --- | --- | --- |
-| `ux_stall_no` | `stall` | (`stall_no`) | 唯一 | 按摊位查询档案（`REQ-001`、`AC-013` 种子导入幂等） |
+| `ux_stall_no` | `stall` | (`market_id`, `stall_no`) | 唯一（**市场内唯一**） | 按摊位查询档案（`REQ-001`、`AC-013` 种子导入幂等）；`REQ-035` 要求市场维度纳入唯一约束 —— 否则第二个市场不能再有 `A-01` 摊位 |
 | `ix_stall_merchant` | `stall` | (`merchant_id`) | 普通 | 商户 → 摊位归集 |
 | `ux_session_token` | `stall_session` | (`session_token`) | 唯一 | 秤端会话鉴权与摊位绑定（`REQ-032`、`AC-021`） |
-| `ux_category_code` | `category` | (`code`) | 唯一 | 品类字典按编码取标准品类（`REQ-002`） |
+| `ux_category_code` | `category` | (`market_id`, `code`) | 唯一（**市场内唯一**） | 品类字典按编码取标准品类（`REQ-002`）；同上 —— 否则第二个市场不能再有 `VEG` 品类编码 |
 | `ux_alias_stall_name` | `stall_category_alias` | (`stall_id`, `alias_name`) | 唯一 | 别名 → 标准品类的查表（`REQ-002`、`AC-014`） |
 | `ix_product_stall_status` | `product` | (`stall_id`, `status`) | 普通 | 秤端商品图标/快捷键列表（`REQ-004`） |
 | `ux_price_stall_date_product` | `price_item` | (`stall_id`, `business_date`, `product_id`) | 唯一 | 计价取价、复制上一营业日价目表（`REQ-003`、`REQ-005`、`AC-015`） |
@@ -516,17 +592,37 @@
 | `ux_stall_credit` | `stall_credit` | (`stall_id`) | 唯一 | 摊位信用档案（对顾客可见）（`REQ-008`） |
 | `ix_audit_ref` | `audit_log` | (`ref_table`, `ref_id`) | 普通 | 按业务行回查留痕（`NFR-009`） |
 | `ix_audit_stall_time` | `audit_log` | (`stall_id`, `occurred_at`) | 普通 | 摊位维度的留痕与信用展示（`REQ-007`、`REQ-008`） |
+| `ux_market_code` | `market` | (`market_code`) | 唯一 | 按市场编码取市场（`REQ-035`；契约 §3.1 的 `market_code` 查表） |
+| `ix_merchant_market` | `merchant` | (`market_id`) | 普通 | 市场 → 商户归集（`REQ-035`、`AC-026`） |
+| `ix_stall_market` | `stall` | (`market_id`) | 普通 | 市场 → 摊位归集（`REQ-035`、`AC-026`） |
+| `ix_category_market` | `category` | (`market_id`) | 普通 | 市场 → 品类字典（`REQ-035`、`AC-026`） |
+| `ix_product_market` | `product` | (`market_id`, `status`) | 普通 | 市场内取在营商品（`REQ-004`、`REQ-035`） |
+| `ix_price_item_market` | `price_item` | (`market_id`, `business_date`) | 普通 | 市场 × 营业日的价目表（`REQ-003`、`REQ-035`） |
+| `ix_commission_market` | `commission_rule` | (`market_id`, `effective_from`) | 普通 | 市场内按生效期匹配佣金口径（`REQ-017`、`REQ-035`） |
+| `ix_daily_aggregate_market` | `daily_aggregate` | (`market_id`, `business_date`) | 普通 | 市场 × 营业日的日聚合（`REQ-018`、`REQ-035`） |
+| `ix_settlement_market` | `settlement` | (`market_id`, `period_end`) | 普通 | 市场维度的结算单查询（`REQ-019`、`REQ-035`） |
+| `ux_device_id` | `device` | (`device_id`) | 唯一 | 设备身份唯一：一台设备只有一个绑定（`REQ-036`、`AC-027`） |
+| `ix_device_binding` | `device` | (`market_id`, `stall_id`) | 普通 | 按摊位 / 市场取设备（心跳观测、运营端解绑、`AC-027` 的绑定核对） |
 
+> **形态 2 新增索引 11 条**：市场 1 条（`ux_market_code`）+ 市场维度查询 8 条（`ix_*_market`）+ 设备 2 条
+> （`ux_device_id` / `ix_device_binding`）；另 `ux_stall_no` / `ux_category_code` 两条**就地改为市场内唯一**
+> （索引名不变、列构成加 `market_id`）。全库实际索引 **36 条**（`0001_init.sql` 的 25 条 + 11 条），与本节逐条同名，
+> 且 `sqlite_master` 中**无 `sqlite_autoindex_*`**（唯一性一律用具名索引表达，便于机械核对）。
+>
+> **`ix_audit_ref` / `ix_audit_stall_time` 在重建 `audit_log` 后依然存在**：`0004_audit_event_types.sql` 先
+> `DROP TABLE audit_log` 再换名重建，而 `DROP TABLE` 会连带删掉这两条索引 —— 故该脚本**必须**在换名之后
+> 重新创建它们（不重建即静默丢索引）。
+>
 > 索引只在上表定义；新增索引须说明它服务哪个查询，禁止「为建而建」。
 
 ## 7. 迁移与演进策略
 
-1. **建表方式**：启动时按文件名顺序执行 `app/migrations/*.sql`（`0001_init.sql` 起，全部 `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`），执行记录写入 `schema_migration` 表；应用每次启动自动补齐，**不需要人工介入**（`AC-013` 一条启动命令）。
-2. **变更规则（只增不改）**：新增列必须带默认值或允许 NULL；**不删列**；不修改既有列的类型；重命名走「加新列 → 双写 → 观察一个迭代 → 清理旧列」。`audit_log` 与全部资金留痕表的行**禁止 UPDATE / DELETE**（触发器强制，`NFR-009`）。
+1. **建表方式**：启动时按文件名顺序执行 `app/migrations/*.sql`（`0001_init.sql` 起，当前为 `0001`~`0004`），执行记录写入 `schema_migration` 表；应用每次启动自动补齐，**不需要人工介入**（`AC-013` 一条启动命令）。脚本一律可重跑：`CREATE TABLE / INDEX IF NOT EXISTS`、`DROP ... IF EXISTS`，而 `ALTER TABLE ... ADD COLUMN`（SQLite 无 `IF NOT EXISTS`）由 `app/db.py::apply_migration` **按列存在性跳过** —— 否则脚本执行到一半失败后重跑会撞 `duplicate column name`，应用再也起不来。
+2. **变更规则（只增不改）**：新增列必须带默认值或允许 NULL；**不删列**；不修改既有列的类型；重命名走「加新列 → 双写 → 观察一个迭代 → 清理旧列」。`audit_log` 与全部资金留痕表的行**禁止 UPDATE / DELETE**（触发器强制，`NFR-009`）。**唯一的 DDL 例外是改 CHECK 白名单**：`0004_audit_event_types.sql` 为扩展 `audit_log.event_type` 走了「建新表 → 逐行搬移（含主键）→ `DROP` 旧表 → 换名 → 原样重建触发器与 §6 的两条索引」，且**不得放宽任何既有约束**（`actor` 长度、`ref_id` / `payload_json` 的 `NOT NULL`、`ref_table` 白名单逐字段照抄）。
 3. **回滚方案**：因只增不改，**回滚 = 回退代码到上一版 + 保留当前数据文件**（旧代码忽略新增列即可继续运行）；演示环境另有更强手段：`scripts/reset_demo.py` 删除数据文件并由种子重建（`NFR-003`/`NFR-004` 的恢复路径）。数据文件按 `data/` 目录存放，按日期复制即可备份（手工，本期不做自动备份，`NFR-004`）。
-4. **预留演进**（均为已知项，本期不做，届时按此路径改）：
+4. **演进路径**（第 1 项**已落地**，其余为已知项、本期不做，届时按此路径改）：
+   - **多市场多租户 —— 已落地为维度**（`REQ-035`，迁移 `0002_market_scope.sql`）：八张业务表带 `market_id`（归属与「无 `REFERENCES`」的原因见 §2.20 注），`stall` / `category` 的唯一约束已纳入 `market_id`（§6）；**本期只装载一个市场**（默认市场 `id = 1`），装载第二个市场是**纯 DML**（`INSERT` 一行市场 + 带 `market_id` 插业务行），**不改表结构** —— `AC-026` 以此取证。**多市场的运营流程**（跨市场权限、跨市场结算与报表）仍在 Out-of-Scope 第 4 条，属对架构叶子的重评，须先改 `docs/adr/`。
    - **离线暂存加密存储**（`Q-7`）：在 `offline_queue.payload_json` 上加加密层，或改为独立加密文件 + 元数据表；**不改列语义**。
-   - **多市场多租户**（Out-of-Scope 第 4 条）：新增 `market_id` 列并纳入各唯一约束；属对架构叶子的重评，须先改 `docs/adr/`。
    - **迁移到客户端-服务器数据库**：本模型字段类型（`INTEGER`/`TEXT`）可直接映射到 PostgreSQL/MySQL；触发条件见 `docs/adr/0001-单体与嵌入式数据库.md` §5。
    - **财务证据链保留期**（`Q-10`）：年限由甲方财务确认；本模型已按「可追溯、不可物理删除、支持归档」设计（版本行保留 + 禁止物理删除），**年限确认后只需增加归档作业，不改表结构**。
    - **批发 / 团购纸质凭证**（`Q-8`）：若后续开放打印，新增 `print_log` 表，不改 `transaction`。

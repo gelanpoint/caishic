@@ -1,8 +1,8 @@
 # market-trade-flow 任务清单
 
 - 特性目录: specs/market-trade-flow/
-- 上游产物: [spec.md](./spec.md)（32 `REQ` / 23 `AC` / 14 `NFR`）、[plan.md](./plan.md)、[data-model.md](./data-model.md)、[contracts/rest-api.md](./contracts/rest-api.md)
-- 生成日期: 2026-09-30 / 生成方式: AI 生成 + 人工评审（**负责人须在 CP-A/CP-B/CP-C/CP-D 四个检查点签署后才能继续**）
+- 上游产物: [spec.md](./spec.md)（43 `REQ` / 33 `AC` / 15 `NFR`；其中形态 2 为 `REQ-034`~`REQ-043` / `AC-025`~`AC-033` / `NFR-015`）、[plan.md](./plan.md)、[data-model.md](./data-model.md)、[contracts/rest-api.md](./contracts/rest-api.md)、[contracts/scale-midplatform.md](./contracts/scale-midplatform.md)、[spec-history.md](./spec-history.md)（过程记录）
+- 生成日期: 2026-09-30（形态 2 任务表 `§3b` 于 2026-10-06 追加）/ 生成方式: AI 生成 + 人工评审（**负责人须在 CP-A/CP-B/CP-C/CP-D 四个检查点签署后才能继续**；**形态 2 另设 `T-SCALE-00` 人工门禁**）
 
 ## 1. 任务生成规则（本清单的推导依据）
 
@@ -191,3 +191,55 @@
 | `AC-024` | —（时钟接缝属实现层能力，无契约端点） | T-SIM-00 | T-SIM-00（默认逐字段不变 + 注入生效 + 7 处取样点逐个覆盖）、T-SIM-01、T-SIM-02 |
 
 > 覆盖矩阵中的任务编号必须都存在于 §3；`AC` 与任务编号的对应关系是**核验依据**，不是说明性文字 —— 改动任务表须同步本矩阵。
+
+## 3b. 形态 2（秤端 / 中台拆分）任务表（`T-SCALE-*`，`2026-10-06` 新增）
+
+> **本表的前置门禁**：`T-SCALE-00` 未完成之前，**`T-SCALE-01` 及之后一律不得开工**。
+> 依据：`ADR-0005` / `ADR-0006` 状态均为 `提议`；`ADR-0006` **偏离宪法 §1**，须走宪法 §6 修订程序（AI 只起草）。
+> 本表沿用 §2 的排序原则：**测试先行、依赖只指向更小号、产出文件集合不相交才标 `[P]`**。
+>
+> **产出文件的硬边界**：`scale-fw/**`、`tests/scale/**`、`docs/hardware/**` 已在 `plan.md` §4 按目录级授权；
+> 本表逐文件登记。**未在本表登记的文件不得出现**。
+>
+> **两处刻意的约束（写在这里，避免实现时被"顺手优化"掉）**：
+> ① `scale-fw/core/**` **不得 `#include` 任何 ESP-IDF 头文件** —— 一旦引入，主机侧单测就没了，`Q-21` 会从"已知边界"变成"完全没有验证"；
+> ② 中台侧新增端点**必须复用 `app/domain/pricing.py::create_transaction`**，不得另写一份记账 —— 账口只能有一个（`ADR-0005` §3 第 4 条）。
+
+| 编号 | 标题 | 依赖 | 并行 | 关联 REQ/AC | 验收方式 | 预估产出文件 |
+| --- | --- | --- | --- | --- | --- | --- |
+| T-SCALE-00 | **人工门禁（AI 不得代签）**：负责人批准 `ADR-0005`（→`已接受`）、`ADR-0006`（→`已接受`，并完成宪法 §1 修订的三方批准记录），并批准 `spec.md` §4.2 的 `NFR-008` 重新登记 | — | | —(门禁) | 两份 ADR 状态由 `提议` 改为 `已接受`；`constitution.md` §1 与 §8 有修订记录且头部版本递增；`spec.md` §4.2 的批准状态改为 `已批准`；`AGENTS.md` §1 的 ADR 登记表状态同步 | docs/adr/0005-秤端与中台拆分.md、docs/adr/0006-秤端嵌入式技术栈.md、.specify/memory/constitution.md、specs/market-trade-flow/spec.md |
+| T-SCALE-01 | 中台迁移 `0002`：新增 `market` 表；`merchant` / `stall` / `product` / `price_item` / `commission_rule` / `daily_aggregate` / `settlement` 增 `market_id` 并回填默认市场。**不改写 `0001_init.sql`**（既有库不会拾取新 DDL，属 `Q-17` 同类风险） | T-SCALE-00 | | REQ-035；AC-026 | ① 从零建库后两个市场的行**互不可见、互不串账**；② **装载第二个市场只跑 DML、不改 DDL**（以迁移文件清单为证）；③ **单机演示形态不退化**：既有全量用例结果与改动前一致 | app/migrations/0002_market_scope.sql、app/db.py |
+| T-SCALE-02 | 中台设备模型与令牌：`device` 表（`device_id` / 令牌摘要 / 绑定市场+摊位 / 固件版本 / 最后心跳）；令牌**只存摘要、不存明文** | T-SCALE-01 | [P] | REQ-036；AC-027 | ① 令牌明文**不入库、不进日志**（与 `RL-5` 同口径，扫描断言）；② 设备绑定唯一性由约束兜底；③ **对外接缝（契约测试按 TDD 先声明，实现照此提供）**：`app/domain/device.py::provision_device(conn, *, device_id, market_code, stall_no, token) -> None` —— 语义 = **运维侧预注册**（令牌只存摘要、直接 INSERT）。测试靠它构造"已注册设备"，**不另造端点**（`RL-1`） | app/migrations/0003_device.sql、app/domain/device.py |
+| T-SCALE-02b | **中台迁移：扩展 `audit_log` 的 `event_type` 白名单**，使 `scale_amount_mismatch` 可写入（`AC-030` 的前置）。`0001_init.sql` 的 `event_type` 是 **9 值 CHECK**，SQLite **改不了 CHECK** ⇒ 必须**重建表**：drop 两个「只增不改」触发器 → 建新表 → **逐行搬移既有数据** → 换名 → 重建触发器 | T-SCALE-01 | | REQ-038；AC-030；NFR-009 | ① 重建后**既有 `audit_log` 行数一行不少**（搬移前后计数相等，且抽样比对 `payload_json`）；② `audit_log_no_update` / `audit_log_no_delete` **仍然生效**（现场各试一次 `UPDATE`/`DELETE`，必须被拒绝）；③ 新 `event_type` 可写入、旧 9 值仍可写入；④ 非法 `event_type` 仍被 CHECK 拒绝 | app/migrations/0004_audit_event_types.sql |
+| T-SCALE-03 | **契约测试（先红）**：`contracts/scale-midplatform.md` 的 **7 个端点**逐条覆盖，含 `MT-2001`~`MT-2005`、幂等命中返回首次结果、`amount_mismatch` 三个必做动作（入账取中台值 / 写留痕 / 如实返回）、**越权字段不采信** | T-SCALE-02 | | REQ-034~REQ-043；AC-025~AC-033 | 每个端点先跑成**失败**；错误码逐条有用例；**`AC-030` 的负例必须真造出"不一致"状态**（改一个分位），不许只断言字段存在 | tests/scale/conftest.py、tests/scale/scale_support.py、tests/scale/scale_provision.py、tests/scale/test_scale_device.py、tests/scale/test_scale_catalog.py、tests/scale/test_scale_ingest.py、tests/scale/test_scale_settle.py |
+| T-SCALE-04 | 中台实现：设备激活与心跳端点；**并把 `MT-2001`~`MT-2005` 加进 `app/__init__.py::ERROR_STATUS`**（错误码 → HTTP 状态的**唯一映射点**；不加则这 5 个码会被 `TradeError` 判为表外而落到兜底 `MT-1014`） | T-SCALE-03 | [P] | REQ-034、REQ-036、REQ-040；AC-025、AC-027 | 对应契约测试由红转绿；**重复激活返回既有绑定**（不报错、不改绑）；**`stall_no` 与既有绑定不一致 ⇒ `MT-2005`，且请求里的 `stall_no` 不得被采信为新绑定**；`pending_count` **只用于观测，不拒绝任何交易** | app/api/scale_device.py、app/__init__.py |
+| T-SCALE-05 | 中台实现：字典与价目表下发端点（**窄响应体**：不含成本、不含佣金相关字段） | T-SCALE-03 | [P] | REQ-037、REQ-002；AC-028 | 对应契约测试由红转绿；**响应字段白名单逐一相等**（多一个字段即失败）；价目表为空时返回空数组**不报错** | app/api/scale_catalog.py |
+| T-SCALE-06 | 中台实现：**交易上报 + 重算比对 + 留痕**（复用 `pricing.create_transaction`；在线与补传共用同一端点） | T-SCALE-03、T-SCALE-05、**T-SCALE-02b** | | REQ-038、REQ-039、REQ-041；AC-029、AC-030、AC-031 | ① 入账金额一律为中台重算值；② 不一致时**三件事齐全**（入账取中台值 / `audit_log` 留痕 `event_type = scale_amount_mismatch` / 响应如实返回）；③ 幂等命中返回**首次**结论（`replayed=true`），不是重新比对的结论；④ 补传的 `business_date` 取**暂存时**的营业日 | app/api/scale_ingest.py、app/domain/scale_ingest.py |
+| T-SCALE-07 | 中台实现：收款确认（现金 / 取回收款码）与退货申请端点 | T-SCALE-06 | | REQ-043、REQ-042、REQ-009、REQ-010、REQ-013；AC-033、AC-002 | ① `qr_payload` **指向中台顾客页**，不得指向秤端；② 现金写**同一张支付流水表**（不另立现金表）；③ 退货冲正与佣金扣减**全部在中台计算**，重复申请只冲减一次 | app/api/scale_settle.py |
+| T-SCALE-08 | **固件核心 · 计价**（纯 C，不依赖 ESP-IDF）：`money.h` 定点类型 + `pricing.c` 的 `half_up_div` / `price_amount` / 合计与抹零 | T-SCALE-00 | [P] | REQ-038；AC-029 | ① **主机侧编译并跑通**（`zig cc -target x86_64-linux-musl`）；② 与 Python 权威实现同输入同输出；③ **全程整数、无浮点**（机械扫描固件核心不得出现 `float`/`double`） | scale-fw/core/money.h、scale-fw/core/pricing.c、scale-fw/core/pricing.h、scale-fw/test/test_pricing.c |
+| T-SCALE-09 | **golden vectors 生成器**：从 Python 权威实现导出向量集（含 0/1 克、50 公斤边界、半值四舍五入、抹零、改价） | T-SCALE-08 | | REQ-038；AC-029 | ① 删掉向量文件后重跑脚本**逐字节还原**；② `--check` 与现有文件比对不写入；③ **灵敏度**：把 Python 侧口径改一个分位 ⇒ `test_pricing` **必红**，还原复绿 | scripts/gen_pricing_vectors.py、scale-fw/test/vectors/pricing_golden.json |
+| T-SCALE-10 | **固件核心 · 本地暂存队列**：定长记录 + CRC；状态 `staged` / `acked` / `discarded`；达阈值只告警仍接受；写入失败明确报错 | T-SCALE-08 | [P] | REQ-040、REQ-041、REQ-030；NFR-013、NFR-014；AC-025、AC-031 | ① **绝不静默丢弃**：写满/写失败路径有用例，失败必须返回错误且**不留半条记录**；② 补传成功后**清除本地副本**可被扫描核对；③ 断电语义用"记录级 CRC + 追加写"表达，并有**截断记录被判无效**的用例 | scale-fw/core/queue.c、scale-fw/core/queue.h、scale-fw/test/test_queue.c |
+| T-SCALE-11 | **固件核心 · 报文编解码**：7 端点的请求/响应窄编解码；**越权字段不采信**；错误码解析 | T-SCALE-08 | [P] | REQ-034、REQ-036、REQ-038；AC-027 | ① 编解码**往返一致**（含中文与特殊字符转义）；② 响应里出现 `stall_id` / `market_id` 时**不得改变授权范围**（用例构造该场景）；③ 未知错误码**不得当成功** | scale-fw/core/proto.c、scale-fw/core/proto.h、scale-fw/test/test_proto.c |
+| T-SCALE-12 | **固件胶水 · 网络同步器**：WiFi + HTTP 客户端；激活 → 拉字典与价目表 → 上报 → 补传编排（按 `staged_at` 升序） | T-SCALE-10、T-SCALE-11 | | REQ-034、REQ-037、REQ-041；AC-025、AC-028 | ① 补传顺序由用例断言（乱序即红）；② 补传失败该条**保持暂存**、不阻断后续；③ **中台不可达时秤端仍能进入营业界面**（`AC-025` 的前半段）；④ **`sync.c` 必须不依赖 ESP-IDF**（`2026-10-06` 补登记）：编排逻辑只依赖 `core/` 冻结接口 + `sync.h` 自声明的**平台端口**（WiFi 状态 / HTTP 请求 / 单调时钟 / 存储读写），ESP-IDF 只出现在端口实现里 ⇒ 上面 ①②③ 三条从"静态检查"升级为**主机侧实测断言**（`test_sync.c`）。这是 `ADR-0006` §3.2 对冲 (a)「核心不依赖 ESP-IDF 才能在无硬件时被验证」向**编排层**的延伸 | scale-fw/main/net/http_client.c、scale-fw/main/net/sync.c、scale-fw/main/net/sync.h、**scale-fw/test/test_sync.c** |
+| T-SCALE-13 | **固件胶水 · 称重 / 界面 / 落盘**：HX711 与 UART 仪表两路采样、LVGL 图标选品与计价界面、二维码展示、LittleFS/NVS 落盘、`app_main.c` 开机编排、ESP-IDF 工程与构建说明 | T-SCALE-12 | | REQ-004、REQ-005、REQ-043；AC-006、AC-033 | ① **可在无硬件条件下做到的是"编译通过 + 静态检查"**，该边界必须写进 README（不得宣称已硬件验证，见 `Q-21`）；② 界面**全程无文本输入**；③ 二维码内容来自中台下发的 `qr_payload`；④ **本机无 ESP-IDF**，故实际只能做到**静态检查 + 人工评审**，"编译通过"须在装好 ESP-IDF 的环境补做并如实记录；⑤ **构建前置文件**（`2026-10-06` 补登记，原清单遗漏）：`main/idf_component.yml`（声明第三方组件 `littlefs` / `lvgl` / `esp_lvgl_port` 的来源与版本）与 `partitions.csv`（LittleFS 需要独立 storage 分区）。**缺这两个文件，即便在装好 ESP-IDF 的环境也构建不起来** —— 登记理由是 `plan.md` §4「未登记的文件不得出现」这条纪律**双向生效**：不许擅自新建，但**该登记的漏登记同样是缺陷** | scale-fw/CMakeLists.txt、scale-fw/README.md、scale-fw/main/CMakeLists.txt、scale-fw/main/app_main.c、scale-fw/main/idf_component.yml、scale-fw/partitions.csv、scale-fw/main/weigh/*、scale-fw/main/ui/*、scale-fw/main/store/* |
+| T-SCALE-14 | **端到端：分离形态同机双进程**（中台 + 秤端进程；断连 → 本地暂存 → 恢复 → 补传） | T-SCALE-06、T-SCALE-07、T-SCALE-12 | | REQ-034、REQ-038、REQ-040、REQ-041；AC-025、AC-028、AC-030、AC-031 | ① **先起秤端、后起中台**，秤端不卡死；② 断连期间成交 → 恢复后补传成功、**总数不翻倍**；③ 人为改一个分位 ⇒ 中台告警留痕且入账取中台值；④ 补传后秤端**无本地副本残留** | tests/e2e/test_split_mode.py |
+| T-SCALE-15 | **机械检查 + 灵敏度负例**：秤端固件**不含**佣金/日聚合/结算/看板/退货冲正计算（`NFR-015`）；秤端**不承载顾客页面** | T-SCALE-13 | [P] | REQ-042、REQ-043；NFR-015；AC-032、AC-033 | ① 扫描固件源码与符号表；② **灵敏度**：故意在 `scale-fw/core/` 塞一个 `commission_cents()` ⇒ **必红**，还原复绿；③ 故意塞一个顾客页 HTML ⇒ **必红** | tests/scale/test_scale_no_ledger.py |
+| T-SCALE-17 | **分离形态的可运行启动方式**（**本轮补漏**）：让两个部分能**真正分开启动、经网络对接**，而不是只在 pytest 里同机双进程。① **中台侧角色入口**：`run.py` 支持分离形态 —— 只提供 7 个秤端接入端点 + 运营端 + 顾客页，**不托管 `/scale/` 秤端界面**（那是固件的活）；形态 1（单机 all-in-one）**行为一字不变**（默认值不变）。② **主机侧秤端运行器**：可独立启动的秤端进程 —— 激活 → 拉字典与价目表 → 本地计价（**调用真 `scale-fw/core`**，不是 Python 复刻）→ 本地暂存 → 恢复后按 `staged_at` 升序补传；中台不可达时**仍能启动并完成本地暂存** | T-SCALE-04、T-SCALE-05、T-SCALE-06、T-SCALE-07 | | REQ-034、REQ-037、REQ-038、REQ-040、REQ-041；AC-025、AC-028 | ① **两个进程各自独立启动**：先起秤端、后起中台，秤端不卡死不退出；② 网络对接走**真实 HTTP**（不是进程内直调）；③ 形态 1 的 `python run.py` 默认行为与启动横幅**逐字节不变**（既有 540 条用例不得退化）；④ **不得宣称硬件在环** —— 主机侧运行器是"主机侧秤端"，`Q-21` 边界必须写进其说明与 README | run.py、scripts/scale_host_runner.py |
+| T-SCALE-16 | **收尾**：全量回归（含既有 540 条**不退化**）+ 单机形态与分离形态**并存**实证 + 文档同步 | T-SCALE-14、T-SCALE-15、**T-SCALE-17** | | —(收尾) | ① `python -m pytest -q` 结果与 `T-SCALE-00` 前基线一致（除既有的 3 条平台耦合项）；② 两种形态**各自可独立启动**并跑通主链路（形态 2 的启动方式由 `T-SCALE-17` 交付，本任务只做实证）；③ 核对记录写入 `docs/PROJECT-STATE.md` | docs/PROJECT-STATE.md（追加核对记录） |
+
+## 6b. 形态 2 的 AC 覆盖矩阵（机械核验用：`AC-025`~`AC-033`）
+
+| AC | 契约测试 | 实现 | 验证（端到端 / 机械检查） |
+| --- | --- | --- | --- |
+| `AC-025` | T-SCALE-03 | T-SCALE-04、T-SCALE-10、T-SCALE-12 | T-SCALE-14 |
+| `AC-026` | T-SCALE-03 | T-SCALE-01 | T-SCALE-01（两市场隔离 + 只跑 DML）、T-SCALE-16 |
+| `AC-027` | T-SCALE-03 | T-SCALE-02、T-SCALE-04、T-SCALE-11 | T-SCALE-14 |
+| `AC-028` | T-SCALE-03 | T-SCALE-05、T-SCALE-12 | T-SCALE-14 |
+| `AC-029` | T-SCALE-03 | T-SCALE-08 | T-SCALE-08（主机侧单测）、**T-SCALE-09（golden vectors 逐条比对 + 负例）** |
+| `AC-030` | T-SCALE-03 | T-SCALE-06 | T-SCALE-14（真造不一致状态） |
+| `AC-031` | T-SCALE-03 | T-SCALE-06、T-SCALE-10 | T-SCALE-14 |
+| `AC-032` | —（属源码/符号面检查，无契约端点） | T-SCALE-07、T-SCALE-13 | **T-SCALE-15（灵敏度：塞 `commission_cents()` 必红）** |
+| `AC-033` | T-SCALE-03 | T-SCALE-07、T-SCALE-13 | **T-SCALE-15（灵敏度：塞顾客页必红）** |
+
+> **本矩阵与 §6 的 `AC-001`~`AC-024` 矩阵相互独立、不得互相覆盖**：形态 2 **不修改**任何既有 `AC` 的判据。
+> 改动本矩阵须同步 §3b 的任务表，反之亦然。

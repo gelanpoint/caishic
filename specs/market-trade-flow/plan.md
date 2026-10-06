@@ -79,13 +79,19 @@ market-trade-mvp/
 │   │   ├── commission.py         # 佣金口径与按实收金额计算（REQ-017）
 │   │   ├── settlement.py         # 日聚合、按需重算、结算单、对账等式（REQ-018~020）
 │   │   ├── metrics.py            # 三个使用率指标的派生计算（口径见 ./data-model.md §5.1；不落表）
-│   │   └── audit.py              # 审计日志（只增不改；NFR-009）
+│   │   ├── audit.py              # 审计日志（只增不改；NFR-009）
+│   │   ├── device.py             # **形态 2（`T-SCALE-02`）**：秤端设备预注册、令牌校验（**只比对摘要，明文不入库**）、激活与心跳的领域逻辑；绑定授权**只取自库**，不采信请求里的 `stall_id`/`market_id`
+│   │   └── scale_ingest.py       # **形态 2（`T-SCALE-06`）**：秤端上报的**重算比对**逻辑 —— 逐行比对 `product_id`/`weight_grams`/`unit_price_cents`/`amount_cents`；不一致时**入账取中台重算值**并留痕（契约 §5）
 │   ├── api/                      # HTTP 端点实现，逐一对应 ./contracts/rest-api.md
 │   │   ├── merchant.py           # 秤端（摊主）端点，含本摊位数据边界（REQ-032）
 │   │   ├── admin.py              # 运营端端点（字典与价目表、佣金口径、看板、结算单、指标导出；REQ-021/022）
 │   │   ├── customer.py           # 顾客扫码页端点，只返回有采集来源的字段（REQ-023）
 │   │   ├── health.py             # 健康检查端点（NFR-010）
-│   │   └── mock.py               # 进程内 Mock：支付回调与模拟电子秤，可注入成功/失败/超时（REQ-011）
+│   │   ├── mock.py               # 进程内 Mock：支付回调与模拟电子秤，可注入成功/失败/超时（REQ-011）
+│   │   ├── scale_device.py       # **形态 2（`T-SCALE-04`）**：激活 / 心跳（`POST .../devices/activate`、`.../heartbeat`）
+│   │   ├── scale_catalog.py      # **形态 2（`T-SCALE-05`）**：字典 / 价目表下发（`GET .../catalog`、`.../price-list`）；**窄响应体**，不含成本与佣金字段
+│   │   ├── scale_ingest.py       # **形态 2（`T-SCALE-06`）**：交易上报（`POST .../transactions`）；**在线与补传共用同一端点**
+│   │   └── scale_settle.py       # **形态 2（`T-SCALE-07`）**：收款确认与退货申请（`POST .../{transaction_no}/settle`、`.../refund`）；`qr_payload` 指向**中台顾客页**
 │   ├── static/                   # 纯静态前端（无构建、无 CDN，全部本地文件）
 │   │   ├── index.html            # 入口导航（列出操作端与顾客扫码页两个入口）
 │   │   ├── scale/                # 秤端页面与脚本（选品 → 称重计价 → 收款 → 凭证展示）
@@ -97,7 +103,8 @@ market-trade-mvp/
 ├── scripts/
 │   ├── launch.py                 # **演示启动器（`start.bat` / `start.sh` 的公共实现）**：演示数据目录默认落点、全部中文提示、失败说明（`CP-D` 现场验收发现 `.bat` 内的非 ASCII 会被 cmd 按**控制台代码页**解析坏 ⇒ 中文一律移出 `.bat`，脚本只留 ASCII 管道）
 │   ├── gen_seed.py               # 种子数据生成器：按**确定性构造规则**生成 ./app/seed_data/seed.json（**产物可复算**：删掉种子文件后重跑本脚本必须逐字节还原；`--check` 与现有文件比对不写入）。规则、规模依据与自检写在该文件 docstring，**改种子必须同步改它**
-│   └── reset_demo.py             # 重置演示数据：删除数据文件并重跑种子导入（NFR-003/NFR-004 的恢复手段）
+│   ├── reset_demo.py             # 重置演示数据：删除数据文件并重跑种子导入（NFR-003/NFR-004 的恢复手段）
+│   └── scale_host_runner.py      # **主机侧秤端运行器（形态 2，`T-SCALE-17` 新增）**：可独立启动的秤端进程 —— 激活 → 拉字典与价目表 → 本地计价（**调用真 `scale-fw/core`**，非 Python 复刻）→ 本地暂存 → 恢复后按 `staged_at` 升序补传；中台不可达时仍能启动并完成本地暂存。**不是硬件在环**（`Q-21`），该边界须写在其说明里
 └── tests/
     ├── contract/                 # 契约测试：先于实现编写，对齐 ./contracts/
     ├── unit/                     # 领域逻辑单测（含涉钱路径的用例级对账测试）
@@ -221,6 +228,47 @@ market-trade-mvp/
 > 其内部文件由 `./tasks.md` §3 的「预估产出文件」逐文件授权（如 `app/static/scale/index.html`、`app/static/js/offline.js`、
 > `app/seed_data/seed.json`、`app/migrations/0001_init.sql`、`tests/contract/*`）。**两个清单必须一致**：
 > `tasks.md` 出现而本表未列的文件，按"目录级授权"处理；若连目录也不在本表内，则**必须改本表**才能创建该文件。
+
+> **形态 2（秤端 / 中台分离，`2026-10-06` 新增；依据 `ADR-0005` / `ADR-0006`）**：
+> **中台侧的运行期依赖不变**（仍只有 `Flask`，`ADR-0004` 的两期边界不破）；秤端侧为 ESP-IDF（C）。
+> **铁律：`scale-fw/core/` 不依赖 ESP-IDF** —— 它只包含 `<stdint.h>` / `<string.h>` / `<stdbool.h>`，
+> 因而能在**主机侧**用 `zig cc -target x86_64-linux-musl` 编译并跑单元测试（本机实测可用，见 `Q-21`）。
+> 这一条不是为了好看：没有它，固件逻辑在**无硬件**条件下完全不可验证，等于本项目一直拒绝的"不可复现的验收"。
+>
+> **两端唯一接口**是 `./contracts/scale-midplatform.md` 的 **7 个端点**；`scale-fw/**` 与 `app/**` 不得互相引用
+> （跨语言、物理上也不可能，但仍写成禁令，避免有人用生成脚本绕过）。
+>
+> ```
+> scale-fw/                       # 秤端嵌入式固件（ESP32-S3 / ESP-IDF，C）
+> ├── README.md                   # 构建方式、烧录方式、为什么核心不依赖 ESP-IDF
+> ├── CMakeLists.txt              # ESP-IDF 工程入口
+> ├── core/                       # **纯 C 业务核心：不依赖 ESP-IDF，可在主机侧编译与单测**
+> │   ├── money.h                 # 定点金额与重量类型（整数「分」/ 整数「克」，全程整数、无浮点）
+> │   ├── pricing.c / pricing.h   # 定点计价：与 `app/domain/pricing.py` 逐位一致（`AC-029`）
+> │   ├── queue.c / queue.h       # 本地暂存队列：定长记录 + CRC，绝不静默丢弃（`RL-9`/`NFR-014`）
+> │   └── proto.c / proto.h       # 上报报文编解码（窄实现，不含运营端结构）
+> ├── main/                       # ESP-IDF 胶水层（薄，硬件相关）
+> │   ├── app_main.c              # 开机 → 激活 → 拉字典与价目表 → 营业界面（组合根：装配 11 个平台端口回调）
+> │   ├── CMakeLists.txt          # 主组件注册（`SRCS` 必须与磁盘文件一一对应）
+> │   ├── idf_component.yml       # **构建前置（`2026-10-06` 补登记）**：声明 `littlefs`/`lvgl`/`esp_lvgl_port` 的来源与版本；**本机无法核定版本，须按 `idf.py reconfigure` 实际报错核定**
+> │   ├── weigh/                  # 称重采样（HX711 / UART 仪表两路）
+> │   ├── ui/                     # LVGL：图标选品、计价、收款码展示（无文本输入，`AC-006`）
+> │   ├── store/                  # LittleFS/NVS 落盘（队列与字典缓存）
+> │   └── net/                    # WiFi + HTTP 同步器（7 端点的客户端）
+> ├── partitions.csv              # **构建前置（`2026-10-06` 补登记）**：LittleFS 需独立 storage 分区；偏移/大小须连续不重叠
+> └── test/                       # 主机侧单元测试（`zig cc` + 自制断言；**不引入测试框架依赖**）
+>     ├── test_pricing.c          # golden vectors 逐条比对（含 0/1 克、50 公斤、半值、抹零、改价）
+>     ├── test_queue.c            # 队列：不丢 / 幂等 / 补传成功后清除副本
+>     ├── test_proto.c            # 报文编解码往返 + 越权字段不得采信（`MT-2002` 语义）
+>     ├── test_sync.c             # **编排层主机侧实测**（`T-SCALE-12`）：`sync.c` 不依赖 ESP-IDF，喂内存假端口跑真断言 —— 补传按 `staged_at` 升序、失败保持暂存不阻断后续、中台不可达仍营业。**测试文件按覆盖度判，不按行数判**（`quality-gates.md` §1.2 补充裁定 ②）
+>     └── vectors/pricing_golden.json   # **产物**：由 `./scripts/gen_pricing_vectors.py` 生成（可复算，禁止手改）
+> ├── scripts/gen_pricing_vectors.py  # 从 Python 权威实现导出 golden vectors（`--check` 与现有文件比对不写入）
+> ├── tests/scale/                   # 中台侧：秤端接入端点的契约测试（对齐 `./contracts/scale-midplatform.md`）
+> └── docs/hardware/秤端硬件选型与成本.md  # 硬件选型、BOM 与成本出处（`ADR-0006` 的成本证据；**只论证，不采购**）
+> ```
+>
+> **本节的授权范围**：`scale-fw/`、`tests/scale/`、`docs/hardware/` 三处按**目录级**授权，
+> 其内部文件由 `./tasks.md` §3 的 `T-SCALE-*` **逐文件授权**；未在 `tasks.md` 登记的固件文件不得出现。
 
 ## 5. 数据流描述
 
