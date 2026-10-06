@@ -9,8 +9,9 @@
 ## 统一错误处理（契约 §1.2 / §4）
 
 - 错误码 → HTTP 状态的**唯一落点就是本文件的 `ERROR_STATUS`**，逐条抄自
-  `specs/market-trade-flow/contracts/rest-api.md` §4 错误码表（14 条）。**不得在别处再写一套映射**
-  —— 同一个规则写两遍，就是下次漂移的种子。
+  `specs/market-trade-flow/contracts/rest-api.md` §4 错误码表（14 条）与
+  `specs/market-trade-flow/contracts/scale-midplatform.md` §4 的秤端接入段（`MT-2001`~`MT-2005`，5 条）。
+  **不得在别处再写一套映射** —— 同一个规则写两遍，就是下次漂移的种子。
 - 业务层（`app/domain/`）**不依赖 HTTP**：只抛 `TradeError(code, message, detail)`，
   由下面的错误处理器统一转成契约 §1.2 的响应体与 §4 的状态码。
   这样"契约里的码"与"HTTP 怎么回"各自只有一个出处。
@@ -49,6 +50,15 @@ ERROR_STATUS: dict[str, int] = {
     # §4 的通用 5xx：未预期异常。**补它不是为了"多一个码"**，而是让"没人预料到的那一类"
     # 也有确定出口（统一格式 + 可报障标识 + 明确告知"结果不确定"），见模块 docstring。
     "MT-1014": 500,
+    # ---- 秤端接入段（`contracts/scale-midplatform.md` §4；与 `MT-1xxx` 连续编号、互不重叠）----
+    # 形态 2 的 5 个码**必须**落在这张表里：`TradeError` 构造时校验码在表内，
+    # 不在表内会被兜底处理器当成"未预期异常"回成 `MT-1014`(500) —— 调用方拿到的码与契约不一致，
+    # 等于契约白写（`test_scale_contract_surface.py` 对此有专门断言）。
+    "MT-2001": 401,  # 设备未激活或令牌无效
+    "MT-2002": 403,  # 设备与目标的（市场, 摊位）不匹配
+    "MT-2003": 409,  # 协议版本不兼容
+    "MT-2004": 422,  # 上报载荷不合法
+    "MT-2005": 409,  # 设备绑定冲突
 }
 
 
@@ -109,8 +119,15 @@ def current_db():
     return conn
 
 
-def create_app() -> Flask:
-    """创建并返回 Flask 应用实例。"""
+def create_app(*, serve_scale_ui: bool = True) -> Flask:
+    """创建并返回 Flask 应用实例。
+
+    `serve_scale_ui`（`T-SCALE-17`，默认 `True` = **形态 1 行为一字不变**）：
+    形态 1（单机演示）下中台顺带托管 `/scale/` 秤端界面；形态 2（分离部署）下秤端界面归
+    秤端固件，中台**不注册**该路由 ⇒ `/scale/` 返回 404。两种形态共用同一份领域代码与
+    同一批业务端点，**差别只在"谁托管秤端界面"** —— 这正是 `ADR-0005`「分离形态是新增
+    启动方式」的含义，而不是两套实现。
+    """
     app = Flask(__name__, static_folder=str(config.STATIC_DIR), static_url_path="/static")
     # 中文不转义为 \uXXXX，便于现场用浏览器直接看响应（演示友好的可读性）
     app.json.ensure_ascii = False
@@ -129,10 +146,16 @@ def create_app() -> Flask:
         """返回 `app/static/<name>/index.html`；目录名固定，不接受来自请求的路径片段。"""
         return send_from_directory(str(config.STATIC_DIR / name), "index.html")
 
-    @app.get("/scale/")
-    def scale_page():
-        """秤端（摊主收银台）页面。"""
-        return _page("scale")
+    if serve_scale_ui:
+        @app.get("/scale/")
+        def scale_page():
+            """秤端（摊主收银台）页面。
+
+            **分离形态（`ADR-0005`）下本路由不注册**：秤端界面归秤端（ESP32-S3 固件），
+            中台只提供 7 个接入端点 + 运营端 + 顾客页。此时 `/scale/` 返回 404 ——
+            这是**刻意**的，不是漏挂（`T-SCALE-17`）。
+            """
+            return _page("scale")
 
     @app.get("/admin/")
     def admin_page():
@@ -149,6 +172,16 @@ def create_app() -> Flask:
     def handle_trade_error(err: TradeError):
         """领域层抛出的契约错误码，统一转成 `{"error": {...}}` 与 §4 的状态码。"""
         return jsonify(error_body(err.code, err.message, err.detail)), err.status
+
+    # 秤端接入段（形态 2）的设备领域异常：与 `TradeError` **同一出口、同一映射表**。
+    # `app/domain/device.py` 刻意不依赖 HTTP、也不自带状态码（那会成为第二份映射），
+    # 故它的 `DeviceError` 在这里被转成与 `TradeError` 完全相同的响应体与状态码。
+    from .domain.device import DeviceError
+
+    @app.errorhandler(DeviceError)
+    def handle_device_error(err: DeviceError):
+        """`MT-2001`~`MT-2005` → 契约 §1.2 响应体 + `ERROR_STATUS` 里的状态码。"""
+        return jsonify(error_body(err.code, err.message, err.detail)), ERROR_STATUS[err.code]
 
     # ---- 统一错误处理 ---------------------------------------------------
     @app.errorhandler(404)
@@ -221,11 +254,21 @@ def create_app() -> Flask:
     from .api.health import bp as health_bp
     from .api.merchant import bp as merchant_bp
     from .api.mock import bp as mock_bp
+    # 形态 2（秤端 ↔ 中台）的 7 个端点：路径自带 `/api/scale/v1` 前缀（同 merchant 的做法，
+    # 蓝图上**不再**挂 `url_prefix`，否则会变成 `/api/scale/v1/api/scale/v1/...`）
+    from .api.scale_catalog import bp as scale_catalog_bp
+    from .api.scale_device import bp as scale_device_bp
+    from .api.scale_ingest import bp as scale_ingest_bp
+    from .api.scale_settle import bp as scale_settle_bp
 
     app.register_blueprint(health_bp)
     app.register_blueprint(merchant_bp)
     app.register_blueprint(mock_bp)
     app.register_blueprint(customer_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(scale_device_bp)
+    app.register_blueprint(scale_catalog_bp)
+    app.register_blueprint(scale_ingest_bp)
+    app.register_blueprint(scale_settle_bp)
 
     return app

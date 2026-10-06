@@ -19,6 +19,7 @@ from contract_support import (
     CONTRACT_ENDPOINTS,
     CONTRACT_ERROR_CODES,
     NON_API_ROUTES,
+    SCALE_CONTRACT_ENDPOINTS,
     assert_error_response,
     assert_route_table_matches_contract,
     error_envelope_violations,
@@ -76,7 +77,12 @@ def test_non_api_routes_are_exactly_the_exempt_whitelist(seeded_app):
         for method in rule.methods
         if method not in {"HEAD", "OPTIONS"}
     }
-    unexpected = sorted(all_routes - CONTRACT_ENDPOINTS - NON_API_ROUTES)
+    # 形态 2（秤端↔中台）的端点由**它自己的契约**登记，并在 `test_scale_contract_surface.py`
+    # 里单独做一遍双向核验。此处减去它，是为了让本文件继续只对 `rest-api.md` 负责 ——
+    # 两个契约各自有独立的「路由表 ↔ 契约」检查，谁少登记谁变红，互不掩盖。
+    unexpected = sorted(
+        all_routes - CONTRACT_ENDPOINTS - SCALE_CONTRACT_ENDPOINTS - NON_API_ROUTES
+    )
     assert not unexpected, f"出现契约 §2 未登记、也不在豁免表内的路由：{unexpected}"
 
 

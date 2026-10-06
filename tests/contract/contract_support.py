@@ -97,6 +97,34 @@ def parse_error_codes(text: str | None = None) -> dict[str, int]:
 CONTRACT_ENDPOINTS: frozenset[tuple[str, str]] = parse_contract_endpoints()
 CONTRACT_ERROR_CODES: dict[str, int] = parse_error_codes()
 
+#: 形态 2（秤端 ↔ 中台）契约：**独立文件、独立解析，刻意不并入上面两个集合**。
+#: 为什么不合并：`CONTRACT_ENDPOINTS` / `CONTRACT_ERROR_CODES` 的条数语义（31 端点 / 14 错误码）
+#: 是既有用例的**判据本身**（`test_contract_surface.py` 写死了条数），合并会让那套判据漂移，
+#: 而漂移掉的正是"有人改契约时必须来看一眼"的提示。
+#: 两个契约各自做一遍「路由表 ↔ 契约 §2」的双向核验（形态 2 在 `test_scale_contract_surface.py`），
+#: **谁少登记谁变红，互不掩盖**。
+SCALE_CONTRACT_PATH = REPO_ROOT / "specs" / "market-trade-flow" / "contracts" / "scale-midplatform.md"
+
+
+def load_scale_contract_text() -> str:
+    return SCALE_CONTRACT_PATH.read_text(encoding="utf-8")
+
+
+def parse_scale_contract_endpoints(text: str | None = None) -> frozenset[tuple[str, str]]:
+    """机械抽取形态 2 契约 §2 → `{(方法, 路径)}`（路径保留 `{param}` 占位形式）。"""
+    section = _section(text or load_scale_contract_text(), "## 2. 端点总表", "\n## 3. ")
+    return frozenset((m.group(2), m.group(1)) for m in _ENDPOINT_ROW_RE.finditer(section))
+
+
+def parse_scale_error_codes(text: str | None = None) -> dict[str, int]:
+    """机械抽取形态 2 契约 §4 → `{错误码: HTTP 状态}`（`MT-2xxx` 秤端接入段）。"""
+    section = _section(text or load_scale_contract_text(), "## 4. 统一错误码表", "\n## 5. ")
+    return {m.group(1): int(m.group(2)) for m in _ERROR_ROW_RE.finditer(section)}
+
+
+SCALE_CONTRACT_ENDPOINTS: frozenset[tuple[str, str]] = parse_scale_contract_endpoints()
+SCALE_CONTRACT_ERROR_CODES: dict[str, int] = parse_scale_error_codes()
+
 # 2. Flask 路由表 ↔ 契约 §2 双向一致
 
 _FLASK_PARAM_RE = re.compile(r"<(?:[^:<>]+:)?([^<>]+)>")
@@ -119,9 +147,15 @@ def registered_endpoints(app) -> set[tuple[str, str]]:
 
 
 def route_table_diff(app, contract: frozenset[tuple[str, str]] | None = None):
-    """返回 `(missing, extra)`：契约有而实现没有 / 实现有而契约没有。"""
+    """返回 `(missing, extra)`：契约有而实现没有 / 实现有而契约没有。
+
+    `extra` 一侧**先减去形态 2 的端点**：那些路由由 `scale-midplatform.md` 登记、
+    并在 `test_scale_contract_surface.py` 里做自己的双向核验。不减的话，形态 2 一注册路由，
+    本函数就会把它们报成「契约未登记」，而那是**误报** —— 两个契约各自负责自己的端点，
+    谁少登记谁在自己的检查里变红。
+    """
     expected = CONTRACT_ENDPOINTS if contract is None else contract
-    actual = registered_endpoints(app)
+    actual = registered_endpoints(app) - SCALE_CONTRACT_ENDPOINTS
     return sorted(expected - actual), sorted(actual - expected)
 
 

@@ -68,8 +68,8 @@
 | 表 | 查重键 |
 | --- | --- |
 | `merchant` | (`name`, `phone`) —— 本表无唯一索引，取档案三要素中的两项 |
-| `stall` | `stall_no`（`ux_stall_no`） |
-| `category` | `code`（`ux_category_code`） |
+| `stall` | (`market_id`, `stall_no`)（`ux_stall_no`）—— `0002` 起该索引由"全库唯一"改为**市场内唯一**（`AC-026`：两个市场可各有一个 `A-01`） |
+| `category` | (`market_id`, `code`)（`ux_category_code`）—— 同上，`0002` 起为市场内唯一 |
 | `stall_category_alias` | (`stall_id`, `alias_name`)（`ux_alias_stall_name`） |
 | `product` | (`stall_id`, `name`) —— 本表无唯一索引 |
 | `price_item` | (`stall_id`, `business_date`, `product_id`)（`ux_price_stall_date_product`） |
@@ -100,6 +100,12 @@ from .db import connect
 # 价目表写入的 source 取值（`data-model.md` §2.7 枚举）
 SOURCE_MANUAL = "manual"
 SOURCE_COPIED = "copied_previous_day"
+
+# 种子数据只灌**默认市场**（`0002_market_scope.sql` 显式插入 `id = 1` 的那一行，`market_code = M-0001`）。
+# 为什么要显式带它而不是靠 `market_id` 的 `DEFAULT 1`：
+# `ux_stall_no` / `ux_category_code` 自 `0002` 起是**市场内唯一**，查重若只按 `stall_no` / `code`
+# 而不带市场，跨市场同名会被误判成"已存在"而静默跳过插入 —— 单市场下看不出，多市场下就是**静默丢数据**。
+DEFAULT_MARKET_ID = 1
 
 # 计数器字段 → 打印名（顺序即打印顺序）
 _LABELS = (
@@ -179,13 +185,24 @@ def _merchant_id(conn: sqlite3.Connection, name: str, phone: str, summary: dict)
 
 
 def _stall_id(conn: sqlite3.Connection, stall: dict, merchant_id: int, summary: dict) -> int:
-    found = _scalar(conn, "SELECT id FROM stall WHERE stall_no = ?", (stall["stall_no"],))
+    found = _scalar(
+        conn,
+        "SELECT id FROM stall WHERE market_id = ? AND stall_no = ?",
+        (DEFAULT_MARKET_ID, stall["stall_no"]),
+    )
     if found is not None:
         _bump(summary, "stalls", False)
         return found
     cur = conn.execute(
-        "INSERT INTO stall (stall_no, merchant_id, name, payment_receiver_token) VALUES (?, ?, ?, ?)",
-        (stall["stall_no"], merchant_id, stall.get("stall_name"), stall["payment_receiver_token"]),
+        "INSERT INTO stall (market_id, stall_no, merchant_id, name, payment_receiver_token)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (
+            DEFAULT_MARKET_ID,
+            stall["stall_no"],
+            merchant_id,
+            stall.get("stall_name"),
+            stall["payment_receiver_token"],
+        ),
     )
     _bump(summary, "stalls", True)
     return int(cur.lastrowid)
@@ -194,10 +211,15 @@ def _stall_id(conn: sqlite3.Connection, stall: dict, merchant_id: int, summary: 
 def _category_ids(conn: sqlite3.Connection, data: dict, summary: dict) -> dict[str, int]:
     ids: dict[str, int] = {}
     for cat in data["categories"]:
-        found = _scalar(conn, "SELECT id FROM category WHERE code = ?", (cat["code"],))
+        found = _scalar(
+            conn,
+            "SELECT id FROM category WHERE market_id = ? AND code = ?",
+            (DEFAULT_MARKET_ID, cat["code"]),
+        )
         if found is None:
             cur = conn.execute(
-                "INSERT INTO category (code, name) VALUES (?, ?)", (cat["code"], cat["name"])
+                "INSERT INTO category (market_id, code, name) VALUES (?, ?, ?)",
+                (DEFAULT_MARKET_ID, cat["code"], cat["name"]),
             )
             found = int(cur.lastrowid)
             _bump(summary, "categories", True)
