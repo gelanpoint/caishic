@@ -54,24 +54,22 @@ window.GameOps = (function () {
   function merchantOps(stallNo, data, hooks, keepMessage, keepError) {
     var body = GamePanels.opsPanel("摊位 " + stallNo + " · 智能秤（商家操作）");
     if (!body) { return; }
+    /* 首次打开（而非操作后重绘）时：给一条**固定定位**的 toast + 把面板滚进视野。
+       窄屏下地图占满一屏、面板在下方，缺了这两条反馈，用户会以为"点了没反应"。 */
+    if (!keepMessage && !keepError) {
+      if (GamePanels.reveal) { GamePanels.reveal(body.parentNode); }
+      if (GamePanels.toast) { GamePanels.toast("已打开 摊位 " + stallNo + " 的调价 / 上下架面板"); }
+    }
     body.appendChild(node("div", "muted",
       "调价与上架 / 下架都提交到真实端点；成功后地图标牌与悬停清单会重新取数刷新。"));
 
     var result = node("div", "result" + (keepError ? " err" : keepMessage ? " ok" : ""), keepMessage || "");
     body.appendChild(result);
 
-    if (!data) {
-      body.appendChild(node("div", "muted", "该摊位数据未取到（服务端未响应）。点右上角刷新重试。"));
-      return;
-    }
-    if (!data.items.length) {
-      body.appendChild(node("div", "muted",
-        data.priceListMissing ? "该摊位当日价目表缺失（§3.3 的 price_list_missing）。" : "该摊位当前没有在售商品。"));
-    }
-    data.items.forEach(function (item) {
-      body.appendChild(priceRow(stallNo, data, item, hooks, result));
-    });
-
+    /* 「本次会话内已下架」放在**最上面**，不是列表末尾。理由（实玩发现）：
+       面板内层 `.body` 只有 340px 高，25 件商品本就要内滚；把恢复入口摆在 24 行之后，
+       实测该按钮落在视口之外、`elementFromPoint` 取不到 —— 用户下架后**找不到怎么恢复**。
+       放在顶部则下架后一眼就能看到「上架」。 */
     var shelved = shelfOf(stallNo);
     if (shelved.length) {
       body.appendChild(node("h4", "op-head", "本次会话内已下架（点「上架」可恢复）"));
@@ -85,6 +83,18 @@ window.GameOps = (function () {
         body.appendChild(line);
       });
     }
+
+    if (!data) {
+      body.appendChild(node("div", "muted", "该摊位数据未取到（服务端未响应）。点右上角刷新重试。"));
+      return;
+    }
+    if (!data.items.length) {
+      body.appendChild(node("div", "muted",
+        data.priceListMissing ? "该摊位当日价目表缺失（§3.3 的 price_list_missing）。" : "该摊位当前没有在售商品。"));
+    }
+    data.items.forEach(function (item) {
+      body.appendChild(priceRow(stallNo, data, item, hooks, result));
+    });
   }
 
   function priceRow(stallNo, data, item, hooks, result) {

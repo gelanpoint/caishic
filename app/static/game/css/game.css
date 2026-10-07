@@ -61,7 +61,13 @@ code { background: #223037; padding: 1px 4px; border-radius: 3px; font-size: 12p
 main { display: flex; gap: 12px; padding: 12px; align-items: flex-start; }
 .stage-col { flex: 1 1 auto; min-width: 0; }
 .side { flex: 0 0 360px; display: flex; flex-direction: column; gap: 12px; }
-@media (max-width: 1180px) {
+/* 断点 = **地图能拿到 2 倍整数缩放的宽度**，不是"看起来够不够宽"。
+   实测：并排布局要给右侧面板 360px + 间距/内边距，舞台宽 ≈ 窗口宽 − 398；
+   而 2 倍缩放需要舞台 ≥ 1026（地图原生 512 × 2）。
+   ⇒ 窗口 < 1424 时若仍并排，舞台放不下 2 倍，画布只能退到 1 倍（实测 1280 窗口下地图
+   只有 512px、标牌字几乎看不清）。故断点取 1430：这一区间改为**堆叠**，
+   让地图独占整宽、保住 2 倍整数缩放（画布显示尺寸恒等于后备像素，永不分数重采样）。 */
+@media (max-width: 1430px) {
   /* 窄屏：地图在上、面板在下。**必须 `align-items: stretch`** —— 默认的 `flex-start` 会让
      `.stage-col` 按内容（画布原始宽度）撑开，于是 `max-width: 100%` 失去参照、地图被横向截掉。 */
   main { flex-direction: column; align-items: stretch; }
@@ -98,6 +104,13 @@ main { display: flex; gap: 12px; padding: 12px; align-items: flex-start; }
 .tooltip.hide { display: none; }
 .tip-head { font-size: 12px; color: var(--accent2); margin-bottom: 6px; }
 .tip-list { max-height: 240px; overflow: auto; }
+/* 长清单（如 25 件商品）自然高度约 480px，而上面这条上限 240px ⇒ **一半商品永远看不到**，
+   且 `.tooltip` 是 `pointer-events: none`，用户连滚都滚不了（实测：scrollHeight 480 vs 可视 240）。
+   故长清单改**多列**铺开，一次看全，不再依赖滚动。列数由 JS 按件数决定。 */
+.tooltip.wide { max-width: 560px; }
+.tip-list.tip-col2 { column-count: 2; column-gap: 16px; max-height: none; }
+.tip-list.tip-col3 { column-count: 3; column-gap: 16px; max-height: none; }
+.tip-list.tip-col2 .tip-row, .tip-list.tip-col3 .tip-row { break-inside: avoid; }
 .tip-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
 .tip-row:nth-child(odd) { background: rgba(255, 255, 255, 0.03); }
 .tip-name { color: var(--fg); }

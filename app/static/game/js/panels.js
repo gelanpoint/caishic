@@ -126,18 +126,50 @@ window.GamePanels = (function () {
         list.appendChild(line);
       });
     }
+    /* 长清单**多列铺开**：件数越多列越多。25 件商品单列要 480px，而 `.tip-list` 上限 240px，
+       用户又滚不动（`.tooltip` 是 pointer-events:none）⇒ 原先有一半商品根本看不到。 */
+    var count = data ? data.items.length : 0;
+    var cols = Math.max(1, Math.min(3, Math.ceil(count / 14)));
+    setListMode(cols);
+    el.tooltip.classList.toggle("wide", cols > 1);
     el.tooltip.classList.remove("hide");
     var stage = el.stage ? el.stage.getBoundingClientRect() : null;
-    var left = point && stage ? point.clientX - stage.left + 14 : 12;
-    var top = point && stage ? point.clientY - stage.top + 12 : 12;
+    var vh = (typeof window !== "undefined" && window.innerHeight) || 0;
+    var stageTop = stage ? stage.top : 0;
     var width = el.tooltip.offsetWidth || 200;
     var height = el.tooltip.offsetHeight || 120;
+    var left = point && stage ? point.clientX - stage.left + 14 : 12;
+    var topBelow = point && stage ? point.clientY - stageTop + 12 : 12;
+    var top = topBelow;
+    /* 地图比视口高（舞台底部在屏幕外），所以**不能只按舞台裁剪**：光标在下面一排摊位时，
+       清单会整块掉到屏幕外。下方放不下就**翻到光标上方**。 */
+    if (stage && vh && (stageTop + topBelow + height) > vh - 8) {
+      var topAbove = point.clientY - stageTop - height - 12;
+      if (topAbove >= 4) { top = topAbove; }
+    }
     if (stage) {
       left = Math.max(4, Math.min(left, stage.width - width - 4));
       top = Math.max(4, Math.min(top, stage.height - height - 4));
     }
+    /* 最后兜底：翻上去仍放不下（清单比视口还高）⇒ 退回**单列 + 内部滚动**。
+       ⚠️ 绝不能给多列容器设 max-height：多列会把放不下的内容溢出到**新列**，
+       而新列在水平方向被裁掉（实测 scrollWidth 785 > clientWidth 213 ⇒ 商品直接丢）。 */
+    if (stage && vh && (stageTop + top + height) > vh - 8) {
+      setListMode(1);
+      el.tooltip.classList.remove("wide");
+      height = el.tooltip.offsetHeight || height;
+      top = Math.max(4, Math.min(top, stage.height - height - 4));
+    }
     el.tooltip.style.left = left + "px";
     el.tooltip.style.top = top + "px";
+  }
+
+  /* 清单的列模式（1/2/3 列）。切模式时必须清掉内联 max-height —— 见上面的警告。 */
+  function setListMode(cols) {
+    el.tooltipList.className = "tip-list" +
+      (cols === 2 ? " tip-col2" : cols === 3 ? " tip-col3" : "");
+    el.tooltipList.style.maxHeight = "";
+    el.tooltipList.scrollTop = 0;
   }
 
   function hideHover() {
@@ -159,6 +191,19 @@ window.GamePanels = (function () {
     el.opsTitle.textContent = title;
     el.opsBody.innerHTML = "";
     return el.opsBody;
+  }
+
+  /* 把面板带进视野。1280 这类窄屏下布局是「地图在上、面板在下」，而地图本身就占满一屏
+     （原生 1024×768）⇒ 不滚动的话，用户点了智能秤**看不到操作面板**，像是没反应。
+     只在面板确实不在视口内时才滚，避免无谓跳动。 */
+  function reveal(target) {
+    if (!target || !target.getBoundingClientRect || typeof window === "undefined") { return; }
+    var vh = window.innerHeight || 0;
+    if (!vh) { return; }
+    var rect = target.getBoundingClientRect();
+    if (rect.bottom <= 0 || rect.top >= vh) {
+      if (target.scrollIntoView) { target.scrollIntoView({ block: "center", behavior: "smooth" }); }
+    }
   }
 
   function log(message, isError) {
@@ -195,6 +240,7 @@ window.GamePanels = (function () {
     hideHover: hideHover,
     showInfo: showInfo,
     opsPanel: opsPanel,
+    reveal: reveal,
     log: log,
     toast: toast,
     setBadge: setBadge,

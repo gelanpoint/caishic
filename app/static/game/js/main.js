@@ -13,10 +13,18 @@
 (function () {
   "use strict";
 
-  var SCALE = 2;                       /* 像素风：整数倍放大，保持像素锐利 */
+  /* 像素风：**放大倍数必须是整数**，且**显示尺寸必须等于后备像素尺寸**。
+     反例（本文件第一版的真缺陷，实测抓出）：后备画布写死 2 倍（1024px），显示交给
+     `width:100%` ⇒ 容器比 1024 窄时被浏览器**按分数比例缩小**。实测窗口 1280 时显示
+     882px（倍率 0.8613），画布水平游程 **39.5% 变成奇数** —— 每个源像素被抻成长短不一，
+     像素风当场糊掉。倍率 1.0 时奇数游程为 **0%**。
+     故改为：按舞台可用宽度取**能放下的最大整数倍**（上限 MAX_SCALE），并把显示尺寸
+     写成与后备像素**完全相同**，从根上杜绝分数重采样。 */
+  var MAX_SCALE = 2;
   var state = {
     world: null, entities: null, businessDate: null, view: "merchant",
-    hover: null, hoverPlot: null, selected: null, operatingStall: null, lastPoint: null
+    hover: null, hoverPlot: null, selected: null, operatingStall: null, lastPoint: null,
+    scale: 0
   };
   var canvas = null;
   var ctx = null;
@@ -84,29 +92,76 @@
     canvas = $("gameCanvas");
     if (!canvas) { return; }
     ctx = canvas.getContext("2d");
-    /* 画布**后备像素**是地图的整数倍（像素锐利）；**显示尺寸**交给 CSS：宽度自适应容器、
-       上限为原生宽度，高度按内在比例（否则窄窗口下地图会被横向截掉）。 */
-    canvas.width = state.world.widthPx * SCALE;
-    canvas.height = state.world.heightPx * SCALE;
-    canvas.style.maxWidth = state.world.widthPx * SCALE + "px";
-    canvas.style.width = "100%";
-    canvas.style.height = "auto";
-    if (ctx && ctx.setTransform) { ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0); }
+    applyScale();
+    applyScale();      /* 第二遍：第一遍可能因原先的横向滚动条而低估可用宽度 */
     if (listenersBound) { return; }        /* 刷新会重建地图，但事件监听只绑一次 */
     listenersBound = true;
     canvas.addEventListener("mousemove", onMove);
     canvas.addEventListener("mouseleave", onLeave);
     canvas.addEventListener("click", onClick);
+    /* 清单万一仍放不下（极窄窗口）：把滚轮转给清单。`.tooltip` 是 pointer-events:none，
+       用户无法直接滚它 —— 没有这条转发就等于"看得到一半、够不着另一半"。 */
+    canvas.addEventListener("wheel", function (event) {
+      var list = $("tooltipList");
+      var tip = $("tooltip");
+      if (!list || !tip || tip.classList.contains("hide")) { return; }
+      if (list.scrollHeight > list.clientHeight + 1) {
+        list.scrollTop += event.deltaY;
+        if (event.preventDefault) { event.preventDefault(); }
+      }
+    }, { passive: false });
+    /* 窗口尺寸变了要**重选整数倍**（否则又会退回分数缩放）。rAF 循环会重绘。 */
+    if (typeof window !== "undefined" && window.addEventListener) {
+      window.addEventListener("resize", function () { applyScale(); });
+    }
+  }
+
+  /* 舞台（画布容器）当前可用于画布的宽度；量不到就退回视口宽度。 */
+  function availableWidth() {
+    var stage = canvas && canvas.parentNode;
+    var w = stage && stage.clientWidth ? stage.clientWidth : 0;
+    if (!w && typeof document !== "undefined") {
+      w = document.documentElement.clientWidth || 0;
+    }
+    return w || 1024;
+  }
+
+  /* 取能放下的**最大整数倍**；放不下 1 倍时也保持 1 倍（宁可横向滚动，也不缩糊）。 */
+  function fitScale() {
+    var wpx = state.world.widthPx;
+    /* 减 2px：舞台有 1px 边框，且避免"刚好等于"时反复横跳 */
+    var scale = Math.floor((availableWidth() - 2) / wpx);
+    if (!isFinite(scale) || scale < 1) { scale = 1; }
+    if (scale > MAX_SCALE) { scale = MAX_SCALE; }
+    return scale;
+  }
+
+  function applyScale() {
+    if (!canvas || !state.world) { return; }
+    var scale = fitScale();
+    var nativeW = state.world.widthPx * scale;
+    if (state.scale === scale && canvas.width === nativeW) { return; }
+    state.scale = scale;
+    canvas.width = nativeW;
+    canvas.height = state.world.heightPx * scale;
+    /* 显示尺寸 = 后备像素尺寸（1:1）⇒ 任何窗口宽度下都不会发生分数比例重采样。 */
+    canvas.style.maxWidth = "none";
+    canvas.style.width = canvas.width + "px";
+    canvas.style.height = canvas.height + "px";
+    if (ctx && ctx.setTransform) { ctx.setTransform(scale, 0, 0, scale, 0, 0); }
+    if (typeof GameRender !== "undefined" && GameRender.invalidate) { GameRender.invalidate(); }
   }
 
   /* ---- 输入 ----------------------------------------------------------- */
   function pointToWorld(event) {
     var rect = canvas.getBoundingClientRect();
+    var scale = state.scale || 1;
+    /* 显示尺寸 = 后备像素（1:1）时 ratioX/ratioY 恒为 1；保留比值是为了万一被外部 CSS 缩放仍能算对。 */
     var ratioX = canvas.width / (rect.width || canvas.width);
     var ratioY = canvas.height / (rect.height || canvas.height);
     return {
-      x: (event.clientX - rect.left) * ratioX / SCALE,
-      y: (event.clientY - rect.top) * ratioY / SCALE
+      x: (event.clientX - rect.left) * ratioX / scale,
+      y: (event.clientY - rect.top) * ratioY / scale
     };
   }
 
