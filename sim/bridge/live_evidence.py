@@ -14,7 +14,7 @@
 
 | 判据 | 报告里对应的字段 | 判定 |
 | --- | --- | --- |
-| ① 31/31 端点覆盖 | `coverage` | 缺一即红（清单由**实际请求**反推，见 `live_adapter.Coverage`） |
+| ① 38/38 端点覆盖 | `coverage` | 缺一即红（清单由**实际请求**反推，见 `live_adapter.Coverage`） |
 | ② 全营业日对账 | `days[].reconciliation` | 每一行 `balanced=true` 且 `diff_cents=0` |
 | ③ 幂等重放不产生新交易 | `idempotency_replay` | 同一 `transaction_no` + 列表 `total` 前后相等 |
 | ④ 敏感扫描零命中 | `response_bodies` + 调用方传入的 `sensitive_hits` | **必须由调用方**用 `tests/contract/sensitive_scan.py` 真扫一遍 |
@@ -79,7 +79,7 @@ def verification_problems(
     """
     problems: list[str] = []
 
-    # ① 31/31 端点覆盖
+    # ① 38/38 端点覆盖
     coverage = report.get("coverage") or {}
     problems.extend(f"① 端点覆盖：{item}" for item in coverage_problems(coverage, expected_endpoints))
     if coverage.get("covered_count") != len(expected_endpoints):

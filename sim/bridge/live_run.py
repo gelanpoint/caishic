@@ -46,7 +46,9 @@ from pathlib import Path
 
 from ..core.clock import Block, SimClock
 from ..core.streams import StreamSet
-from .live_adapter import JsonClient, LiveAdapter
+from .live_adapter import JsonClient
+from .live_calls import LiveAdapter
+from .live_probe import probe_contract_endpoints
 from .live_evidence import latency_summary, write_report, write_responses
 from .live_scenario import LIVE_DEFAULT_DAYS, commission_plan, find_scenario, load_commission_rule
 from .server_launcher import launch_server, system_tree_digest
@@ -96,8 +98,9 @@ def _pick_stall(stall_nos: list, index: int) -> str:
     return stall_nos[index % len(stall_nos)]
 
 
+
 def run_live(params, config: LiveRunConfig, out_dir: Path | str) -> dict:
-    """跑一次 live 模式：真起被测服务、走完 31 个端点、落 `live_report.json`。"""
+    """跑一次 live 模式：真起被测服务、走完 38 个端点、落 `live_report.json`。"""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     scenario = find_scenario(config.scenario_id)
@@ -127,6 +130,7 @@ def run_live(params, config: LiveRunConfig, out_dir: Path | str) -> dict:
     days_rows: list[dict] = []
     replay_evidence: dict = {}
     commission_evidence: dict = {}
+    contract_probe: dict = {}
     health: dict = {}
 
     try:
@@ -213,8 +217,8 @@ def run_live(params, config: LiveRunConfig, out_dir: Path | str) -> dict:
                         "final_unit_price_cents": max(1, int(round(original * 0.97))),
                     })
 
-                # **当日最后一笔固定走收款码**：`POST /api/mock/payment/callback` 是 31 个端点之一，
-                # 若把它的出现与否交给随机数，「31/31 全覆盖」就变成碰运气的事
+                # **当日最后一笔固定走收款码**：`POST /api/mock/payment/callback` 是 38 个端点之一，
+                # 若把它的出现与否交给随机数，「38/38 全覆盖」就变成碰运气的事
                 # （cash_share=0.7、每天 2 笔时，整轮一次都不出现收款码的概率 ≈ 0.09）。
                 # 覆盖判据不能靠运气，故这里固定留一个确定性的收款码样本。
                 force_qr = index == config.txns_per_day - 1
@@ -246,6 +250,11 @@ def run_live(params, config: LiveRunConfig, out_dir: Path | str) -> dict:
                     if refund.get("replayed"):
                         state.extra["replayed_refund"] = state.extra.get("replayed_refund", 0) + 1
                     state.refunded += 1
+
+            # ---- 判据① 首日探针：§3.33~§3.38 必须被**真实调用**（否则覆盖清单停在 32） ----
+            if day_index == 0:
+                #: 首日探针：§3.33~§3.38 必须被真实调用（否则判据①的覆盖清单停在 32）
+                contract_probe = probe_contract_endpoints(adapter, business_date, config.seed)
 
             # ---- 离线暂存与补传（一天一次，取第一个摊位） ----
             first_stall = stall_nos[0]
@@ -344,6 +353,7 @@ def run_live(params, config: LiveRunConfig, out_dir: Path | str) -> dict:
         "response_bodies": len(client.bodies),
         "responses_path": str(responses_path),
         "idempotency_replay": replay_evidence,
+        "contract_probe": contract_probe,
         "server_log": str(server.log_path),
     }
     write_report(out, report)

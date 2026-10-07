@@ -75,7 +75,8 @@ def _report_lines(report: dict) -> list[str]:
         f"每营业日 {report['txns_per_day']} 笔 · HTTP 调用 {report['calls']} 次 · 就绪耗时 "
         f"{report['ready_elapsed_s']}s",
         f"[判据①] 端点覆盖 {coverage['covered_count']}/{coverage['expected_count']}"
-        + (f"；缺口 {coverage['missing']}" if coverage["missing"] else "（31/31 全覆盖）"),
+        + (f"；缺口 {coverage['missing']}" if coverage["missing"]
+           else f"（{coverage['covered_count']}/{coverage['expected_count']} 全覆盖）"),
         f"[判据②] 全营业日对账：{report['days_count'] - len(unbalanced)}/{report['days_count']} 天 balanced=true"
         + (f"；不平的日期 {unbalanced}" if unbalanced else ""),
         f"[判据③] 幂等重放：{replay.get('transaction_no')} 重发 → {replay.get('replayed_transaction_no')}"

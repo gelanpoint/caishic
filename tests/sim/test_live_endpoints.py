@@ -65,16 +65,20 @@ def contract_endpoints() -> list[tuple[str, str]]:
 
 
 def test_sim_manifest_matches_contract_both_ways():
-    """`sim` 内置的 32 个模板 ↔ 契约 §2 表：**双向逐条相等**（顺序也算）。"""
+    """`sim` 内置的模板 ↔ 契约 §2 表：**双向逐条相等**（顺序也算）。
+
+    **不写"契约有多少条"这个字面量**：条数、顺序、方法、路径都由下面这一条断言一起盯住
+    （`expected` 是**测试侧**当场从契约 §2 解析出来的）。写死条数只会让契约下次加端点时
+    多一处需要人肉同步的字面量 —— 那正是"检查退化成摆设"的来路。
+    """
     expected = contract_endpoints()
-    assert len(ENDPOINTS) == 32, f"契约是 32 个端点，sim 里内置了 {len(ENDPOINTS)} 个"
     assert list(ENDPOINTS) == expected, (
         "sim 内置的端点清单与契约 §2 表不一致：\n"
         f"  仅 sim 有：{[e for e in ENDPOINTS if e not in expected]}\n"
         f"  仅契约有：{[e for e in expected if e not in ENDPOINTS]}\n"
         f"  顺序不同处：{[i for i, (a, b) in enumerate(zip(ENDPOINTS, expected)) if a != b][:5]}"
     )
-    assert len(set(ENDPOINT_KEYS)) == 32, "端点键有重复 —— 覆盖清单会把两个端点记成同一个"
+    assert len(set(ENDPOINT_KEYS)) == len(ENDPOINTS), "端点键有重复 —— 覆盖清单会把两个端点记成同一个"
     print(f"[T-SIM-07] 端点清单与契约 §2 表双向逐条一致：{len(ENDPOINTS)} 条")
 
 

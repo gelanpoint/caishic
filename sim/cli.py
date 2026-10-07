@@ -231,7 +231,7 @@ def _run_integrated(args, params, base_out: Path) -> int:
 
 
 def _run_live_mode(args) -> int:
-    """`--mode=live`（`T-SIM-07`）：真起被测服务、走完 31 个端点、逐条打印六条判据。
+    """`--mode=live`（`T-SIM-07`）：真起被测服务、走完 38 个端点、逐条打印六条判据。
 
     编排与汇报都在 `sim/bridge/live_cli.py`（`quality-gates.md` §1.2 的 400 行门禁：按语义拆分）。
     **`model` 分支不受本函数影响** —— 它是已验收路径（`T-SIM-01/02/06` 的判据直接断言它的产物）。

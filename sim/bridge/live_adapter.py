@@ -1,4 +1,4 @@
-"""31 个端点的 **stdlib** HTTP 客户端（`T-SIM-07`；`docs/sim-design.md` §2.3）。
+"""契约 §2 端点的 **stdlib** HTTP 客户端 + 端点清单 + 覆盖记账（`T-SIM-07`；`docs/sim-design.md` §2.3）。
 
 ## 三条纪律（都是"写歪了这条设计就失效"的根因，不是风格偏好）
 
@@ -12,7 +12,7 @@
 
 ## 端点清单从哪来
 
-`ENDPOINTS` 是契约 §2 端点总表的**内置副本**（冻结契约的 32 条，按契约顺序）。
+`ENDPOINTS` 是契约 §2 端点总表的**内置副本**（冻结契约的 38 条，按契约顺序）。
 `tests/sim/test_live_endpoints.py` 会把这份副本与 `specs/market-trade-flow/contracts/rest-api.md`
 §2 表**双向逐条比对** —— 契约改了而这里没改（或反过来），立刻变红。
 **不解析 Markdown 来跑**：契约文档不是运行期依赖，它只用来做一致性比对。
@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlencode
 
-#: 契约 §2 端点总表（32 条，顺序与契约一致；编号即契约里的序号）
+#: 契约 §2 端点总表（38 条，顺序与契约一致；编号即契约里的序号）
 ENDPOINTS: tuple[tuple[str, str], ...] = (
     ("GET", "/healthz"),
     ("POST", "/api/merchant/session"),
@@ -65,6 +65,17 @@ ENDPOINTS: tuple[tuple[str, str], ...] = (
     # 由演示游戏需求反查发现的**已建模却未实现**的能力缺口（`product.status` 字段与索引
     # 自 `0001_init.sql` 起就存在，却无任何端点能改它）。**按契约顺序追加在末尾**。
     ("POST", "/api/merchant/products/{product_id}/status"),
+    # ---- `2026-10-06` 新增的 6 条（33~38）：演示控制台命名空间 + 一个秤端会话端点 ----
+    # 33~37（`REQ-053`~`REQ-057`）属**演示控制台**：与 §3.16/§3.17 的 Mock 组同一纪律，
+    # **无需认证**；35 的幂等键在**请求体**里（不是 `Idempotency-Key` 头）。
+    ("GET", "/api/demo/merchants"),
+    ("POST", "/api/demo/merchants"),
+    ("POST", "/api/demo/transactions/{transaction_no}/cancel"),
+    ("GET", "/api/demo/hub"),
+    ("POST", "/api/demo/sms-reminders"),
+    # 38（`REQ-058`）是**秤端会话端点**：必须带 `X-Stall-Session`（`stall_id` 只从会话取，`REQ-032`）。
+    # 与上面五条不是同一类，故单独成组并在此注明 —— 免得后人照抄成"演示端点"。
+    ("POST", "/api/merchant/products"),
 )
 
 #: 端点键 = `METHOD 模板`；覆盖清单的记账单位
@@ -155,7 +166,7 @@ def match_endpoint(method: str, path: str) -> str | None:
 
 
 def coverage_problems(coverage: dict, expected: tuple[str, ...] = ENDPOINT_KEYS) -> list[str]:
-    """覆盖清单的问题（空 = 31/31 全覆盖）。**纯函数**：缺一即红，可直接喂合成负例。"""
+    """覆盖清单的问题（空 = 38/38 全覆盖）。**纯函数**：缺一即红，可直接喂合成负例。"""
     problems: list[str] = []
     missing = [key for key in expected if key not in set(coverage.get("covered") or [])]
     if missing:
@@ -230,183 +241,3 @@ class JsonClient:
         if expect and status not in expect:
             raise ApiError(status, data)
         return status, data
-
-
-class LiveAdapter:
-    """31 个端点的类型化调用（每条都注明契约小节号，便于回查）。"""
-
-    def __init__(self, client: JsonClient) -> None:
-        self.client = client
-
-    # -- 秤端 -------------------------------------------------------------
-    def healthz(self):  # §3.1
-        return self.client.request("GET", "/healthz", expect=(200,))[1]
-
-    def create_session(self, stall_no: str):  # §3.2
-        return self.client.request("POST", "/api/merchant/session", body={"stall_no": stall_no},
-                                   expect=(201,))[1]
-
-    def get_price_list(self, session: str, business_date: str):  # §3.3
-        return self.client.request("GET", "/api/merchant/price-list",
-                                   headers={SESSION_HEADER: session}, query={"business_date": business_date},
-                                   expect=(200,))[1]
-
-    def put_price_list(self, session: str, business_date: str, *, copy_previous: bool = True,
-                       items: list | None = None):  # §3.4
-        body: dict[str, Any] = {"business_date": business_date, "copy_from_previous_day": copy_previous}
-        if items is not None:
-            body["items"] = items
-        return self.client.request("POST", "/api/merchant/price-list", body=body,
-                                   headers={SESSION_HEADER: session}, expect=(200,))[1]
-
-    def list_products(self, session: str):  # §3.5
-        return self.client.request("GET", "/api/merchant/products", headers={SESSION_HEADER: session},
-                                   expect=(200,))[1]
-
-    def set_product_status(self, session: str, product_id: int, *, status: str):  # §3.32
-        """上架／下架本摊位商品（`REQ-049`/`AC-039`）。`status` 合法取值 `active` / `inactive`。
-
-        路径参数用**字符串**拼接（与契约 §2 表一致）：本仓既有惯例是**不用** `<int:...>`
-        转换器 —— 坏标识若在路由层就被拦掉，会变成契约之外的 404，掩盖领域层的错误码。
-        """
-        return self.client.request("POST", f"/api/merchant/products/{product_id}/status",
-                                   body={"status": status}, headers={SESSION_HEADER: session},
-                                   expect=(200,))[1]
-
-    def create_transaction(self, session: str, items: list, idempotency_key: str):  # §3.6
-        return self.client.request("POST", "/api/merchant/transactions",
-                                   body={"items": items, "client_idempotency_key": idempotency_key},
-                                   headers={SESSION_HEADER: session, IDEMPOTENCY_HEADER: idempotency_key},
-                                   expect=(200, 201))
-
-    def list_transactions(self, session: str, *, business_date: str | None = None,
-                          limit: int | None = None):  # §3.7
-        query = {k: v for k, v in (("business_date", business_date), ("limit", limit)) if v is not None}
-        return self.client.request("GET", "/api/merchant/transactions", headers={SESSION_HEADER: session},
-                                   query=query or None, expect=(200,))[1]
-
-    def get_transaction(self, session: str, transaction_no: str):  # §3.8
-        return self.client.request("GET", f"/api/merchant/transactions/{transaction_no}",
-                                   headers={SESSION_HEADER: session}, expect=(200,))[1]
-
-    def price_change(self, session: str, transaction_no: str, body: dict):  # §3.9
-        return self.client.request("POST", f"/api/merchant/transactions/{transaction_no}/price-change",
-                                   body=body, headers={SESSION_HEADER: session}, expect=(200,))[1]
-
-    def pay(self, session: str, transaction_no: str, *, method: str, idempotency_key: str,
-            operator: str | None = None):  # §3.10
-        body: dict[str, Any] = {"method": method}
-        if operator is not None:
-            body["operator"] = operator
-        return self.client.request("POST", f"/api/merchant/transactions/{transaction_no}/payment",
-                                   body=body, headers={SESSION_HEADER: session,
-                                                       IDEMPOTENCY_HEADER: idempotency_key},
-                                   expect=(200, 202))
-
-    def refund(self, session: str, transaction_no: str, *, amount_cents: int,
-               idempotency_key: str):  # §3.11
-        return self.client.request("POST", f"/api/merchant/transactions/{transaction_no}/refund",
-                                   body={"amount_cents": amount_cents},
-                                   headers={SESSION_HEADER: session, IDEMPOTENCY_HEADER: idempotency_key},
-                                   expect=(200,))[1]
-
-    def merchant_dashboard(self, session: str, *, business_date: str | None = None):  # §3.12
-        query = {"business_date": business_date} if business_date else None
-        return self.client.request("GET", "/api/merchant/dashboard", headers={SESSION_HEADER: session},
-                                   query=query, expect=(200,))[1]
-
-    # -- 离线暂存 ---------------------------------------------------------
-    def offline_queue_status(self, session: str):  # §3.13
-        return self.client.request("GET", "/api/merchant/offline/queue", headers={SESSION_HEADER: session},
-                                   expect=(200,))[1]
-
-    def stage_offline(self, session: str, items: list, idempotency_key: str):  # §3.14
-        return self.client.request("POST", "/api/merchant/offline/queue",
-                                   body={"items": items, "client_idempotency_key": idempotency_key},
-                                   headers={SESSION_HEADER: session, IDEMPOTENCY_HEADER: idempotency_key},
-                                   expect=(201,))[1]
-
-    def offline_sync(self, session: str):  # §3.15
-        return self.client.request("POST", "/api/merchant/offline/sync", body={},
-                                   headers={SESSION_HEADER: session}, expect=(200,))[1]
-
-    # -- 进程内 Mock ------------------------------------------------------
-    def mock_scale_reading(self, weight_grams: int):  # §3.16
-        return self.client.request("POST", "/api/mock/scale/reading", body={"weight_grams": weight_grams},
-                                   expect=(200,))[1]
-
-    def mock_payment_callback(self, callback_no: str, payment_no: str, result: str):  # §3.17
-        return self.client.request("POST", "/api/mock/payment/callback",
-                                   body={"callback_no": callback_no, "payment_no": payment_no, "result": result},
-                                   expect=(200,))[1]
-
-    # -- 顾客扫码页 -------------------------------------------------------
-    def customer_stall_profile(self, stall_no: str):  # §3.18
-        return self.client.request("GET", f"/api/customer/stalls/{stall_no}/profile", expect=(200,))[1]
-
-    def customer_receipt(self, transaction_no: str):  # §3.19
-        return self.client.request("GET", f"/api/customer/receipts/{transaction_no}", expect=(200,))[1]
-
-    # -- 运营端 -----------------------------------------------------------
-    def admin_categories(self):  # §3.20
-        return self.client.request("GET", "/api/admin/categories", expect=(200,))[1]
-
-    def admin_create_category(self, code: str, name: str, status: str = "active"):  # §3.21
-        return self.client.request("POST", "/api/admin/categories",
-                                   body={"code": code, "name": name, "status": status}, expect=(201,))[1]
-
-    def admin_create_alias(self, stall_no: str, alias_name: str, category_id: int):  # §3.22
-        return self.client.request("POST", "/api/admin/aliases",
-                                   body={"stall_no": stall_no, "alias_name": alias_name,
-                                         "category_id": category_id}, expect=(201,))[1]
-
-    def admin_commission_rules(self):  # §3.23
-        return self.client.request("GET", "/api/admin/commission-rules", expect=(200,))[1]
-
-    def admin_put_commission_rule(self, *, pay_object: str, rate_bp: int, effective_from: str,
-                                  category_tier: str | None = None,
-                                  effective_to: str | None = None):  # §3.24
-        body: dict[str, Any] = {"pay_object": pay_object, "rate_bp": rate_bp, "effective_from": effective_from}
-        if category_tier is not None:
-            body["category_tier"] = category_tier
-        if effective_to is not None:
-            body["effective_to"] = effective_to
-        return self.client.request("PUT", "/api/admin/commission-rules", body=body, expect=(200,))[1]
-
-    def admin_dashboard(self, *, business_date: str | None = None):  # §3.25
-        query = {"business_date": business_date} if business_date else None
-        return self.client.request("GET", "/api/admin/dashboard", query=query, expect=(200,))[1]
-
-    def admin_daily_aggregate(self, business_date: str, stall_no: str | None = None):  # §3.26
-        body: dict[str, Any] = {"business_date": business_date}
-        if stall_no is not None:
-            body["stall_no"] = stall_no
-        return self.client.request("POST", "/api/admin/daily-aggregate", body=body, expect=(200,))[1]
-
-    def admin_create_settlement(self, stall_no: str, period_start: str, period_end: str):  # §3.27
-        return self.client.request("POST", "/api/admin/settlements",
-                                   body={"stall_no": stall_no, "period_start": period_start,
-                                         "period_end": period_end}, expect=(201,))[1]
-
-    def admin_settlements(self, *, stall_no: str | None = None, period_start: str | None = None,
-                          period_end: str | None = None):  # §3.28
-        query = {k: v for k, v in (("stall_no", stall_no), ("period_start", period_start),
-                                   ("period_end", period_end)) if v is not None}
-        return self.client.request("GET", "/api/admin/settlements", query=query or None, expect=(200,))[1]
-
-    def admin_reconciliation(self, business_date: str, stall_no: str | None = None):  # §3.29
-        query = {"business_date": business_date}
-        if stall_no is not None:
-            query["stall_no"] = stall_no
-        return self.client.request("GET", "/api/admin/reconciliation", query=query, expect=(200,))[1]
-
-    def admin_usage_metrics(self, business_date: str):  # §3.30
-        return self.client.request("GET", "/api/admin/metrics/usage", query={"business_date": business_date},
-                                   expect=(200,))[1]
-
-    def admin_audit_logs(self, *, stall_no: str | None = None, event_type: str | None = None,
-                         date_from: str | None = None, date_to: str | None = None,
-                         limit: int | None = None):  # §3.31
-        query = {k: v for k, v in (("stall_no", stall_no), ("event_type", event_type), ("from", date_from),
-                                   ("to", date_to), ("limit", limit)) if v is not None}
-        return self.client.request("GET", "/api/admin/audit-logs", query=query or None, expect=(200,))[1]

@@ -33,7 +33,8 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import uuid4
 
-from ..bridge.live_adapter import JsonClient, LiveAdapter
+from ..bridge.live_adapter import JsonClient
+from ..bridge.live_calls import LiveAdapter
 from ..bridge.server_launcher import launch_server
 from ..bridge.live_scenario import commission_plan, find_scenario, load_commission_rule
 

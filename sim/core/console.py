@@ -8,7 +8,7 @@ Python 决定 stdout 用什么编码，靠的是 `PYTHONUTF8` / `PYTHONIOENCODIN
 在中文 Windows 上没设这两个变量时是 `cp936`，于是仿真打印的 `⇒`、`①` 这类字符会直接
 `UnicodeEncodeError`（本实现第一版就实测踩到：`⇒` 在 GBK 下不可编码）。
 
-**为什么不 import `app.console`**：`sim/**` 不得 `import app`（唯一耦合面是 HTTP 契约的 31 个端点，
+**为什么不 import `app.console`**：`sim/**` 不得 `import app`（唯一耦合面是 HTTP 契约的 38 个端点，
 `tests/sim/test_sim_no_app_import.py` 机械钉死）。反过来 `app` 引用 `sim` 也被同一条闸门禁止
 （"仿真不是启动路径"）。所以这 20 行规则在两侧各有一份 —— 这是隔离闸门的代价，
 不是可以顺手消除的重复；能消除的是"靠环境变量的通过"，那一条已经消除。

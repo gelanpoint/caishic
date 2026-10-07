@@ -28,7 +28,7 @@ from .live_adapter import ApiError
 from .scenario import load_scenario, merged_overrides, scenario_files
 
 #: live 模式的默认营业日数：**必须 ≥ 30**，否则走不到月末，`POST/GET /api/admin/settlements`
-#: 这两个端点没机会被调用 ⇒ 31/31 的覆盖判据就不可能满足
+#: 这两个端点没机会被调用 ⇒ 38/38 的覆盖判据就不可能满足
 #: （这不是"默认取整好看"，是**端点覆盖的约束**）。
 LIVE_DEFAULT_DAYS = 30
 

@@ -85,16 +85,18 @@ def _response_bodies(report: dict) -> list:
 def test_criterion_1_all_endpoints_called(live):
     """① 全部端点被**真实调用**至少一次（清单由实际请求反推，不接受手写勾选）。"""
     coverage = live["coverage"]
-    assert coverage["expected_count"] == 32, "契约就是 32 个端点"
-    assert coverage["covered_count"] == 32, f"缺 {coverage['missing']}"
+    #: **不写条数字面量**：契约 ↔ 清单的逐条相等由 `test_live_endpoints.py` 独立盯
+    #: （它当场解析契约 §2），这里盯的是**只有实跑才能证明**的那一半 —— 清单每一条都真被调过。
+    assert coverage["covered_count"] == len(ENDPOINTS), f"缺 {coverage['missing']}"
     assert coverage["missing"] == []
     assert coverage["unmatched"] == [], "有请求没匹配到任何契约端点"
     assert set(coverage["covered"]) == {f"{m} {p}" for m, p in ENDPOINTS}
     # 产物路径可机读：覆盖清单单独落一份 JSON（判据①要求的"机读产物"）
     coverage_json = Path(live["report_path"]).with_name("coverage.json")
     assert coverage_json.is_file(), "覆盖清单必须落成独立 JSON 供第三方核对"
-    assert json.loads(coverage_json.read_text(encoding="utf-8"))["covered_count"] == 32
-    print(f"[判据①] 32/32 端点被真实调用（HTTP 调用 {live['calls']} 次）；清单：{coverage_json}")
+    assert json.loads(coverage_json.read_text(encoding="utf-8"))["covered_count"] == len(ENDPOINTS)
+    print(f"[判据①] {coverage['covered_count']}/{len(ENDPOINTS)} 端点被真实调用"
+          f"（HTTP 调用 {live['calls']} 次）；清单：{coverage_json}")
 
 
 def test_criterion_2_every_day_balanced(live):
