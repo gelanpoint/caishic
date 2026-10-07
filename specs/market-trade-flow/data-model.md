@@ -82,7 +82,7 @@
 | `stall_no` | TEXT | 是 | **市场内唯一**：`ux_stall_no` = (`market_id`, `stall_no`)；长度 1~16（`REQ-001` 按摊位查询、`REQ-035` 市场维度） | 无 | 摊位号 |
 | `merchant_id` | INTEGER | 是 | 外键 → `merchant.id`（`REQ-001`） | 无 | 所属商户 |
 | `name` | TEXT | 否 | 长度 ≤50（实现便利） | NULL | 摊位展示名 |
-| `payment_receiver_token` | TEXT | 是 | **脱敏值**：仅允许掩码形式（如首 4 位 + `****` + 末 4 位），长度 ≤32；**不得存完整收款账号**（`REQ-024`/`NFR-012`） | 无 | 收款标识（脱敏） |
+| `payment_receiver_token` | TEXT | 是 | **脱敏值**：掩码形式 = **前 2 位 + `****` + 后 4 位**（契约 `rest-api.md` §3.34 的注册口径），长度 ≤32，且**必须含 `****`**（`0001_init.sql` 用 `LIKE '%****%'` 在库层强制）；**不得存完整收款账号**（`REQ-024`/`NFR-012`） | 无 | 收款标识（脱敏） |
 | `status` | TEXT | 是 | 枚举：`active` / `inactive`（`REQ-001`） | `active` | 在营状态 |
 | `created_at` | TEXT | 是 | ISO-8601 | 当前时间 | |
 | `market_id` | INTEGER | 是 | 市场归属；`NOT NULL DEFAULT 1`（既有行由 SQLite 就地回填默认市场）；**无 `REFERENCES`**，原因见 §2.20 注 | 1 | 所属市场（`REQ-035`） |
@@ -145,6 +145,11 @@
 | `status` | TEXT | 是 | 枚举：`active` / `inactive`（`REQ-004` 摊位停用商品不出现在秤端） | `active` | |
 | `created_at` | TEXT | 是 | ISO-8601 | 当前时间 | |
 | `market_id` | INTEGER | 是 | 市场归属；`NOT NULL DEFAULT 1`（既有行由 SQLite 就地回填默认市场）；**无 `REFERENCES`**，原因见 §2.20 注 | 1 | 所属市场（`REQ-035`） |
+
+> **`product` 没有 `(stall_id, name)` 唯一索引（有意为之，本轮不加）**：`REQ-058`/`AC-048` 的「同摊位同名 ⇒ 更新而非新增」
+> **由应用层保证**（`POST /api/merchant/products` 先查后写）；**库里挡不住并发双写** —— 两条并发请求可能各插一行同名商品，
+> 之后按"同名"查询会命中多行。实测全库索引中**无** `(stall_id, name)` 唯一索引（§6）。
+> 若将来要 DB 级强制：须**新增迁移 + §6 登记**，且迁移前先确认历史数据无重名（否则唯一索引建不上）。
 
 ### 2.7 价目表项（`price_item`）
 
@@ -318,7 +323,7 @@
 | 字段 | 类型 | 必填 | 校验规则（来源） | 默认值 | 说明 |
 | --- | --- | --- | --- | --- | --- |
 | `id` | INTEGER | 是 | 主键自增 | 无 | |
-| `event_type` | TEXT | 是 | 枚举：`price_change` / `refund_applied` / `refund_duplicate_hit` / `offline_backfilled` / `offline_duplicate_discarded` / `payment_callback_duplicate_hit` / `staging_write_failed` / `offline_threshold_warned` / `commission_rule_changed` / `scale_amount_mismatch` / `transaction_confirmed` / `transaction_cancelled` / `payment_reminder_sent`（`NFR-009`、`REQ-007`、`REQ-013`、`REQ-015`、`REQ-016`、`REQ-029`、`REQ-030`、`REQ-038`/`AC-030`、`REQ-054`/`AC-044`、`REQ-055`/`AC-045`、`REQ-056`/`AC-046`） | 无 | 事件类型；`scale_amount_mismatch` 由 `0004_audit_event_types.sql` 扩入白名单，载荷含设备号、幂等键、秤端上报金额、中台重算金额与逐行差异（契约 `scale-midplatform.md` §5 第 4 条）；**末三个值**（`transaction_confirmed` / `transaction_cancelled` / `payment_reminder_sent`）由 `0005_demo_console.sql` 扩入白名单，分别对应「确认即支付」「取消即撤销」「催缴已发送」三件事的留痕（契约 `rest-api.md` §3.35~§3.37） |
+| `event_type` | TEXT | 是 | 枚举：`price_change` / `refund_applied` / `refund_duplicate_hit` / `offline_backfilled` / `offline_duplicate_discarded` / `payment_callback_duplicate_hit` / `staging_write_failed` / `offline_threshold_warned` / `commission_rule_changed` / `scale_amount_mismatch` / `transaction_confirmed` / `transaction_cancelled`（`NFR-009`、`REQ-007`、`REQ-013`、`REQ-015`、`REQ-016`、`REQ-029`、`REQ-030`、`REQ-038`/`AC-030`、`REQ-054`/`AC-044`、`REQ-055`/`AC-045`） | 无 | 事件类型；`scale_amount_mismatch` 由 `0004_audit_event_types.sql` 扩入白名单，载荷含设备号、幂等键、秤端上报金额、中台重算金额与逐行差异（契约 `scale-midplatform.md` §5 第 4 条）；**末两个值**（`transaction_confirmed` / `transaction_cancelled`）由 `0005_demo_console.sql` 扩入白名单，分别对应「确认即支付」与「取消即撤销」的留痕（契约 `rest-api.md` §3.35、§3.36） |
 | `stall_id` | INTEGER | 否 | 外键 → `stall.id`；操作摊位（`REQ-007`） | NULL | |
 | `ref_table` | TEXT | 是 | 枚举：`transaction` / `transaction_item` / `payment` / `refund` / `offline_queue` / `commission_rule`（`NFR-009` 可追溯） | 无 | |
 | `ref_id` | INTEGER | 是 | 被引用行的主键 | 无 | |
@@ -333,6 +338,14 @@
 > 只能「建新表 → 逐行搬移（含主键）→ `DROP` 旧表 → 换名 → 原样重建两个触发器与 §6 的 `ix_audit_ref` / `ix_audit_stall_time`」。
 > **顺序是硬要求**：`DROP TABLE` 会连带删掉两条索引，换名前建会同名撞车、换名后不建即静默丢索引；
 > 且**不得放宽任何既有约束**（`actor` 长度、`ref_id` / `payload_json` 的 `NOT NULL`、`ref_table` 白名单逐字段照抄）。
+>
+> **为什么"催缴已发送"不在这里（`2026-10-08` 裁定）**：`REQ-056` 的催缴短信**已有自己的留痕表** `payment_reminder`（§2.22）——
+> 记录脱敏手机号、应缴金额、渠道与 `sent_at`，契约 `rest-api.md` §3.37 的"发送动作落表留痕"指的就是它。
+> 一度设计过 `event_type = 'payment_reminder_sent'`，**已撤销**，两条理由：
+> ① 写它需要把 `ref_table` 白名单加上 `payment_reminder`，而那属于**放宽**本表约束 —— 正是上一段明文禁止的动作
+>（`phone_masked` 的 `LIKE '%****%'` 是**收紧**，不受此限）；
+> ② `audit_log` 是**资金链路**只增不改留痕（宪法 §4），催缴不是资金动作，把它塞进来会让"资金链路审计"这个定位变模糊。
+> **故本表的 `ref_table` 白名单逐字段照抄、一个取值都不增**；将来若确要让某类动作进本表，须先改本段规则并说明该取值指向的真实表。
 
 ### 2.19 迁移执行记录（`schema_migration`，基础设施表）
 
@@ -407,7 +420,7 @@
 | `merchant_id` | INTEGER | 是 | 外键 → `merchant.id`（`REQ-056` 向商家催缴） | 无 | 收到催缴的商家 |
 | `business_date` | TEXT | 是 | `YYYY-MM-DD`（`REQ-056`、`AC-046` 按营业日算应缴） | 无 | 本次催缴对应的营业日 |
 | `payable_cents` | INTEGER | 是 | ≥0；= 该商家当日**应缴金额**：按 `REQ-017` 佣金口径对其**实收金额**逐笔计算之和，**已取消交易不计入**（`REQ-056`、`AC-046`） | 无 | 当次提醒的应缴金额 |
-| `phone_masked` | TEXT | 是 | 长度 ≤32；**只存脱敏值**（掩码形式），**不得存完整手机号**（`REQ-024`、`NFR-012`） | 无 | 发送目标的脱敏手机号 |
+| `phone_masked` | TEXT | 是 | 长度 ≤32，且**必须含 `****`**（`0005_demo_console.sql` 用 `LIKE '%****%'` 在库层强制 —— 与 `stall.payment_receiver_token` 同一道闸门）；**只存脱敏值**，**不得存完整手机号**（`REQ-024`、`NFR-012`） | 无 | 发送目标的脱敏手机号 |
 | `channel` | TEXT | 是 | 枚举：`sms`（本期只做短信，`CHECK (channel IN ('sms'))`）（`REQ-056`） | `sms` | 发送渠道 |
 | `sent_at` | TEXT | 是 | ISO-8601；**每隔一天**的间隔判据取自本列（`REQ-056`、契约 `rest-api.md` §3.37 的 `interval_days = 2`） | SQLite 求值 `datetime('now', 'localtime')` | 发送时间；见下方注 |
 
