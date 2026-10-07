@@ -18,9 +18,12 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 
 from .. import TradeError
+from ..db import now_iso
+from .audit import write_audit
 from .catalog import parse_business_date
 
 
@@ -140,3 +143,114 @@ def transaction_detail(conn: sqlite3.Connection, stall_id: int, transaction_no: 
     # 契约 §3.8：固定字段，明示不打印（REQ-012 只要求屏幕展示）
     payload["printable"] = False
     return payload
+
+
+# ---------------------------------------------------------------------------
+# §3.35 取消并撤销（`REQ-055` / `AC-045`）
+# ---------------------------------------------------------------------------
+
+#: 契约 §3.35：取消的幂等键长度 1~64
+CANCEL_KEY_MIN_LEN, CANCEL_KEY_MAX_LEN = 1, 64
+#: 取消后**不得**再被取消的状态：`paid`（已确认支付）与 `refunded`（终态）
+UNCANCELLABLE_STATUSES = ("paid", "refunded")
+
+
+def _first_cancel(conn: sqlite3.Connection, transaction_id: int, key: str) -> sqlite3.Row | None:
+    """该交易上**由这个幂等键**发起过的那次取消留痕（没有则 `None`）。
+
+    幂等键存在留痕的 `payload_json` 里，而不是新开一张表：取消是**动作**，它的证据本来就该在
+    `audit_log`（只增不改）；为它再建一张表就是给同一件事留两份事实来源。
+    """
+    rows = conn.execute(
+        "SELECT payload_json, occurred_at FROM audit_log"
+        " WHERE event_type = 'transaction_cancelled' AND ref_table = 'transaction' AND ref_id = ?"
+        " ORDER BY id ASC",
+        (transaction_id,),
+    ).fetchall()
+    for row in rows:
+        try:
+            payload = json.loads(row["payload_json"])
+        except ValueError:
+            continue  # 历史脏数据不参与判定；不因它把幂等打穿
+        if payload.get("client_idempotency_key") == key:
+            return row
+    return None
+
+
+def cancel_transaction(conn: sqlite3.Connection, transaction_no: str, body) -> dict:
+    """契约 §3.35：取消并撤销一笔**尚未确认**的交易（`REQ-055` / `AC-045`）。
+
+    三条纪律：
+
+    1. **不是 DELETE**：行保留、`status` 置 `cancelled` —— "账上等同于未发生"（一切金额口径都
+       按 `status = 'paid'` 取数），但**动作本身留痕**（`transaction_cancelled`）。
+       `NFR-009`（审计只增不改）与 `RL-9`（绝不静默丢弃）两条红线都不破。
+    2. **幂等**：同一 `client_idempotency_key` 重复提交 ⇒ `200 + is_duplicate: true`，
+       返回**首次**的取消时刻，不重复留痕、不再改行；换个键来取消已取消的交易 ⇒ `MT-1001`（终态）。
+    3. **已确认支付不得取消**（`paid` / `refunded`）⇒ `MT-1001`；交易不存在 ⇒ `MT-1009`。
+    """
+    if not isinstance(body, dict):
+        raise TradeError("MT-1008", "请求体必须是 JSON 对象")
+    key = body.get("client_idempotency_key")
+    if not isinstance(key, str) or not CANCEL_KEY_MIN_LEN <= len(key) <= CANCEL_KEY_MAX_LEN:
+        raise TradeError(
+            "MT-1008",
+            f"`client_idempotency_key` 必须是长度 {CANCEL_KEY_MIN_LEN}~{CANCEL_KEY_MAX_LEN} 的字符串",
+            {"field": "client_idempotency_key"},
+        )
+
+    txn = find_transaction(conn, transaction_no)
+
+    if txn["status"] == "cancelled":
+        first = _first_cancel(conn, int(txn["id"]), key)
+        if first is not None:
+            return {
+                "transaction_no": txn["transaction_no"],
+                "status": "cancelled",
+                "cancelled_at": first["occurred_at"],
+                "is_duplicate": True,
+            }
+        raise TradeError(
+            "MT-1001",
+            "该交易已取消（终态），不同的幂等键不得再次生效",
+            {"transaction_no": transaction_no, "status": txn["status"]},
+        )
+    if txn["status"] in UNCANCELLABLE_STATUSES:
+        raise TradeError(
+            "MT-1001",
+            "已确认支付的交易不得取消",
+            {"transaction_no": transaction_no, "status": txn["status"]},
+        )
+
+    cancelled_at = now_iso()
+    conn.execute(
+        'UPDATE "transaction" SET status = ?, updated_at = ? WHERE id = ?',
+        ("cancelled", cancelled_at, txn["id"]),
+    )
+    audit_id = write_audit(
+        conn,
+        event_type="transaction_cancelled",
+        ref_table="transaction",
+        ref_id=int(txn["id"]),
+        payload={
+            "transaction_no": txn["transaction_no"],
+            "client_idempotency_key": key,
+            "previous_status": txn["status"],
+            "total_amount_cents": int(txn["total_amount_cents"]),
+        },
+        actor="demo-console",
+        stall_id=int(txn["stall_id"]),
+        occurred_at=cancelled_at,
+    )
+    conn.commit()
+    # `cancelled_at` **从留痕读回**（不加列、不在响应里另造一个时刻）：一个事实只有一个存放处
+    # （`data-model.md` §5）；首次取消与重复取消因此返回的是**同一条留痕的同一个值**。
+    recorded_at = conn.execute(
+        "SELECT occurred_at FROM audit_log WHERE id = ?", (audit_id,)
+    ).fetchone()["occurred_at"]
+    return {
+        "transaction_no": txn["transaction_no"],
+        "status": "cancelled",
+        "cancelled_at": recorded_at,
+        "is_duplicate": False,
+    }

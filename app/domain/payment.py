@@ -35,6 +35,32 @@ def has_success_payment(conn: sqlite3.Connection, transaction_id: int) -> bool:
     return int(row["n"]) > 0
 
 
+def _write_confirmed_audit(
+    conn: sqlite3.Connection, txn: sqlite3.Row, payment_no: str, method: str, confirmed_at: str, actor: str
+) -> None:
+    """交易转 `paid` 时写一条 `transaction_confirmed` 留痕（`REQ-054`、中台页事件表的数据源）。
+
+    为什么写在**领域层**而不是演示端点里：中台页要实时显示"确认（上传）"这件事，而"交易转 `paid`"
+    只有两个落点 —— 现金确认（§3.10）与收款码回调成功（§3.17）。在某个端点里补记就会漏掉另一条路径，
+    于是"中台看到的事件"与"账上的事实"分叉。
+    """
+    write_audit(
+        conn,
+        event_type="transaction_confirmed",
+        ref_table="transaction",
+        ref_id=int(txn["id"]),
+        payload={
+            "transaction_no": txn["transaction_no"],
+            "payment_no": payment_no,
+            "method": method,
+            "received_amount_cents": int(txn["total_amount_cents"]),
+        },
+        actor=actor,
+        stall_id=int(txn["stall_id"]),
+        occurred_at=confirmed_at,
+    )
+
+
 def pay_transaction(
     conn: sqlite3.Connection, stall: sqlite3.Row, transaction_no: str, body, idempotency_key: str | None
 ) -> tuple[dict, int]:
@@ -90,6 +116,7 @@ def pay_transaction(
             'UPDATE "transaction" SET status = ?, received_amount_cents = ?, updated_at = ? WHERE id = ?',
             ("paid", txn["total_amount_cents"], confirmed_at, txn["id"]),
         )
+        _write_confirmed_audit(conn, txn, payment_no, "cash", confirmed_at, operator)
         conn.commit()
         return (
             {
@@ -191,15 +218,38 @@ def apply_payment_callback(conn: sqlite3.Connection, body) -> tuple[dict, int]:
         (callback_no, payment["id"], result),
     )
     transaction_status = _transaction_status(conn, payment["transaction_id"])
+    if transaction_status == "cancelled":
+        # 取消优先（契约 §3.35「与迟到回调的关系」硬要求）：取消后该笔是**终态**，
+        # 收款码回调无论 success / failed / timeout 都**不得**把交易改回 `paid` / `payment_failed`。
+        # 若不拦这里：调用方被告知"取消成功"，账上却被回调重新计入 —— `REQ-055`「账上等同于未发生」
+        # 与 `RL-9`（不得静默丢弃/静默反悔）双破。
+        # 回调本身**照常落 `payment_callback_log`**（上面那行，`RL-9`：回调不得被静默丢弃）；
+        # 支付单状态**不改**（留一条 `success` 支付单会污染 `usage_metrics.cash_txns` 这类
+        # `payment JOIN transaction` 且按流水取数的口径），也**不写** `transaction_confirmed` 留痕。
+        conn.commit()
+        return (
+            {
+                "payment_no": payment_no,
+                "result": result,
+                "is_duplicate": False,
+                "transaction_status": "cancelled",
+            },
+            200,
+        )
     if result == "success" and payment["status"] == "pending":
+        confirmed_at = now_iso()
         conn.execute(
             "UPDATE payment SET status = 'success', callback_no = ?, confirmed_at = ? WHERE id = ?",
-            (callback_no, now_iso(), payment["id"]),
+            (callback_no, confirmed_at, payment["id"]),
         )
         conn.execute(
             'UPDATE "transaction" SET status = ?, received_amount_cents = ?, updated_at = ? WHERE id = ?',
-            ("paid", payment["amount_cents"], now_iso(), payment["transaction_id"]),
+            ("paid", payment["amount_cents"], confirmed_at, payment["transaction_id"]),
         )
+        confirmed_txn = conn.execute(
+            'SELECT * FROM "transaction" WHERE id = ?', (payment["transaction_id"],)
+        ).fetchone()
+        _write_confirmed_audit(conn, confirmed_txn, payment_no, "qr", confirmed_at, "mock")
         transaction_status = "paid"
     elif result in {"failed", "timeout"} and payment["status"] == "pending":
         conn.execute("UPDATE payment SET status = ?, callback_no = ? WHERE id = ?", (result, callback_no, payment["id"]))

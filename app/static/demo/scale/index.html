@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>智能秤 · 菜市场演示</title>
+<!--
+  演示页 2/3：智能秤（`REQ-054` / `REQ-057`）。
+  零外部资源（`AGENTS.md` §3 硬要求 4）：样式/脚本全是本地文件，绝对路径 `/static/demo/...`；
+  预置商品图标复用仓库内既有像素资源 `/static/game/sprites/`（无外链、无 emoji 字体依赖）。
+  收款码由 `/static/demo/js/qr.js`（Lead 的纯本地编码器）渲染；它不在时退回**明确标注**的占位图。
+  业务数字全部来自服务端：计价 `POST /api/merchant/transactions`、收款码 `.../payment`(method=qr)、
+  扫码回调 `POST /api/mock/payment/callback`、取消 `POST /api/demo/transactions/{no}/cancel`。
+-->
+<link rel="stylesheet" href="/static/demo/css/demo.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <h1>智能秤<span class="badge">演示页 2/3</span></h1>
+    <div class="sub">选商家 → 右键预置图标放商品 → ▲▼ 选品 → 确认 → 出价格与收款码 → 模拟扫码 → 交易成功</div>
+  </div>
+  <div class="nav" id="nav"></div>
+  <div class="meta">
+    <span class="badge" id="dayBadge">营业日：读取中…</span>
+    <span class="badge" id="sessionBadge">未选商家</span>
+  </div>
+</header>
+
+<main>
+  <section class="card">
+    <div class="row">
+      <label for="merchantSel" style="margin:0">选择已注册商家：</label>
+      <select id="merchantSel" style="width:auto;min-width:280px"><option value="">（读取中…）</option></select>
+      <button class="ghost small" id="reloadMerchants">刷新商家</button>
+      <span class="spacer"></span>
+      <span class="badge" id="stallBadge">摊位：—</span>
+    </div>
+    <div class="muted" id="merchantHint" style="margin-top:6px">
+      未选商家不能开工 —— 选一个已注册商家后，本页会用它的摊位建会话（<code>POST /api/merchant/session</code>）。
+    </div>
+  </section>
+
+  <div class="grid">
+    <section>
+      <div class="scale-body">
+        <div class="led">
+          <div class="cell"><div class="k">单价</div><div class="v small" id="ledPrice">—</div><div class="u">元 / kg</div></div>
+          <div class="cell"><div class="k">重量</div><div class="v" id="ledWeight">1000</div><div class="u">g</div></div>
+          <div class="cell"><div class="k">金额</div><div class="v small" id="ledAmount">待计价</div><div class="u">元（服务端计价）</div></div>
+        </div>
+
+        <div class="row" style="margin-top:10px">
+          <span class="muted">重量：</span>
+          <button class="small" data-weight="500">500 g</button>
+          <button class="small" data-weight="1000">1000 g</button>
+          <button class="small" data-weight="1500">1500 g</button>
+          <button class="small" data-weight="2000">2000 g</button>
+          <input type="range" id="weightRange" min="100" max="5000" step="50" value="1000" style="flex:1 1 160px">
+        </div>
+
+        <h3 style="margin-top:14px">预置商品（右键＝放上去；左键＝选中）</h3>
+        <div class="icons" id="iconGrid"></div>
+        <div class="muted" id="iconHint" style="margin-top:6px">图标来自仓库内像素资源；名称与单价可改。</div>
+
+        <h3 style="margin-top:14px">本笔交易（<span id="basketCount">0</span> 项）</h3>
+        <div id="basket" class="muted">篮子为空。右键上面的商品图标，或用 ▲▼ 选品后按「确认」。</div>
+
+        <div class="pad">
+          <button id="btnUp">▲ 上</button>
+          <button id="btnDown">▼ 下</button>
+          <button id="btnClear" class="danger">清空篮子</button>
+          <button id="btnConfirm" class="primary wide">确认（提交计价）</button>
+          <button id="btnCancelTxn" class="danger wide" disabled>取消交易（POST /api/demo/transactions/{no}/cancel）</button>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="card">
+        <h2>设置商品名称与价格</h2>
+        <div class="muted" id="editTarget">先在左边选中一个预置商品。</div>
+        <div class="field"><label for="editName">商品名（1~50 字符）</label>
+          <input type="text" id="editName" maxlength="50" autocomplete="off"></div>
+        <div class="field"><label for="editPrice">单价（元 / kg，≥ 0.01）</label>
+          <input type="number" id="editPrice" step="0.01" min="0.01" autocomplete="off"></div>
+        <div class="row" style="margin-top:8px">
+          <button class="primary" id="btnSave">保存（新增 / 修改）</button>
+        </div>
+        <div id="saveResult" class="muted" style="margin-top:8px">尚未保存。</div>
+      </div>
+
+      <div class="card">
+        <h2>计价与收款码</h2>
+        <div id="txnResult" class="muted">确认后这里显示服务端返回的价格明细。</div>
+        <div id="qrArea" class="qr-box" style="display:none;margin-top:10px">
+          <canvas id="qrCanvas" width="220" height="220"></canvas>
+          <div class="qr-note" id="qrNote"></div>
+          <div class="payload" id="qrPayload"></div>
+          <button class="primary" id="btnSimulate" style="margin-top:8px">模拟扫码（顾客已扫码）</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>操作记录</h2>
+        <div id="logList" class="log"></div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div id="successScreen" class="success" style="display:none">
+  <div class="big">交易成功</div>
+  <div class="amt" id="successAmount">—</div>
+  <div id="successMeta" class="muted"></div>
+  <div style="margin-top:14px" class="muted">按<strong>任意键</strong>（或点这里）回到初始界面</div>
+</div>
+
+<div id="toast" class="toast hide"></div>
+<script src="/static/demo/js/common.js"></script>
+<script src="/static/demo/js/qr.js"></script>
+<script src="/static/demo/scale/scale-view.js"></script>
+<script src="/static/demo/scale/scale.js"></script>
+</body>
+</html>

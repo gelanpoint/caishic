@@ -1,0 +1,159 @@
+/* 演示三页共用样式（`REQ-057`）。零外部资源：只用系统自带中文字体族，无字体 CDN、无图床、无图标库。
+   视觉分工：注册页/中台页是"控制台"风格，秤页是"硬件面板"风格（大字号 LED 数字 + 实体按键感）。 */
+
+:root {
+  --bg: #0e1418;
+  --panel: #161f25;
+  --panel2: #1d2830;
+  --line: #2b3a43;
+  --fg: #e9eff1;
+  --muted: #93a6ae;
+  --accent: #4fd1a5;
+  --accent2: #ffd666;
+  --danger: #ff7a6b;
+  --warn: #ffc46b;
+  --led: #7dfab0;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+h1 { font-size: 19px; margin: 0; }
+h2 { font-size: 15px; margin: 0 0 10px; color: var(--accent); }
+h3 { font-size: 13px; margin: 0 0 8px; color: var(--accent2); }
+code { background: #223037; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+
+/* ---- 顶部导航（三页互跳 + 营业日） ---- */
+.top {
+  display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between;
+  padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+  position: sticky; top: 0; z-index: 5;
+}
+.brand .sub { color: var(--muted); font-size: 12px; }
+.nav { display: flex; gap: 6px; flex-wrap: wrap; }
+.nav a {
+  text-decoration: none; color: var(--fg); border: 1px solid var(--line); background: var(--panel2);
+  border-radius: 8px; padding: 5px 14px; font-size: 13px;
+}
+.nav a:hover { border-color: var(--accent); }
+.nav a.active { background: var(--accent); color: #0c1512; border-color: var(--accent); font-weight: 700; }
+.meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.badge {
+  font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px;
+  color: var(--muted); background: var(--panel2); white-space: nowrap;
+}
+.badge.on { color: var(--accent); border-color: var(--accent); }
+.badge.warn { color: var(--warn); border-color: var(--warn); }
+.badge.err { color: var(--danger); border-color: var(--danger); }
+
+main { padding: 14px 16px 40px; max-width: 1240px; margin: 0 auto; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; align-items: start; }
+.card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px 14px; margin-bottom: 14px;
+}
+.muted { color: var(--muted); font-size: 12.5px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.spacer { flex: 1 1 auto; }
+.err-text { color: var(--danger); }
+.ok-text { color: var(--accent); }
+
+/* ---- 表单 ---- */
+label { display: block; font-size: 12.5px; color: var(--muted); margin: 8px 0 2px; }
+input[type="text"], input[type="number"], select {
+  width: 100%; background: #0c1216; color: var(--fg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 10px; font-size: 14px; font-family: inherit;
+}
+input:focus, select:focus { outline: none; border-color: var(--accent); }
+.field { margin-bottom: 4px; }
+.hint { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+button { font-family: inherit; font-size: 13px; cursor: pointer; border-radius: 8px; padding: 7px 14px; border: 1px solid var(--line); background: var(--panel2); color: var(--fg); }
+button:hover { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button.primary { background: var(--accent); color: #0c1512; border-color: var(--accent); font-weight: 700; }
+button.danger { background: #3a1f1c; border-color: var(--danger); color: var(--danger); }
+button.ghost { background: transparent; }
+button.small { padding: 4px 9px; font-size: 12px; }
+
+/* ---- 表格 ---- */
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 600; background: #131b20; position: sticky; top: 0; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+.table-wrap { max-height: 360px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+.empty { color: var(--muted); font-size: 12.5px; padding: 10px 2px; }
+
+/* ---- 秤面板（硬件感） ---- */
+.scale-body {
+  background: linear-gradient(#202b33, #131a1f); border: 1px solid #35454f; border-radius: 16px;
+  padding: 14px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.led {
+  background: #05100b; border: 1px solid #2f4a3d; border-radius: 12px; padding: 10px 14px;
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; text-align: right;
+}
+.led .cell .k { font-size: 11px; color: #6f9c86; letter-spacing: 2px; }
+.led .cell .v {
+  font-family: "Consolas", "DejaVu Sans Mono", monospace; color: var(--led);
+  font-size: 30px; line-height: 1.15; text-shadow: 0 0 10px rgba(125, 250, 176, 0.35);
+  font-variant-numeric: tabular-nums; word-break: break-all;
+}
+.led .cell .v.small { font-size: 20px; }
+.led .cell .u { font-size: 11px; color: #6f9c86; }
+.pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.pad button { padding: 12px 6px; font-size: 15px; font-weight: 700; background: #26333c; border-color: #3c4d58; }
+.pad button.primary { background: var(--accent); color: #0c1512; }
+.pad button.danger { background: #3a1f1c; }
+.pad button.wide { grid-column: span 3; }
+
+/* ---- 预置商品图标 ---- */
+.icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.icon-tile {
+  border: 1px solid var(--line); border-radius: 10px; padding: 6px; background: #131b20;
+  text-align: center; cursor: context-menu; user-select: none;
+}
+.icon-tile:hover { border-color: var(--accent); }
+.icon-tile.selected { border-color: var(--accent2); box-shadow: 0 0 0 1px var(--accent2) inset; }
+.icon-tile canvas { image-rendering: pixelated; display: block; margin: 0 auto; }
+.icon-tile .nm { font-size: 12.5px; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icon-tile .pr { font-size: 12px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.icon-tile .id { font-size: 10.5px; color: var(--muted); }
+
+/* ---- 收款码 ---- */
+.qr-box { text-align: center; }
+.qr-box canvas { background: #fff; border-radius: 10px; padding: 8px; }
+.qr-note { font-size: 11.5px; color: var(--warn); margin-top: 6px; }
+.payload { font-family: "Consolas", monospace; font-size: 11.5px; color: var(--muted); word-break: break-all; }
+
+/* ---- 成功屏 ---- */
+.success {
+  text-align: center; padding: 26px 12px; border: 1px solid var(--accent);
+  border-radius: 14px; background: rgba(79, 209, 165, 0.07);
+}
+.success .big { font-size: 26px; color: var(--accent); font-weight: 700; letter-spacing: 3px; }
+.success .amt { font-family: "Consolas", monospace; font-size: 34px; color: var(--led); margin: 8px 0; }
+
+/* ---- 轻提示 ---- */
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  background: #0f1a17; border: 1px solid var(--accent); border-radius: 10px;
+  padding: 9px 18px; font-size: 13.5px; z-index: 9; max-width: 84vw;
+}
+.toast.err { border-color: var(--danger); color: var(--danger); }
+.toast.hide { display: none; }
+
+/* ---- 日志 ---- */
+.log { max-height: 180px; overflow: auto; font-size: 12px; }
+.log-line { border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding: 2px 0; color: var(--muted); }
+.log-line.err { color: var(--danger); }

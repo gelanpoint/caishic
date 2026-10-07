@@ -46,6 +46,7 @@ from ..domain.metrics import stall_daily_dashboard
 from ..domain.offline import queue_status, stage_transaction, sync_queue
 from ..domain.payment import pay_transaction
 from ..domain.pricing import change_price, create_transaction
+from ..domain.product_reg import upsert_product
 from ..domain.refund import refund_transaction
 from ..domain.transactions import list_transactions, transaction_detail
 
@@ -89,6 +90,20 @@ def list_stall_products():
     conn = current_db()
     stall = _bound_stall(conn)
     return jsonify(list_products(conn, stall["stall_id"])), 200
+
+
+@bp.post("/api/merchant/products")
+def upsert_stall_product():
+    """契约 §3.38：新增（201）/ 修改（200）本摊位商品的名称与价格，并写**当日**价目表。
+
+    `stall_id` **只从会话取**（`REQ-032`，与上面几个端点同一条纪律）；商品与当日 `price_item`
+    由 `app/domain/product_reg.upsert_product` 一次写成 —— 只写商品不写价，新商品当天就不可计价，
+    演示动线会在 §3.6 回 `MT-1006`。201/200 由领域层按"是否新建"给出，本层不猜。
+    """
+    conn = current_db()
+    stall = _bound_stall(conn)
+    payload, status = upsert_product(conn, stall["stall_id"], request.get_json(silent=True))
+    return jsonify(payload), status
 
 
 @bp.post("/api/merchant/products/<product_id>/status")

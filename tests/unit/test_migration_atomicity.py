@@ -41,6 +41,19 @@ from app import db  # noqa: E402  (上面的 sys.path 垫片必须先行)
 MIGRATIONS_DIR = REPO_ROOT / "app" / "migrations"
 #: 真实的 `0004` 原文 —— **不改 `app/**` 里的脚本本体**，半途失败靠"文本尾部追加非法 SQL"注入
 SCRIPT_0004 = (MIGRATIONS_DIR / "0004_audit_event_types.sql").read_text(encoding="utf-8")
+
+#: 迁移集**从目录推导**，不写死 —— 写死的话，每加一个迁移（如 `0005_demo_console.sql`）
+#: 都会让"原子性/自愈"这些判据假红，而它们其实与迁移条数无关。判据是"目录里的都按序跑完"。
+LEGACY_NAMES = ["0001_init.sql", "0002_market_scope.sql", "0003_device.sql"]
+
+
+def _migration_names() -> list[str]:
+    return sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
+
+
+def _pending_after_legacy() -> list[str]:
+    """旧库（建到 `0003`）还欠的那些迁移，按序。"""
+    return [name for name in _migration_names() if name not in LEGACY_NAMES]
 #: 注入的非法语句（真 SQL 解析错误，不是 Mock 出来的异常）
 BROKEN_TAIL = "\nTHIS IS NOT VALID SQL;\n"
 BROKEN_SCRIPT_NAME = "9999_broken.sql"
@@ -63,7 +76,7 @@ def _record(conn: sqlite3.Connection, name: str) -> None:
 def _build_legacy_db(path: Path) -> sqlite3.Connection:
     """把库建到 `0003` 并写入两条留痕 —— 模拟"待升级的既有库"。"""
     conn = db.connect(path)
-    for name in ("0001_init.sql", "0002_market_scope.sql", "0003_device.sql"):
+    for name in LEGACY_NAMES:
         text = (MIGRATIONS_DIR / name).read_text(encoding="utf-8")
         db.apply_migration(conn, text, on_before_commit=lambda n=name: _record(conn, n))
     for event, table in (("price_change", "transaction"), ("refund_applied", "refund")):
@@ -162,7 +175,7 @@ def test_dangling_stall_id_migration_succeeds_and_keeps_every_row(tmp_path):
     conn.close()
 
     applied = db.init_database(path)  # ← 真实启动路径
-    assert applied == ["0004_audit_event_types.sql"], f"应只补跑 0004，实际 {applied}"
+    assert applied == _pending_after_legacy(), f"应只补跑旧库欠的那些迁移，实际 {applied}"
 
     conn = db.connect(path)
     after = [tuple(r) for r in conn.execute(f"SELECT {columns} FROM audit_log ORDER BY id")]
@@ -349,7 +362,7 @@ def test_half_migrated_database_left_by_the_old_code_self_heals(tmp_path):
     rows_before = _audit_count(conn)
     conn.close()
 
-    assert db.init_database(path) == ["0004_audit_event_types.sql"]
+    assert db.init_database(path) == _pending_after_legacy()
     conn = db.connect(path)
     assert RED_LINE_TRIGGERS <= _triggers(conn), "自愈后红线触发器必须回来"
     assert "audit_log_new" not in _tables(conn), "自愈后不得残留 audit_log_new"
@@ -358,13 +371,10 @@ def test_half_migrated_database_left_by_the_old_code_self_heals(tmp_path):
 
 
 def test_fresh_database_applies_all_migrations_and_rerun_is_a_noop(tmp_path):
-    """家族 5：全新库一次跑完 4 个迁移；再跑一次返回 `[]`（幂等）。"""
+    """家族 5：全新库一次跑完**目录里的全部**迁移；再跑一次返回 `[]`（幂等）。"""
     path = tmp_path / "fresh.sqlite3"
     applied = db.init_database(path)
-    assert applied == [
-        "0001_init.sql", "0002_market_scope.sql",
-        "0003_device.sql", "0004_audit_event_types.sql",
-    ], applied
+    assert applied == _migration_names(), applied
     assert db.init_database(path) == [], "重跑必须什么都不做"
     conn = db.connect(path)
     assert RED_LINE_TRIGGERS <= _triggers(conn)

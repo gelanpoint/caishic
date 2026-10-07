@@ -181,6 +181,25 @@ def create_app(*, serve_scale_ui: bool = True) -> Flask:
         """
         return _page("game")
 
+    # ---- 三个联动演示页（`REQ-057`，`2026-10-08`）----------------------
+    # 与上面几个页面同类：**不是接口**（契约 §2 不登记页面），已登记进契约测试的
+    # `NON_API_ROUTES` 豁免表。页面本体在 `app/static/demo/<slug>/index.html`（演示页实现方负责），
+    # 本文件只按固定目录名托管 —— 与 `_page()` 一样，不接受来自请求的路径片段。
+    @app.get("/demo/register/")
+    def demo_register_page():
+        """商家注册页（`REQ-057` ①）：录入商家名与收款码。"""
+        return _page("demo/register")
+
+    @app.get("/demo/scale/")
+    def demo_scale_page():
+        """智能秤页（`REQ-057` ②）：选商家、选品、计价、确认/取消。"""
+        return _page("demo/scale")
+
+    @app.get("/demo/hub/")
+    def demo_hub_page():
+        """中台页（`REQ-057` ③）：事件表 + 各商家应缴。"""
+        return _page("demo/hub")
+
     # ---- 业务错误 → 契约 §1.2 响应 -------------------------------------
     @app.errorhandler(TradeError)
     def handle_trade_error(err: TradeError):
@@ -265,6 +284,8 @@ def create_app(*, serve_scale_ui: bool = True) -> Flask:
     # ---- 蓝图注册（端点实现逐一对应契约 §3） ----------------------------
     from .api.admin import bp as admin_bp
     from .api.customer import bp as customer_bp
+    # 演示控制台（`REQ-053`~`REQ-057`）：路径自带 `/api/demo` 前缀，同样**不挂 `url_prefix`**
+    from .api.demo import bp as demo_bp
     from .api.health import bp as health_bp
     from .api.merchant import bp as merchant_bp
     from .api.mock import bp as mock_bp
@@ -280,6 +301,7 @@ def create_app(*, serve_scale_ui: bool = True) -> Flask:
     app.register_blueprint(mock_bp)
     app.register_blueprint(customer_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(demo_bp)
     app.register_blueprint(scale_device_bp)
     app.register_blueprint(scale_catalog_bp)
     app.register_blueprint(scale_ingest_bp)

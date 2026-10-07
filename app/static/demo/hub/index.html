@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>中台 · 菜市场演示</title>
+<!--
+  演示页 3/3：中台实时表格（`REQ-056` / `REQ-057`）。
+  零外部资源（`AGENTS.md` §3 硬要求 4）：样式与脚本全部本地文件，绝对路径 `/static/demo/...`。
+  **表格里每一个数字都来自 `GET /api/demo/hub`** —— 本页不含任何硬编码的业务行或金额。
+  催缴短信走 `POST /api/demo/sms-reminders`（每两日一次，脱敏手机号 + 应缴金额）。
+-->
+<link rel="stylesheet" href="/static/demo/css/demo.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <h1>中台<span class="badge">演示页 3/3</span></h1>
+    <div class="sub">上传 / 取消 / 催缴等操作实时以表格呈现，并展示各商家应缴金额</div>
+  </div>
+  <div class="nav" id="nav"></div>
+  <div class="meta">
+    <span class="badge" id="dayBadge">营业日：读取中…</span>
+    <span class="badge" id="pollBadge">轮询中…</span>
+  </div>
+</header>
+
+<main>
+  <section class="card">
+    <div class="row">
+      <button class="primary" id="refreshBtn">立即刷新</button>
+      <button class="ghost" id="pollToggle">暂停轮询</button>
+      <button id="smsBtn">发送催缴短信</button>
+      <span class="muted" id="lastUpdated">尚未取数</span>
+      <span class="spacer"></span>
+      <span class="muted">数据源：<code>GET /api/demo/hub</code>（每 1.5 秒轮询一次，页面切到后台时暂停）</span>
+    </div>
+    <div id="smsResult" class="muted" style="margin-top:8px">尚未发送催缴短信。</div>
+  </section>
+
+  <section class="card">
+    <h2>事件表（时间 / 事件类型 / 摊位 / 商家 / 交易号 / 金额）</h2>
+    <div id="eventTable"></div>
+    <div class="muted" id="eventMeta" style="margin-top:6px"></div>
+  </section>
+
+  <section class="card">
+    <h2>各商家应缴（商家 / 摊位 / 已确认笔数 / 实收金额 / 佣金 / <span class="ok-text">应缴金额</span>）</h2>
+    <div class="row" style="margin-bottom:8px">
+      <button class="primary" id="btnSeedRule">配置演示佣金口径（2% · 演示档位）</button>
+      <span class="muted" id="ruleState">佣金口径状态：读取中…</span>
+    </div>
+    <div class="muted" id="ruleResult" style="margin-bottom:8px">
+      费率 <strong>2%（演示档位，非调研结论）</strong>；这里演示的是"运营端能现场配置佣金口径"这个能力，
+      <strong>不代表方案主张向商户抽佣</strong>（见下方口径 ⑤）。
+    </div>
+    <div id="payableTable"></div>
+    <div class="muted" id="payableMeta" style="margin-top:6px"></div>
+    <div class="err-text" id="payableHint" style="display:none;margin-top:6px"></div>
+  </section>
+
+  <section class="card">
+    <h2>口径（读表前先看这五条）</h2>
+    <p class="muted">
+      ① <strong>应缴金额 = 该商家当日已确认（已收款）交易逐笔佣金之和</strong>，按服务端口径计算；
+      ② <strong>已取消的交易不计入应缴、也不计入看板</strong>（账上等同于未发生），但取消动作本身在事件表里
+      <strong>留痕</strong>（<code>transaction_cancelled</code>）；③ 本页不接真实短信网关，催缴只落表留痕，
+      展示的是服务端返回的<strong>脱敏</strong>手机号与应缴金额；④ 表格数字全部来自服务端响应，前端不估算、不补零。
+    </p>
+    <p class="muted">
+      ⑤ <strong>佣金引擎可配置 ≠ 方案主张抽佣</strong>：上面的「配置演示佣金口径」只是把运营端
+      <code>PUT /api/admin/commission-rules</code> 这个<strong>真实能力</strong>摆出来点一下；2% 是
+      <strong>演示档位、不是调研结论</strong>。本方案的主张是<strong>不向商户收钱</strong> —— 调研里三例真实失败案例
+      （成都温江红桥、赣州龙南虔锦）恰恰是"向商户收钱"所致。所以这个按钮演示的是<strong>可配置性</strong>，
+      不是推荐做法。
+    </p>
+  </section>
+</main>
+
+<div id="toast" class="toast hide"></div>
+<script src="/static/demo/js/common.js"></script>
+<script src="/static/demo/hub/hub.js"></script>
+</body>
+</html>

@@ -53,7 +53,7 @@ def price_consistency_bp(conn: sqlite3.Connection, stall_id: int, business_date:
                COALESCE(SUM(ti.price_changed), 0) AS price_changed_count
         FROM transaction_item ti
         JOIN "transaction" t ON t.id = ti.transaction_id
-        WHERE t.stall_id = ? AND t.business_date = ?
+        WHERE t.stall_id = ? AND t.business_date = ? AND t.status <> 'cancelled'
         """,
         (stall_id, business_date),
     ).fetchone()
@@ -97,7 +97,9 @@ def stall_day_facts(conn: sqlite3.Connection, stall_id: int, business_date: str)
     这是 `T-020` 交接要求的那条纪律："快照口径与现场汇总口径必须对齐，否则同一块看板会经两条路径
     算出两个数"。**要改口径只改这一处**（改前先看 `data-model.md` §2.15 的字段语义）。
 
-    - `txn_count` / `gross_amount_cents`：该日**全部**交易（含在途 `priced`）—— 口径同 §2.15"交易总额"；
+    - `txn_count` / `gross_amount_cents`：该日**全部**交易（含在途 `priced`，但**不含已取消**）
+      —— 口径同 §2.15"交易总额"；取消**不是 DELETE**，行还在，只是"账上等同于未发生"
+      （`REQ-055`），故一切金额/笔数口径都要把它挡在外面。
     - `refund_amount_cents`：经原单营业日归集（`refund` 表没有营业日字段，见模块 docstring 第 2 条）；
     - `received_amount_cents`：实收合计（`transaction.received_amount_cents`，收款时才写入）；
     - `commission_amount_cents`：**按实收金额**折算（`REQ-017`），费率取该营业日生效的口径；
@@ -108,7 +110,7 @@ def stall_day_facts(conn: sqlite3.Connection, stall_id: int, business_date: str)
         SELECT COUNT(*) AS txn_count,
                COALESCE(SUM(total_amount_cents), 0) AS gross_amount_cents,
                COALESCE(SUM(received_amount_cents), 0) AS received_amount_cents
-        FROM "transaction" WHERE stall_id = ? AND business_date = ?
+        FROM "transaction" WHERE stall_id = ? AND business_date = ? AND status <> 'cancelled'
         """,
         (stall_id, business_date),
     ).fetchone()
@@ -148,7 +150,7 @@ def recompute_stall_credit(conn: sqlite3.Connection, stall_id: int, business_dat
                COALESCE(SUM(ti.price_changed), 0) AS price_changed_count
         FROM transaction_item ti
         JOIN "transaction" t ON t.id = ti.transaction_id
-        WHERE t.stall_id = ? AND t.business_date = ?
+        WHERE t.stall_id = ? AND t.business_date = ? AND t.status <> 'cancelled'
         """,
         (stall_id, business_date),
     ).fetchone()
@@ -337,7 +339,9 @@ def usage_metrics(conn: sqlite3.Connection, business_date: str | None) -> dict:
     active_stalls = int(conn.execute("SELECT COUNT(*) AS n FROM stall WHERE status = 'active'").fetchone()["n"])
     transaction_stalls = int(
         conn.execute(
-            'SELECT COUNT(DISTINCT stall_id) AS n FROM "transaction" WHERE business_date = ?', (day,)
+            "SELECT COUNT(DISTINCT stall_id) AS n FROM \"transaction\""
+            " WHERE business_date = ? AND status <> 'cancelled'",
+            (day,),
         ).fetchone()["n"]
     )
     cash_txns = int(
@@ -346,12 +350,17 @@ def usage_metrics(conn: sqlite3.Connection, business_date: str | None) -> dict:
             SELECT COUNT(*) AS n FROM payment p
             JOIN "transaction" t ON t.id = p.transaction_id
             WHERE t.business_date = ? AND p.method = 'cash' AND p.status = 'success'
+              AND t.status <> 'cancelled'
             """,
             (day,),
         ).fetchone()["n"]
     )
     all_txns = int(
-        conn.execute('SELECT COUNT(*) AS n FROM "transaction" WHERE business_date = ?', (day,)).fetchone()["n"]
+        conn.execute(
+            "SELECT COUNT(*) AS n FROM \"transaction\""
+            " WHERE business_date = ? AND status <> 'cancelled'",
+            (day,),
+        ).fetchone()["n"]
     )
     # 「当日价目表完整且已更新」= 该摊位全部在售商品当日都有 price_item（source 为 manual / copied 均算）
     maintained = int(
