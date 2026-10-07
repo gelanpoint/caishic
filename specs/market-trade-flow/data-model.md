@@ -356,8 +356,8 @@
 > **市场维度是本期的已落地维度，不是预留**（`REQ-035`）。**带 `market_id` 的是这 8 张表**：
 > `merchant` / `stall` / `category` / `product` / `price_item` / `commission_rule` / `daily_aggregate` / `settlement`
 > （前 7 张即 `REQ-035` 点名的归属对象；`category` 是第 8 张 —— `0002_market_scope.sql` 把 `ux_category_code` 改为
-> **市场内唯一**，品类编码只在市场内唯一，故必须记录归属）。其余表**不带 `market_id`**，其市场归属经 `stall` 传递
-> （`REQ-035` 未点名它们，故不为此扩列）。
+> **市场内唯一**，品类编码只在市场内唯一，故必须记录归属）。其余表**不带 `market_id`**，其市场归属经既有外键链传递
+> （业务表经 `stall`，`payment_reminder` 经 `merchant`；`REQ-035` 未点名它们，故不为此扩列）。
 >
 > **`market_id` 一律不带 `REFERENCES`（有意为之，不得擅自补外键）**：SQLite 明确禁止
 > `ALTER TABLE ... ADD COLUMN` 添加「带非 NULL 默认值的外键列」（实测报错
@@ -409,7 +409,7 @@
 | `payable_cents` | INTEGER | 是 | ≥0；= 该商家当日**应缴金额**：按 `REQ-017` 佣金口径对其**实收金额**逐笔计算之和，**已取消交易不计入**（`REQ-056`、`AC-046`） | 无 | 当次提醒的应缴金额 |
 | `phone_masked` | TEXT | 是 | 长度 ≤32；**只存脱敏值**（掩码形式），**不得存完整手机号**（`REQ-024`、`NFR-012`） | 无 | 发送目标的脱敏手机号 |
 | `channel` | TEXT | 是 | 枚举：`sms`（本期只做短信，`CHECK (channel IN ('sms'))`）（`REQ-056`） | `sms` | 发送渠道 |
-| `sent_at` | TEXT | 是 | ISO-8601；**每隔一天**的间隔判据取自本列（`REQ-056`、契约 `rest-api.md` §3.37 的 `interval_days = 2`） | SQLite 求值 `datetime('now','localtime')` | 发送时间；见下方注 |
+| `sent_at` | TEXT | 是 | ISO-8601；**每隔一天**的间隔判据取自本列（`REQ-056`、契约 `rest-api.md` §3.37 的 `interval_days = 2`） | SQLite 求值 `datetime('now', 'localtime')` | 发送时间；见下方注 |
 
 > **本表是「发送动作的留痕」，不是短信网关**：`spec.md` §5 边界明确本期**不接真实短信网关**，发送动作**落表**、页面据此展示"已发送"（契约 §3.37）。
 > 契约响应里的 `skipped`（`nothing_payable` / `interval_not_elapsed`）是**本次调用的结果说明**，本文件不为它登记持久列。
@@ -418,8 +418,8 @@
 >
 > **手机号只存脱敏值**：`merchant.phone` 存原文（`REQ-056` 发送用），本表**一律掩码**（`REQ-024`、`NFR-012`）—— 与 `stall.payment_receiver_token` 同一条纪律。
 >
-> **`sent_at` 带 SQL 默认值**（`DEFAULT (datetime('now','localtime'))`）：该默认值由 **SQLite 求值**，`MT_CLOCK_FILE` 注入时钟管不到 ——
-> 属 `T-SIM-00` 已登记的「SQL 列默认值取墙钟」缺口族；**应用层若显式赋值则不是缺口**（`tests/unit/test_clock_guard.py` 钉住的是"应用层未显式赋值"的那些列）。
+> **`sent_at` 带 SQL 默认值**（`DEFAULT (datetime('now', 'localtime'))`）：该默认值只是**兜底** —— 应用层（`app/domain/notify.py`）**一律显式写入** `app/db.py::now_iso()`（`REQ-033` 时钟接缝），
+> 故本列**不进** `T-SIM-00` 的墙钟缺口枚举（`tests/unit/test_clock_guard.py` 钉住的是"应用层未显式赋值"的那些 SQL 默认列）；**不得**改为依赖该 DEFAULT 取时间。
 >
 > **本表无 `market_id`**：市场归属经 `merchant.market_id` 传递（口径同 §2.20 注）。
 
