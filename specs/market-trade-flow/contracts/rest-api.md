@@ -65,6 +65,7 @@
 | 35 | `/api/demo/transactions/{transaction_no}/cancel` | POST | **取消并撤销**该笔交易（幂等；账上等同未发生，动作**留痕**） | `REQ-055`、`AC-045` |
 | 36 | `/api/demo/hub` | GET | 中台视图：**事件表 + 各商家应缴金额**（演示控制台） | `REQ-056`、`AC-046` |
 | 37 | `/api/demo/sms-reminders` | POST | 触发**催缴短信**（每隔一天，提醒应缴金额） | `REQ-056`、`AC-046` |
+| 38 | `/api/merchant/products` | POST | **新增或修改本摊位商品**的名称与价格（写 `product` + 当日 `price_item`） | `REQ-058`、`AC-048` |
 
 ## 3. 端点详情
 
@@ -468,6 +469,26 @@
 - 说明: **本期不接真实短信网关**（`spec.md` §5 边界）：发送动作**落表留痕**（含**脱敏**手机号与应缴金额），页面展示"已发送"。
 - 说明: **每隔一天**（`interval_days = 2`）：距上次成功发送不足该间隔的商家进 `skipped`，`reason = "interval_not_elapsed"`；**应缴为 0 的商家不发**，`reason = "nothing_payable"`。
 - 可能错误: `MT-1008`(422 `business_date` 格式非法)。
+
+### 3.38 POST `/api/merchant/products`
+
+- 说明: **新增或修改本摊位商品**的名称与价格：不带 `product_id` ⇒ **新增**；带上 ⇒ **修改**（必须是本摊位商品）。写 `product` 并同时写**当日** `price_item`，使新商品**立刻可计价**（§3.6）。关联: `REQ-058`、`AC-048`。
+- 请求头: `X-Stall-Session`（必填）—— `stall_id` **只从会话取**，不从请求体接受，否则「只能改本摊位」就靠自觉了（`REQ-032`）。
+- 请求体:
+
+| 字段 | 类型 | 必填 | 传输层约束 | 语义与校验 |
+| --- | --- | --- | --- | --- |
+| `name` | string | 是 | 1 ~ 50 字符 | 商品名；空或超长 → `MT-1008` |
+| `unit_price_cents` | integer | 是 | ≥ 1 | 当日单价（分）；< 1 或非整数 → `MT-1008`（与 `price_item` 的 CHECK 一致，**不得以 0 元成交**） |
+| `category_code` | string | 否 | 长度 ≤ 16，且必须是既有 `category.code` | 缺省 `V-01`；查无 → `MT-1009`。`product.category_id` 为 NOT NULL，故此项必须落到一个真实品类 |
+| `icon_key` | string | 否 | 长度 ≤ 32 | 秤端图标键（§3.5）；缺省沿用旧值（修改时）或 NULL（新增时） |
+| `hotkey` | string | 否 | 1 ~ 4 字符 | 秤端快捷键（§3.5「无文本输入」选品）；缺省同上 |
+| `product_id` | integer | 否 | 正整数 | **带上即修改**该商品（须属本摊位，否则 `MT-1004`）；不带即新增 |
+
+- 响应: **新增** `201` / **修改** `200`，体为 `{"product_id", "name", "icon_key", "hotkey", "status", "business_date", "unit_price_cents"}`。
+- **幂等**：**同摊位同名**（`name` 完全相同）重复提交 ⇒ **更新该商品**而非新增，**商品数不增加**（演示时点两次不会出两个商品）。带上 `product_id` 时以 `product_id` 为准。
+- 可能错误: `MT-1005`(401)、`MT-1004`(403 非本摊位商品)、`MT-1008`(422 字段非法)、`MT-1009`(404 `product_id` 或 `category_code` 不存在)。
+- 边界: 本端点**只写商品档案与当日价目表**，不产生交易、不写 `audit_log`（价目表**不属**资金留痕表，见 [../data-model.md](../data-model.md) §2.7）。下架走 §3.32。
 
 ## 4. 统一错误码表
 

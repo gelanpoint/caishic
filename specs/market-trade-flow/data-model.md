@@ -3,7 +3,7 @@
 - 特性目录: specs/market-trade-flow/
 - 需求规格: [spec.md](./spec.md) / 技术方案: [plan.md](./plan.md)
 - 存储: SQLite（WAL 模式），经 Python 标准库 `sqlite3` 访问（来源: [plan.md](./plan.md) §1、ADR-0003）
-- 日期: 2026-09-30（**形态 2 同步: 2026-10-06**，迁移 `0002_market_scope.sql` / `0003_device.sql` / `0004_audit_event_types.sql`）
+- 日期: 2026-09-30（**形态 2 同步: 2026-10-06**；**演示控制台同步: 2026-10-08**，迁移 `0002_market_scope.sql` / `0003_device.sql` / `0004_audit_event_types.sql` / `0005_demo_console.sql`）
 - 接口契约: [contracts/](./contracts/)（端点、错误码定义与请求/响应字段一律以该目录为准，本文件只定义**持久化字段**）
 
 ## 0. 全局约定（全表适用，先读）
@@ -45,11 +45,13 @@
 | 日聚合 | `daily_aggregate` | 按摊位 × 营业日的交易与佣金聚合快照（可重算） | `REQ-018` |
 | 结算单 | `settlement` | 依据日聚合生成的结算单，可追溯多版本 | `REQ-019` |
 | 摊位信用档案 | `stall_credit` | 「标价一致率」等信用指标的档案（对顾客可见） | `REQ-008` |
-| 审计日志 | `audit_log` | **只增不改**的资金链路留痕：改价、退货冲正、离线补传、幂等命中 | `NFR-009`、`REQ-007`、`REQ-013`、`REQ-015` |
+| 审计日志 | `audit_log` | **只增不改**的资金链路留痕：改价、退货冲正、离线补传、幂等命中、确认收款、取消交易、催缴发送 | `NFR-009`、`REQ-007`、`REQ-013`、`REQ-015`、`REQ-054`、`REQ-055`、`REQ-056` |
+| 催缴短信记录 | `payment_reminder` | 每次催缴短信的发送留痕：脱敏手机号 + 当次应缴金额 + 营业日（演示口径，不接真实网关） | `REQ-056`、`AC-046` |
 | 迁移执行记录 | `schema_migration` | 基础设施表：记录已执行的迁移脚本，保证启动时按序补齐、不重复执行 | 实现便利（`AC-013` 一条启动命令） |
 
-> **实体共 21 个**（`0001_init.sql` 的 19 个 + 形态 2 新增 2 个）：`market` 由 `0002_market_scope.sql` 引入、
-> `device` 由 `0003_device.sql` 引入；字段表见 §2.20 / §2.21，索引见 §6。本清单与 `sqlite_master` 的表清单逐条同名。
+> **实体共 22 个**（`0001_init.sql` 的 19 个 + `0002`~`0005` 新增 3 个）：`market` 由 `0002_market_scope.sql` 引入、
+> `device` 由 `0003_device.sql` 引入、`payment_reminder` 由 `0005_demo_console.sql` 引入；
+> 字段表见 §2.20 / §2.21 / §2.22，索引见 §6。本清单与 `sqlite_master` 的表清单逐条同名。
 
 > **改价留痕落在哪里**：`REQ-007` 要求记录「原价、改后价、改价时间、操作摊位」。本模型**不另建** `price_change_log` 表，
 > 而是把该事件作为 `audit_log` 中 `event_type = price_change` 的一条记录（载荷含上述四项 + 明细行引用），
@@ -166,7 +168,7 @@
 | `transaction_no` | TEXT | 是 | 全表唯一；长度 ≤32（`REQ-031` 交易号唯一） | 系统生成 | 交易号（凭证展示用，`REQ-012`） |
 | `stall_id` | INTEGER | 是 | 外键 → `stall.id`（`REQ-032` 数据边界） | 无 | |
 | `business_date` | TEXT | 是 | `YYYY-MM-DD`（`REQ-018` 日聚合键） | 由创建时间推导 | |
-| `status` | TEXT | 是 | 状态机枚举，见 §4.1（`REQ-012`、`REQ-013`） | `priced` | |
+| `status` | TEXT | 是 | 状态机枚举，见 §4.1（`REQ-012`、`REQ-013`、`REQ-055` 取消终态） | `priced` | |
 | `total_amount_cents` | INTEGER | 是 | ≥0；= Σ `transaction_item.amount_cents`（`REQ-006`） | 无 | 应收金额 |
 | `received_amount_cents` | INTEGER | 否 | ≥0；支付成功后写入（`REQ-017` 按实收金额计佣） | NULL | 实收金额 |
 | `round_off_cents` | INTEGER | 是 | ≥0（`REQ-007`/`REQ-008`） | 0 | 抹零金额（与改价分开统计） |
@@ -316,7 +318,7 @@
 | 字段 | 类型 | 必填 | 校验规则（来源） | 默认值 | 说明 |
 | --- | --- | --- | --- | --- | --- |
 | `id` | INTEGER | 是 | 主键自增 | 无 | |
-| `event_type` | TEXT | 是 | 枚举：`price_change` / `refund_applied` / `refund_duplicate_hit` / `offline_backfilled` / `offline_duplicate_discarded` / `payment_callback_duplicate_hit` / `staging_write_failed` / `offline_threshold_warned` / `commission_rule_changed` / `scale_amount_mismatch`（`NFR-009`、`REQ-007`、`REQ-013`、`REQ-015`、`REQ-016`、`REQ-029`、`REQ-030`、`REQ-038`/`AC-030`） | 无 | 事件类型；`scale_amount_mismatch` 由 `0004_audit_event_types.sql` 扩入白名单，载荷含设备号、幂等键、秤端上报金额、中台重算金额与逐行差异（契约 `scale-midplatform.md` §5 第 4 条） |
+| `event_type` | TEXT | 是 | 枚举：`price_change` / `refund_applied` / `refund_duplicate_hit` / `offline_backfilled` / `offline_duplicate_discarded` / `payment_callback_duplicate_hit` / `staging_write_failed` / `offline_threshold_warned` / `commission_rule_changed` / `scale_amount_mismatch` / `transaction_confirmed` / `transaction_cancelled` / `payment_reminder_sent`（`NFR-009`、`REQ-007`、`REQ-013`、`REQ-015`、`REQ-016`、`REQ-029`、`REQ-030`、`REQ-038`/`AC-030`、`REQ-054`/`AC-044`、`REQ-055`/`AC-045`、`REQ-056`/`AC-046`） | 无 | 事件类型；`scale_amount_mismatch` 由 `0004_audit_event_types.sql` 扩入白名单，载荷含设备号、幂等键、秤端上报金额、中台重算金额与逐行差异（契约 `scale-midplatform.md` §5 第 4 条）；**末三个值**（`transaction_confirmed` / `transaction_cancelled` / `payment_reminder_sent`）由 `0005_demo_console.sql` 扩入白名单，分别对应「确认即支付」「取消即撤销」「催缴已发送」三件事的留痕（契约 `rest-api.md` §3.35~§3.37） |
 | `stall_id` | INTEGER | 否 | 外键 → `stall.id`；操作摊位（`REQ-007`） | NULL | |
 | `ref_table` | TEXT | 是 | 枚举：`transaction` / `transaction_item` / `payment` / `refund` / `offline_queue` / `commission_rule`（`NFR-009` 可追溯） | 无 | |
 | `ref_id` | INTEGER | 是 | 被引用行的主键 | 无 | |
@@ -327,7 +329,7 @@
 > **只增不改由数据库强制**：迁移脚本中建立触发器 `audit_log_no_update` / `audit_log_no_delete`，
 > 对 `audit_log` 的 `UPDATE` / `DELETE` 直接 `RAISE(ABORT, ...)`；应用层不提供任何修改接口（`NFR-009`、宪法 §4）。
 >
-> **扩展 `event_type` 白名单须重建本表**（`0004_audit_event_types.sql`，`AC-030`）：SQLite 改不了 CHECK 约束，
+> **扩展 `event_type` 白名单须重建本表**（`0004_audit_event_types.sql` 与 `0005_demo_console.sql` 各一次，`AC-030`/`AC-044`）：SQLite 改不了 CHECK 约束，
 > 只能「建新表 → 逐行搬移（含主键）→ `DROP` 旧表 → 换名 → 原样重建两个触发器与 §6 的 `ix_audit_ref` / `ix_audit_stall_time`」。
 > **顺序是硬要求**：`DROP TABLE` 会连带删掉两条索引，换名前建会同名撞车、换名后不建即静默丢索引；
 > 且**不得放宽任何既有约束**（`actor` 长度、`ref_id` / `payload_json` 的 `NOT NULL`、`ref_table` 白名单逐字段照抄）。
@@ -397,6 +399,30 @@
 > **授权只来自本表**：`market_id` / `stall_id` 是设备注册时的绑定，即该设备的授权范围；
 > 请求体或路径里的 `stall_id` / `market_id` **一律不采信**（契约 §1 第 6 条、`REQ-032`）。
 
+### 2.22 催缴短信记录（`payment_reminder`）—— 演示控制台新增（`REQ-056`）
+
+| 字段 | 类型 | 必填 | 校验规则（来源） | 默认值 | 说明 |
+| --- | --- | --- | --- | --- | --- |
+| `id` | INTEGER | 是 | 主键自增 | 无 | |
+| `merchant_id` | INTEGER | 是 | 外键 → `merchant.id`（`REQ-056` 向商家催缴） | 无 | 收到催缴的商家 |
+| `business_date` | TEXT | 是 | `YYYY-MM-DD`（`REQ-056`、`AC-046` 按营业日算应缴） | 无 | 本次催缴对应的营业日 |
+| `payable_cents` | INTEGER | 是 | ≥0；= 该商家当日**应缴金额**：按 `REQ-017` 佣金口径对其**实收金额**逐笔计算之和，**已取消交易不计入**（`REQ-056`、`AC-046`） | 无 | 当次提醒的应缴金额 |
+| `phone_masked` | TEXT | 是 | 长度 ≤32；**只存脱敏值**（掩码形式），**不得存完整手机号**（`REQ-024`、`NFR-012`） | 无 | 发送目标的脱敏手机号 |
+| `channel` | TEXT | 是 | 枚举：`sms`（本期只做短信，`CHECK (channel IN ('sms'))`）（`REQ-056`） | `sms` | 发送渠道 |
+| `sent_at` | TEXT | 是 | ISO-8601；**每隔一天**的间隔判据取自本列（`REQ-056`、契约 `rest-api.md` §3.37 的 `interval_days = 2`） | SQLite 求值 `datetime('now','localtime')` | 发送时间；见下方注 |
+
+> **本表是「发送动作的留痕」，不是短信网关**：`spec.md` §5 边界明确本期**不接真实短信网关**，发送动作**落表**、页面据此展示"已发送"（契约 §3.37）。
+> 契约响应里的 `skipped`（`nothing_payable` / `interval_not_elapsed`）是**本次调用的结果说明**，本文件不为它登记持久列。
+>
+> **「每隔一天」的判据 = 本表按 (`merchant_id`, `sent_at`) 取该商家最近一次发送**（`ix_reminder_merchant_time` 正是为此建的索引，§6）。
+>
+> **手机号只存脱敏值**：`merchant.phone` 存原文（`REQ-056` 发送用），本表**一律掩码**（`REQ-024`、`NFR-012`）—— 与 `stall.payment_receiver_token` 同一条纪律。
+>
+> **`sent_at` 带 SQL 默认值**（`DEFAULT (datetime('now','localtime'))`）：该默认值由 **SQLite 求值**，`MT_CLOCK_FILE` 注入时钟管不到 ——
+> 属 `T-SIM-00` 已登记的「SQL 列默认值取墙钟」缺口族；**应用层若显式赋值则不是缺口**（`tests/unit/test_clock_guard.py` 钉住的是"应用层未显式赋值"的那些列）。
+>
+> **本表无 `market_id`**：市场归属经 `merchant.market_id` 传递（口径同 §2.20 注）。
+
 ## 3. 实体关系
 
 - `merchant` 1 — N `stall`：`stall.merchant_id` → `merchant.id`。
@@ -419,6 +445,7 @@
 - `audit_log` 通过 `ref_table` + `ref_id` **弱引用**上述表（不建外键：留痕不得因业务行删除而受限，`NFR-009`）。
 - `market` 1 — N `merchant` / `stall` / `category` / `product` / `price_item` / `commission_rule` / `daily_aggregate` / `settlement`：各表 `market_id` **弱引用** `market.id`（**不建外键**，原因见 §2.20 注）；`AC-026` 的「两市场互不可见、互不串账」要求每条读路径都按 `market_id` 过滤。
 - `market` 1 — N `device`、`stall` 1 — N `device`：`device` 的 (`market_id`, `stall_id`) 是注册时的绑定、即该设备的授权范围（`REQ-036`）；**不设唯一约束**（允许替换机 / 备用机，见 §2.21 注），绑定唯一性由 `ux_device_id` 保证。
+- `merchant` 1 — N `payment_reminder`：`payment_reminder.merchant_id` → `merchant.id`（催缴短信按**商家**发送与去重，不是按摊位）。
 - **无顾客实体**：系统不采集可识别顾客身份的信息（`spec.md` §5 边界，`REQ-023`）。
 
 ## 4. 状态机
@@ -435,6 +462,7 @@
 | `payment_failed` | 支付失败或超时 | 收款码回调为失败/超时，可重试或改记现金 | 否 |
 | `paid` | 已收款 | 已落库并展示凭证（`REQ-012`） | 否（可被退货冲正） |
 | `refunded` | 已冲正 | 已退货冲正（`REQ-013`） | 是 |
+| `cancelled` | 已取消 | 计价后**未确认收款**即被撤销；**账上等同于未发生**（`REQ-055`） | 是 |
 
 **流转表**
 
@@ -448,6 +476,17 @@
 | `payment_failed` | 重试收款码成功（回调端点 `success`） | `paid` | 同上 | 同上；`callback_no` 不得与既有成功流水重复（`REQ-029`） |
 | `paid` | 退货冲正（退货端点） | `refunded` | 退货金额 >0 且 ≤ 原单金额（`REQ-028`）；幂等键未用过（`REQ-013`） | 写 `refund`；触发相关营业日 `daily_aggregate` 重算（`REQ-018`）；写 `audit_log`（`refund_applied`） |
 | `refunded` | 再次提交同一次退货 | `refunded`（不变） | 幂等键已存在 | **只冲减一次**：不改金额，写 `audit_log`（`refund_duplicate_hit`），返回成功语义（`REQ-013`） |
+| `priced` | 取消（演示控制台端点 `POST /api/demo/transactions/{transaction_no}/cancel`） | `cancelled` | **尚无成功支付流水**（已 `paid` 的交易**不得**取消 ⇒ `MT-1001`）；幂等键未用过 | 交易行**保留**、`status` 置 `cancelled`（**不是 `DELETE`**）；写 `audit_log`（`transaction_cancelled`）留痕；该笔**从一切聚合与应缴中排除**（`REQ-055`、`AC-045`） |
+| `cancelled` | 再次提交同一次取消 | `cancelled`（不变） | 幂等键已存在 | **只生效一次**：不改结果、**不重复留痕**，返回成功语义（`REQ-055`、`AC-045`） |
+
+> **取消不是 `DELETE`，也不是退货**（两者不得混用）：
+> ① **行保留** —— "账上等同于未发生"**不等于**证据消失：只改 `status`，且**动作本身必须留痕**（`NFR-009` 审计只增不改、`RL-9` 不得静默丢弃）；
+> ② **退货是另一条路** —— 它作用于**已收款**的交易，写 `refund` 表并触发相关营业日 `daily_aggregate` 重算（见上表 `paid → refunded` 行，`REQ-013`/`REQ-028`）。取消与退货**不共用状态、不共用表、不共用端点**。
+>
+> **`paid` 是取消的硬边界**：已确认收款的交易不得取消 ⇒ `MT-1001`(409)（契约 `rest-api.md` §3.35）。
+>
+> **排除口径**：`status = 'cancelled'` 的交易**不计入**应缴（`REQ-056`）、**不计入** §5.1 的三项派生指标、也**不进** §2.15 日聚合的 `txn_count` / `gross_amount_cents` ——
+> 即取消后"金额与笔数回到取消前"（`REQ-055`、`AC-045`）。
 
 ### 4.2 实体：`payment`
 
@@ -518,7 +557,7 @@
 | --- | --- |
 | `merchant` / `stall` / `stall_session` / `category` / `stall_category_alias` / `product` / `price_item` | 用 `status` 或 `is_active` 字段表达启停，无流转约束 |
 | `market` / `device` | 用 `status` 表达启停；`device.status` 的取值（`registered` / `active` / `disabled`）由 `0003_device.sql` 的 CHECK 约束，**本期不设 §4 流转表**（激活 / 解绑的处置见契约 `scale-midplatform.md` §3.1 与 §4 的 `MT-2005`） |
-| `transaction_item` / `payment_callback_log` / `refund` / `audit_log` | 写入即终态的事实行（`audit_log` 由触发器禁止修改） |
+| `transaction_item` / `payment_callback_log` / `refund` / `audit_log` / `payment_reminder` | 写入即终态的事实行（`audit_log` 由触发器禁止修改；`payment_reminder` 是"发送动作"的留痕，无流转） |
 | `daily_aggregate` | 可重算快照：用 `revision` + `is_current` 表达版本，无状态流转 |
 | `commission_rule` | 用 `effective_from` / `effective_to` 表达有效期，无状态流转 |
 | `stall_credit` | 派生档案：随日聚合重算覆盖更新 |
@@ -554,6 +593,9 @@
 | **摊位使用率** | 当日 `transaction` 中 **distinct `stall_id`** 的数量 | `stall.status = 'active'` 的摊位数 | `REQ-022` / `AC-005`；表见 §2.8 / §2.2 |
 | **现金交易占比** | 当日 `payment.method = 'cash'` 且 `status = 'success'` 的笔数 | 当日**全部走秤笔数** = `transaction` 中该 `business_date` 的交易数 | `REQ-022` / `AC-005`；表见 §2.10 / §2.8 |
 | **价目表维护率** | 「当日价目表完整且已更新」的摊位数：该摊位**全部 `product.status = 'active'` 的商品**在当日都有 `price_item` 行（`source` 为 `manual` 或 `copied_previous_day` 均算已维护） | `stall.status = 'active'` 的摊位数 | `REQ-022` / `AC-005`；表见 §2.7 / §2.6 / §2.2 |
+
+> **`cancelled` 交易一律排除**（`REQ-055`/`AC-045`：「不计入应缴、不计入看板」）：本表三项指标的**分子与分母**、§2.15 日聚合与 §2.22 的应缴，
+> 均只统计**非 `cancelled`** 的交易；取消后金额与笔数须**回到取消前**。取消的状态语义与 `paid` 边界见 §4.1。
 
 > **已废弃指标（本期不做）**：市场口径的「**日均智能秤交易占比**」（走秤笔数 ÷ **市场总交易笔数**）——
 > 其分母需要一个**外部基准**（人工盘点 / 抽样统计 / 外部系统），**系统自有数据算不出来**，
@@ -603,22 +645,24 @@
 | `ix_settlement_market` | `settlement` | (`market_id`, `period_end`) | 普通 | 市场维度的结算单查询（`REQ-019`、`REQ-035`） |
 | `ux_device_id` | `device` | (`device_id`) | 唯一 | 设备身份唯一：一台设备只有一个绑定（`REQ-036`、`AC-027`） |
 | `ix_device_binding` | `device` | (`market_id`, `stall_id`) | 普通 | 按摊位 / 市场取设备（心跳观测、运营端解绑、`AC-027` 的绑定核对） |
+| `ix_reminder_merchant_time` | `payment_reminder` | (`merchant_id`, `sent_at`) | 普通 | 「每隔一天」的间隔判据：取该商家**最近一次**催缴发送时间（`REQ-056`、`AC-046`；契约 §3.37 的 `interval_days = 2`） |
 
 > **形态 2 新增索引 11 条**：市场 1 条（`ux_market_code`）+ 市场维度查询 8 条（`ix_*_market`）+ 设备 2 条
 > （`ux_device_id` / `ix_device_binding`）；另 `ux_stall_no` / `ux_category_code` 两条**就地改为市场内唯一**
-> （索引名不变、列构成加 `market_id`）。全库实际索引 **36 条**（`0001_init.sql` 的 25 条 + 11 条），与本节逐条同名，
+> （索引名不变、列构成加 `market_id`）。**演示控制台新增 1 条**（`ix_reminder_merchant_time`）。
+> 全库实际索引 **37 条**（`0001_init.sql` 的 25 条 + 形态 2 的 11 条 + 演示控制台的 1 条），与本节逐条同名，
 > 且 `sqlite_master` 中**无 `sqlite_autoindex_*`**（唯一性一律用具名索引表达，便于机械核对）。
 >
-> **`ix_audit_ref` / `ix_audit_stall_time` 在重建 `audit_log` 后依然存在**：`0004_audit_event_types.sql` 先
-> `DROP TABLE audit_log` 再换名重建，而 `DROP TABLE` 会连带删掉这两条索引 —— 故该脚本**必须**在换名之后
-> 重新创建它们（不重建即静默丢索引）。
+> **`ix_audit_ref` / `ix_audit_stall_time` 在重建 `audit_log` 后依然存在**：`0004_audit_event_types.sql` 与
+> `0005_demo_console.sql` **两次都**先 `DROP TABLE audit_log` 再换名重建，而 `DROP TABLE` 会连带删掉这两条索引
+> —— 故**每个**重建脚本都**必须**在换名之后重新创建它们（不重建即静默丢索引）。
 >
 > 索引只在上表定义；新增索引须说明它服务哪个查询，禁止「为建而建」。
 
 ## 7. 迁移与演进策略
 
-1. **建表方式**：启动时按文件名顺序执行 `app/migrations/*.sql`（`0001_init.sql` 起，当前为 `0001`~`0004`），执行记录写入 `schema_migration` 表；应用每次启动自动补齐，**不需要人工介入**（`AC-013` 一条启动命令）。脚本一律可重跑：`CREATE TABLE / INDEX IF NOT EXISTS`、`DROP ... IF EXISTS`，而 `ALTER TABLE ... ADD COLUMN`（SQLite 无 `IF NOT EXISTS`）由 `app/db.py::apply_migration` **按列存在性跳过** —— 否则脚本执行到一半失败后重跑会撞 `duplicate column name`，应用再也起不来。
-2. **变更规则（只增不改）**：新增列必须带默认值或允许 NULL；**不删列**；不修改既有列的类型；重命名走「加新列 → 双写 → 观察一个迭代 → 清理旧列」。`audit_log` 与全部资金留痕表的行**禁止 UPDATE / DELETE**（触发器强制，`NFR-009`）。**唯一的 DDL 例外是改 CHECK 白名单**：`0004_audit_event_types.sql` 为扩展 `audit_log.event_type` 走了「建新表 → 逐行搬移（含主键）→ `DROP` 旧表 → 换名 → 原样重建触发器与 §6 的两条索引」，且**不得放宽任何既有约束**（`actor` 长度、`ref_id` / `payload_json` 的 `NOT NULL`、`ref_table` 白名单逐字段照抄）。
+1. **建表方式**：启动时按文件名顺序执行 `app/migrations/*.sql`（`0001_init.sql` 起，当前为 `0001`~`0005`），执行记录写入 `schema_migration` 表；应用每次启动自动补齐，**不需要人工介入**（`AC-013` 一条启动命令）。脚本一律可重跑：`CREATE TABLE / INDEX IF NOT EXISTS`、`DROP ... IF EXISTS`，而 `ALTER TABLE ... ADD COLUMN`（SQLite 无 `IF NOT EXISTS`）由 `app/db.py::apply_migration` **按列存在性跳过** —— 否则脚本执行到一半失败后重跑会撞 `duplicate column name`，应用再也起不来。
+2. **变更规则（只增不改）**：新增列必须带默认值或允许 NULL；**不删列**；不修改既有列的类型；重命名走「加新列 → 双写 → 观察一个迭代 → 清理旧列」。`audit_log` 与全部资金留痕表的行**禁止 UPDATE / DELETE**（触发器强制，`NFR-009`）。**唯一的 DDL 例外是改 CHECK 白名单**（`0004` / `0005` 各一次）：`0004_audit_event_types.sql` 与 `0005_demo_console.sql` 为扩展 `audit_log.event_type` 走了「建新表 → 逐行搬移（含主键）→ `DROP` 旧表 → 换名 → 原样重建触发器与 §6 的两条索引」，且**不得放宽任何既有约束**（`actor` 长度、`ref_id` / `payload_json` 的 `NOT NULL`、`ref_table` 白名单逐字段照抄）。
 3. **回滚方案**：因只增不改，**回滚 = 回退代码到上一版 + 保留当前数据文件**（旧代码忽略新增列即可继续运行）；演示环境另有更强手段：`scripts/reset_demo.py` 删除数据文件并由种子重建（`NFR-003`/`NFR-004` 的恢复路径）。数据文件按 `data/` 目录存放，按日期复制即可备份（手工，本期不做自动备份，`NFR-004`）。
 4. **演进路径**（第 1 项**已落地**，其余为已知项、本期不做，届时按此路径改）：
    - **多市场多租户 —— 已落地为维度**（`REQ-035`，迁移 `0002_market_scope.sql`）：八张业务表带 `market_id`（归属与「无 `REFERENCES`」的原因见 §2.20 注），`stall` / `category` 的唯一约束已纳入 `market_id`（§6）；**本期只装载一个市场**（默认市场 `id = 1`），装载第二个市场是**纯 DML**（`INSERT` 一行市场 + 带 `market_id` 插业务行），**不改表结构** —— `AC-026` 以此取证。**多市场的运营流程**（跨市场权限、跨市场结算与报表）仍在 Out-of-Scope 第 4 条，属对架构叶子的重评，须先改 `docs/adr/`。
