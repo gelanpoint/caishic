@@ -24,7 +24,9 @@
   var state = {
     world: null, entities: null, businessDate: null, view: "merchant",
     hover: null, hoverPlot: null, selected: null, operatingStall: null, lastPoint: null,
-    scale: 0
+    scale: 0,
+    /* 顾客买单统计（`REQ-052`）：成功/失败分开计，失败**必须**留痕（`RL-9`）。 */
+    purchases: { ok: 0, failed: 0, lastError: null, lastTransactionNo: null }
   };
   var canvas = null;
   var ctx = null;
@@ -275,12 +277,49 @@
     }
   }
 
+  /* ---- 顾客买单（`REQ-052` / `AC-042`）----------------------------------
+     顾客逛到摊位、停留结束时触发一次**真实**成交：走既有 §3.6 + §3.10 端点。
+     这样管理端看板才有数据可看 —— 之前演示游戏完全没有购买行为，看板恒为 0。
+     两点纪律：
+     - 金额/重量**不由前端算**，服务端计价结果为准（界面只展示服务端返回的数字）；
+     - 失败**明确记录**并计数，绝不静默丢弃（`RL-9`）。 */
+  var purchaseSeq = 0;
+
+  /** 买多少：按顾客序号与已购次数取一个确定性的量（不用随机数 ⇒ 演示可复现）。 */
+  function weightFor(customer) {
+    return 250 + ((customer.index * 37 + customer.visits * 53) % 16) * 100;
+  }
+
+  function onPurchase(customer) {
+    var stallNo = customer.targetStall;
+    if (!stallNo) { return; }
+    GameApi.stallData(stallNo).then(function (data) {
+      var items = (data && data.items) || [];
+      if (!items.length) { throw new Error("摊位 " + stallNo + " 没有在售商品"); }
+      var item = items[(customer.index + customer.visits) % items.length];
+      purchaseSeq += 1;
+      return GameApi.buy(stallNo, item.productId, weightFor(customer), purchaseSeq)
+        .then(function (result) {
+          state.purchases.ok += 1;
+          state.purchases.lastTransactionNo = result.transactionNo;
+          GamePanels.log("顾客 " + (customer.index + 1) + " 在 " + stallNo + " 买了 " + item.name +
+            " " + result.weightGrams + "g，共 " + GameApi.yuan(result.totalCents) + " 元（" +
+            result.transactionNo + "）");
+        });
+    }).catch(function (error) {
+      state.purchases.failed += 1;
+      state.purchases.lastError = (error && error.code ? error.code + "：" : "") +
+        (error && error.message ? error.message : String(error));
+      GamePanels.log("顾客买单失败：" + state.purchases.lastError, true);
+    });
+  }
+
   /* ---- 主循环 --------------------------------------------------------- */
   function frame(now) {
     var dt = lastFrame ? Math.min(0.06, (now - lastFrame) / 1000) : 0;
     lastFrame = now;
     if (state.entities) {
-      state.entities.step(dt);
+      state.entities.step(dt, { onPurchase: onPurchase });
       GameRender.draw(ctx, state.world, state.entities, {
         hover: state.hover, hoverPlot: state.hoverPlot, selected: state.selected,
         view: state.view, viewLabel: GamePanels.viewLabel()

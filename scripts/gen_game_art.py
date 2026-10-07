@@ -22,31 +22,31 @@ import tempfile
 import zlib
 from pathlib import Path
 
+from game_art_base import (  # noqa: E402  （与脚本同目录，Python 自动把脚本目录放进 sys.path）
+    C, DIGITS, GUTTER, MANIFEST_VERSION, PALETTE, TILE_PX, Canvas, png_bytes, png_read)
+
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT = REPO_ROOT / "app" / "static" / "game" / "sprites"
-MANIFEST_VERSION = 1
-TILE_PX = 16
-#: 每个精灵四周的透明隔离带（像素）：防止画布缩放/双线性采样把相邻精灵的边缘吃进来。
-GUTTER = 1
-#: 全部 24 色（**唯一色彩来源**；逐色用途表在 docs/game/美术资源方案.md §3）。`--check` 机械
-#: 验证 PNG 每个不透明像素都落在这 24 色内。
-PALETTE = dict(zip(
-    "ink ink_soft skin skin_shade hair_dark cloth_boss cloth_cust cloth_admin cloth_light "
-    "floor_a path grass leaf leaf_dark water steel steel_dark screen_on wood root_brown "
-    "fruit_red fruit_orange fruit_purple fruit_yellow".split(),
-    ((0x24, 0x1A, 0x2E), (0x4A, 0x35, 0x50), (0xFF, 0xD9, 0xA6), (0xE0, 0xA8, 0x70),
-     (0x4A, 0x2C, 0x1A), (0xE8, 0x56, 0x3F), (0x3F, 0x7F, 0xD8), (0x2F, 0xA6, 0xA0),
-     (0xF5, 0xE6, 0xC8), (0xE9, 0xD9, 0xBC), (0xC2, 0xA8, 0x7F), (0x7C, 0xBF, 0x4A),
-     (0x4F, 0xA8, 0x3C), (0x2E, 0x7A, 0x28), (0x4F, 0xA8, 0xD8), (0xC7, 0xCD, 0xD6),
-     (0x8A, 0x92, 0x9E), (0x6B, 0xE0, 0x7A), (0xA9, 0x74, 0x3F), (0x8B, 0x5A, 0x2B),
-     (0xE0, 0x39, 0x2B), (0xF0, 0x8A, 0x24), (0x7A, 0x4F, 0xB5), (0xF5, 0xC5, 0x42))))
-C = {name: rgb + (255,) for name, rgb in PALETTE.items()}
+#: 五类摊位：(精灵名, 棚顶主色, 条纹色, 货物形状)。顺序 = `V/F/M/A/杂货`。
+#: **谁属于哪类由服务端 `category.code` 前缀推导**（V 蔬菜 / F 水果 / M 肉 / A 水产 /
+#: 无单一主营 ⇒ 杂货），前端**不得硬编码** —— 这里只定义"长什么样"。
+#: 定义在 `SHEETS` **之前**：`SHEETS` 要按它列出精灵名。
+STALL_KINDS = (
+    ("stall_veg", C["cloth_light"], C["leaf"], "leaf"),
+    ("stall_fruit", C["cloth_boss"], C["fruit_yellow"], "round"),
+    ("stall_meat", C["cloth_light"], C["fruit_red"], "slab"),
+    ("stall_fish", C["cloth_light"], C["water"], "fish"),
+    ("stall_grocery", C["cloth_admin"], C["cloth_light"], "mixed"),
+)
+
 #: 精灵表：(表名, 格宽, 格高, 列数, 行数, ((精灵名, 宽, 高), ...))，行优先；格内精灵落在格
 #: 左上角 + (GUTTER, GUTTER)，表尺寸 = 格数 × (格 + 2×GUTTER)。
 SHEETS = (
     ("terrain", 16, 16, 4, 1, (("tile_floor", 16, 16), ("tile_path", 16, 16),
                                ("tile_grass", 16, 16), ("tile_water", 16, 16))),
-    ("stalls", 32, 32, 4, 1, tuple((f"stall_{i}", 32, 32) for i in range(4))),
+    ("stalls", 32, 32, 3, 3, tuple((f"stall_{i}", 32, 32) for i in range(4))
+     + tuple((name, 32, 32) for name, _, _, _ in STALL_KINDS)),
     ("scales", 24, 24, 2, 1, (("scale_idle", 24, 24), ("scale_active", 24, 24))),
     ("people", 16, 24, 4, 3, tuple((f"person_{r}_{d}", 16, 24) for r in
                                    ("boss", "customer", "admin")
@@ -63,81 +63,6 @@ REQUIRED_SPRITES = tuple(
     for d in ("down", "up", "left", "right"))
 
 
-def _chunk(tag, body):
-    return struct.pack(">I", len(body)) + tag + body + struct.pack(">I", zlib.crc32(tag + body) & 0xFFFFFFFF)
-
-
-def png_bytes(canvas: "Canvas") -> bytes:
-    """手写 PNG（8bit RGBA）：签名 + IHDR + IDAT + IEND。**不写任何带时间/环境的 chunk**。"""
-    raw = bytearray()
-    for y in range(canvas.h):
-        raw.append(0)  # filter 0 (None)：固定，不用自适应滤波（其结果依赖启发式，会漂）
-        raw += canvas.px[y * canvas.w * 4:(y + 1) * canvas.w * 4]
-    # zlib 参数逐个显式写死（level/method/wbits/memLevel/strategy），不吃默认值
-    co = zlib.compressobj(9, zlib.DEFLATED, 15, 8, zlib.Z_DEFAULT_STRATEGY)
-    idat = co.compress(bytes(raw)) + co.flush()
-    return (b"\x89PNG\r\n\x1a\n"
-            + _chunk(b"IHDR", struct.pack(">IIBBBBB", canvas.w, canvas.h, 8, 6, 0, 0, 0))
-            + _chunk(b"IDAT", idat) + _chunk(b"IEND", b""))
-def png_read(path: Path):
-    """读回 PNG → (w, h, [扫描线 bytes])。只接受本脚本写出的形态（filter 恒为 0）。"""
-    blob = path.read_bytes()
-    assert blob[:8] == b"\x89PNG\r\n\x1a\n", f"{path.name} 不是 PNG"
-    pos, idat, ihdr = 8, b"", None
-    while pos < len(blob):
-        ln = struct.unpack(">I", blob[pos:pos + 4])[0]
-        tag, body = blob[pos + 4:pos + 8], blob[pos + 8:pos + 8 + ln]
-        if tag == b"IHDR": ihdr = struct.unpack(">IIBBBBB", body)
-        elif tag == b"IDAT": idat += body
-        pos += 12 + ln
-    assert ihdr and ihdr[2] == 8 and ihdr[3] == 6, f"{path.name} 不是 8bit RGBA"
-    w, h, raw, rows, p = ihdr[0], ihdr[1], zlib.decompress(idat), [], 0
-    for _ in range(h):
-        assert raw[p] == 0, f"{path.name} 出现 filter {raw[p]}（本脚本只写 filter 0）"
-        p += 1
-        rows.append(raw[p:p + w * 4])
-        p += w * 4
-    return w, h, rows
-class Canvas:
-    """最小像素画布：RGBA bytearray + 够用的图元。像素画靠图元组合，不手抄点阵。"""
-    def __init__(self, w, h):
-        self.w, self.h, self.px = w, h, bytearray(w * h * 4)   # 全透明
-    def put(self, x, y, c):
-        if c is not None and 0 <= x < self.w and 0 <= y < self.h:
-            i = (y * self.w + x) * 4
-            self.px[i:i + 4] = bytes(c)
-    def rect(self, x, y, w, h, c):
-        for j in range(y, y + h):
-            for i in range(x, x + w): self.put(i, j, c)
-    def ellipse(self, cx, cy, rx, ry, c):
-        for dy in range(-ry, ry + 1):
-            for dx in range(-rx, rx + 1):
-                if rx * rx * ry * ry and dx * dx * ry * ry + dy * dy * rx * rx <= rx * rx * ry * ry:
-                    self.put(cx + dx, cy + dy, c)
-    def outline(self, c):
-        """给非透明像素的 4 邻域空白补一圈描边（先采样后写，避免描边自我扩散）。"""
-        add = [(x, y) for y in range(self.h) for x in range(self.w)
-               if not self.px[(y * self.w + x) * 4 + 3]
-               and any(0 <= x + dx < self.w and 0 <= y + dy < self.h
-                       and self.px[((y + dy) * self.w + x + dx) * 4 + 3]
-                       for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))]
-        for x, y in add: self.put(x, y, c)
-    def mirror(self):
-        m = Canvas(self.w, self.h)
-        for y in range(self.h):
-            for x in range(self.w):
-                i = (y * self.w + x) * 4
-                m.put(self.w - 1 - x, y, tuple(self.px[i:i + 4]))
-        return m
-    def blit(self, src, dx, dy):
-        for y in range(src.h):
-            for x in range(src.w):
-                i = (y * src.w + x) * 4
-                if src.px[i + 3]: self.put(dx + x, dy + y, tuple(src.px[i:i + 4]))
-#: 3x5 点阵数字（每行 3 bit，bit2 = 最左）。秤屏读数用。
-DIGITS = {0: (7, 5, 5, 5, 7), 1: (2, 6, 2, 2, 7), 2: (7, 1, 7, 4, 7), 3: (7, 1, 7, 1, 7),
-          4: (5, 5, 7, 1, 1), 5: (7, 4, 7, 1, 7), 6: (7, 4, 7, 5, 7), 7: (7, 1, 1, 2, 2),
-          8: (7, 5, 7, 5, 7), 9: (7, 5, 7, 1, 7)}
 
 
 def tile_floor(c):
@@ -183,6 +108,55 @@ def draw_stall(c, a, b, goods):
     c.rect(4, 19, 11, 6, C["cloth_light"])     # 价签
     c.rect(6, 21, 7, 1, C["ink"]); c.rect(6, 23, 5, 1, C["ink"])
     c.rect(3, 27, 3, 4, C["root_brown"]); c.rect(26, 27, 3, 4, C["root_brown"])   # 支腿
+    c.outline(C["ink"])
+
+
+# --- 按主营品类区分的摊位（`REQ-051` / `AC-041`） -------------------------------
+#: 台面货物按品类换**形状**，不只换颜色 —— 只换色在小尺寸下几类会糊成一团，
+#: 形状差异（叶 / 圆 / 厚片 / 长条 / 方箱）才是"一眼能分"的关键。
+#: **只用 24 色板内的颜色**（`check()` 机械核验色板封闭）。
+def _goods_leaf(c, x, y, i):
+    c.ellipse(x, y + 1, 2, 2, C["leaf"] if i % 2 == 0 else C["leaf_dark"])
+    c.rect(x - 1, y - 2, 3, 2, C["leaf_dark"])            # 菜叶
+
+
+def _goods_round(c, x, y, i):
+    c.ellipse(x, y, 2, 2, (C["fruit_red"], C["fruit_orange"],
+                           C["fruit_yellow"], C["fruit_purple"])[i % 4])
+
+
+def _goods_slab(c, x, y, i):
+    c.ellipse(x, y, 3, 2, C["fruit_red"])                  # 肉块
+    c.rect(x - 2, y, 5, 1, C["cloth_light"])               # 肥瘦纹路
+
+
+def _goods_fish(c, x, y, i):
+    c.ellipse(x, y, 3, 1, C["steel"])                      # 鱼身（细长）
+    c.put(x + 3, y, C["steel_dark"]); c.put(x - 3, y, C["steel_dark"])   # 尾
+    c.put(x + 1, y - 1, C["ink"])                          # 眼睛
+
+
+def _goods_mixed(c, x, y, i):
+    c.rect(x - 2, y - 1, 4, 3, C["root_brown"] if i % 2 == 0 else C["cloth_admin"])
+    c.rect(x - 2, y - 1, 4, 1, C["fruit_yellow"])          # 箱盖
+
+
+GOODS_DRAW = {"leaf": _goods_leaf, "round": _goods_round, "slab": _goods_slab,
+              "fish": _goods_fish, "mixed": _goods_mixed}
+
+
+def draw_stall_kind(c, a, b, kind):
+    """品类摊位：棚顶配色 + 台面货物形状一起换，与 `draw_stall` 同版式（高度/支腿一致）。"""
+    c.rect(0, 1, 32, 9, a)
+    for i in range(4, 32, 8): c.rect(i, 1, 4, 9, b)
+    c.rect(2, 10, 28, 6, C["ink_soft"])
+    for i, x in enumerate((7, 13, 19, 25)): GOODS_DRAW[kind](c, x, 12, i)
+    c.rect(1, 16, 30, 11, C["wood"])
+    for x in (7, 15, 23): c.rect(x, 16, 1, 11, C["root_brown"])
+    c.rect(1, 16, 30, 1, C["cloth_light"])
+    c.rect(4, 19, 11, 6, C["cloth_light"])     # 价签
+    c.rect(6, 21, 7, 1, C["ink"]); c.rect(6, 23, 5, 1, C["ink"])
+    c.rect(3, 27, 3, 4, C["root_brown"]); c.rect(26, 27, 3, 4, C["root_brown"])
     c.outline(C["ink"])
 
 
@@ -309,6 +283,8 @@ SPRITES = {"tile_floor": _mk(tile_floor, 16, 16), "tile_path": _mk(tile_path, 16
            "prop_computer": _mk(prop_computer, 32, 32), "prop_crate": _mk(prop_crate, 16, 16)}
 for _i in range(4):
     SPRITES[f"stall_{_i}"] = _mk(draw_stall, 32, 32, *STALL_VARIANTS[_i])
+for _name, _a, _b, _kind in STALL_KINDS:
+    SPRITES[_name] = _mk(draw_stall_kind, 32, 32, _a, _b, _kind)
 for _i in range(8):
     SPRITES[f"item_{_i}"] = _mk(draw_item, 16, 16, _i)
 for _r, (_hair, _shirt, _extra) in ROLES.items():
@@ -364,6 +340,10 @@ def check(out_dir: Path, rebuild: bool = True) -> list:
                             f"{s['sheet']} {sh['w']}x{sh['h']}")
     missing = sorted(set(REQUIRED_SPRITES) - set(m["sprites"]))
     if missing: errs.append(f"最小集精灵缺失 {len(missing)} 个：{missing}")
+    # 品类摊位（`REQ-051`）与最小集同等待遇：**缺一个即红** —— 否则"摊位按品类区分"
+    # 会在缺图时静默退化成同一张图，而页面上只是"看起来都差不多"，没人会发现。
+    missing_kind = sorted({name for name, _, _, _ in STALL_KINDS} - set(m["sprites"]))
+    if missing_kind: errs.append(f"品类摊位精灵缺失 {len(missing_kind)} 个：{missing_kind}")
     for sheet, info in sorted(sheets.items()):
         w, h, rows = png_read(out_dir / info["file"])
         if (w, h) != (info["w"], info["h"]):

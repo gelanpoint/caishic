@@ -34,6 +34,7 @@ window.GameApi = (function () {
     var headers = {};
     if (options.body !== undefined) { headers["Content-Type"] = "application/json"; }
     if (options.token) { headers["X-Stall-Session"] = options.token; }
+    if (options.idempotencyKey) { headers["Idempotency-Key"] = options.idempotencyKey; }
     return fetch(path, {
       method: method,
       headers: headers,
@@ -156,6 +157,40 @@ window.GameApi = (function () {
     return request("GET", "/api/customer/stalls/" + encodeURIComponent(stallNo) + "/profile");
   }
 
+  /* 顾客买单（`REQ-052` / `AC-042`）：走**既有**两个端点 —— §3.6 创建计价 + §3.10 确认收款
+     （现金）。**不新增端点、不直接改库**（`REQ-044`）。
+     两处要点：
+     - **幂等键必须唯一**：复用同一个键会被 `MT-1012` 拒掉，或者被服务端认成同一笔而不落新账；
+       这里用 `摊位 + 序号 + 时间戳` 拼，保证每笔都不同。
+     - **失败原样抛出**，由调用方**明确记录** —— 绝不吞掉（`RL-9`：不静默丢弃任何一笔交易）。 */
+  function buy(stallNo, productId, weightGrams, seq) {
+    var key = "game-" + stallNo + "-" + seq + "-" + Date.now();
+    return tokenFor(stallNo).then(function (token) {
+      return request("POST", "/api/merchant/transactions", {
+        token: token,
+        idempotencyKey: key,
+        body: {
+          items: [{ product_id: productId, weight_grams: weightGrams }],
+          client_idempotency_key: key
+        }
+      }).then(function (txn) {
+        return request("POST", "/api/merchant/transactions/" + txn.transaction_no + "/payment", {
+          token: token,
+          idempotencyKey: key + "-pay",
+          body: { method: "cash", operator: "顾客（演示）" }
+        }).then(function (paid) {
+          return {
+            transactionNo: txn.transaction_no,
+            totalCents: txn.total_amount_cents,
+            weightGrams: weightGrams,
+            productId: productId,
+            status: paid.transaction_status
+          };
+        });
+      });
+    });
+  }
+
   function dashboard(businessDate) {
     return request("GET", "/api/admin/dashboard?business_date=" + (businessDate || day()));
   }
@@ -175,6 +210,7 @@ window.GameApi = (function () {
     setPrice: setPrice,
     setStatus: setStatus,
     stallProfile: stallProfile,
+    buy: buy,
     dashboard: dashboard,
     usageMetrics: usageMetrics,
     auditLogs: auditLogs,

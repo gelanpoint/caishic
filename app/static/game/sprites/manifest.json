@@ -22,8 +22,8 @@
     },
     "stalls": {
       "file": "stalls.png",
-      "h": 34,
-      "w": 136
+      "h": 102,
+      "w": 102
     },
     "terrain": {
       "file": "terrain.png",
@@ -225,8 +225,43 @@
       "h": 32,
       "sheet": "stalls",
       "w": 32,
-      "x": 103,
-      "y": 1
+      "x": 1,
+      "y": 35
+    },
+    "stall_fish": {
+      "h": 32,
+      "sheet": "stalls",
+      "w": 32,
+      "x": 35,
+      "y": 69
+    },
+    "stall_fruit": {
+      "h": 32,
+      "sheet": "stalls",
+      "w": 32,
+      "x": 69,
+      "y": 35
+    },
+    "stall_grocery": {
+      "h": 32,
+      "sheet": "stalls",
+      "w": 32,
+      "x": 69,
+      "y": 69
+    },
+    "stall_meat": {
+      "h": 32,
+      "sheet": "stalls",
+      "w": 32,
+      "x": 1,
+      "y": 69
+    },
+    "stall_veg": {
+      "h": 32,
+      "sheet": "stalls",
+      "w": 32,
+      "x": 35,
+      "y": 35
     },
     "tile_floor": {
       "h": 16,
