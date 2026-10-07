@@ -711,8 +711,13 @@ python -m sim --svg-report --svg-study data/sim/study360/study/scenarios.json `
    4. ~~跨引擎未验~~ → **已闭合**：`python -m playwright install firefox` 装上 **Firefox 150（Gecko）**
       实测同一条不变量成立（画布 `1024/1024`、倍率 `2`、清单 `25` 件 **2 列**、零横向/纵向裁切、零前端错误），
       并固化成 `tests/e2e/test_demo_game_cross_engine.py`。
-      ⚠️ 仍需知道：**WebKit 未验**（Playwright 的 WebKit 在本机依赖较重，未尝试）；
-      且 Gecko 用例与 Chromium 用例**不能同模块** —— 既有 `browser` 夹具是 Chromium 专用且
+      ⚠️ 仍需知道：**WebKit 未验** —— 试过 `python -m playwright install webkit`，包能下载
+      （`webkit-2287`）但**起不来**：缺 11 个系统库（`libwebpdemux.so.2` / `libavif.so.13` /
+      `libharfbuzz-icu.so.0` / `libwebpmux.so.3` / `libmanette-0.2.so.0` / `libenchant-2.so.2` /
+      `libhyphen.so.0` / `libsecret-1.so.0` / `libwoff2dec.so.1.0.2` / `libGLESv2.so.2` / `libx264.so`）。
+      补齐这套依赖的代价与收益不成比例（已验 Blink + Gecko 两个内核，且用到的都是
+      flex/grid/多列/canvas 2D 这类成熟特性），**故停在这里并如实记为未闭合**，不假装验过。
+      另：Gecko 用例与 Chromium 用例**不能同模块** —— 既有 `browser` 夹具是 Chromium 专用且
       `scope="module"`，而 Playwright 同步 API **同进程只能有一个上下文**（否则报
       "using Playwright Sync API inside the asyncio loop"），故单独成文件。
    5. **测试文件行数**：本轮的走查文件一度涨到 409 行、越过 `quality-gates.md` §1.2 的
