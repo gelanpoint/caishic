@@ -201,7 +201,7 @@
 5. **不得**因不一致而拒绝、丢弃或静默改写秤端上报的原始值 —— 原始值必须留在留痕里，否则差异无法追查。
 
 > 这条语义的**灵敏度**必须被测：人为把秤端上报金额改一个分位，`AC-030` 必须变红。
-> 「不验证灵敏度的验证是摆设」（本项目既有纪律，见 `tests/contract/test_admin_ops.py::test_usage_metrics_numerator_is_actually_queried` 的先例）。
+> 「不验证灵敏度的验证是摆设」（本项目既有纪律，见 `tests/contract/test_admin_report.py::test_usage_metrics_numerator_is_actually_queried` 的先例）。
 
 ## 6. 离线与补传（两端的责任边界）
 

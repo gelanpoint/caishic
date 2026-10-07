@@ -30,7 +30,14 @@ WAIT_JS = """(ms) => new Promise((resolve) => {
 
 
 def _dashboard(server) -> dict:
-    status, body = server.api("GET", "/api/admin/dashboard?business_date=2026-10-07")
+    """取当日看板 —— **不要写死营业日**。
+
+    这里原先写死 `business_date=2026-10-07`，结果**日期一跨天用例就必然红**：
+    顾客买的单落到了 `2026-10-08`，而看板查的是 `2026-10-07`，于是"买了 1 笔但笔数没变"。
+    **那是指标口径正确、测试自己写错了日期** —— 不传日期即用服务端默认的当日，
+    这样用例跟真实时钟一致，不需要在任何地方造假。
+    """
+    status, body = server.api("GET", "/api/admin/dashboard")
     assert status == 200, f"看板接口返回 {status}：{body}"
     return body
 
