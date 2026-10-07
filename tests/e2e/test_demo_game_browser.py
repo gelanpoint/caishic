@@ -1,96 +1,30 @@
-"""演示游戏的**界面层**真浏览器走查（`T-GAME-03`）。
+"""演示游戏的**界面层**真浏览器走查：缩放 / 悬停 / 点秤操作（`T-GAME-03`）。
 
-为什么要单独一个文件：`tests/e2e/test_demo_game.py` 验的是**数据层**（Node 载入真 `api.js`
-打真服务）与**源码扫描**，`test_no_external_assets.py` 验的是**零 CDN**。
-它们**都碰不到** canvas 绘制、DOM 布局、鼠标悬停、点击与面板行为 —— 而这正是演示的全部看点。
+为什么要单独一组：`tests/e2e/test_demo_game.py` 验的是**数据层**（Node 载入真 `api.js`
+打真服务），`test_no_external_assets.py` 验的是**零 CDN**。它们**都碰不到**
+canvas 绘制、DOM 布局、鼠标悬停、点击与面板行为 —— 而这正是演示的全部看点。
 
-本文件把界面层补上，并把三个**"不报错、不白屏、pytest 全绿"的真缺陷**钉成回归
+本文件把界面层补上，并把两个**"不报错、不白屏、pytest 全绿"的真缺陷**钉成回归
 （都是先由真浏览器实玩发现、再修的）：
 
 1. **画布被 CSS 按分数比例缩放** —— 后备像素 1024、显示交给 `width:100%`，容器一窄就被
    浏览器按 0.8613 缩。像素风当场糊掉（实测 1280 窗口下 39.5% 的水平游程变成奇数）。
 2. **悬停清单有一半商品够不着** —— 25 件自然高 480px，而清单上限 240px，且浮层是
    `pointer-events:none`，用户连滚都滚不了。
-3. **「上架」入口落在视口外** —— 已下架分组原在 24 行之后，`elementFromPoint` 取不到，
-   下架后找不到怎么恢复。
 
-这三条的共同点是：**功能"看起来"正常、没有任何报错**，只有真的量像素 / 真的点一下才会露。
-故本文件的断言都落在**可量化的界面事实**上（显示尺寸 vs 后备像素、裁切像素数、能否命中），
-不是"页面上有这么个元素"。
+两者的共同点是：**功能"看起来"正常、没有任何报错**，只有真的量像素 / 真的点一下才会露。
+故断言都落在**可量化的界面事实**上（显示尺寸 vs 后备像素、裁切像素数、能否命中），
+不是"页面上有这么个元素"。视角只读 / 降级 / 零报错另见 `test_demo_game_views.py`。
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-from e2e_support import active_products, bind_stall, new_page, session_headers, snap
+from e2e_support import active_products, bind_stall, new_page, snap
+from game_support import MEAT_STALL, VEG_STALL, hover, open_game, plot_center, watch_errors
 
-STALL = "A-01"
-MEAT_STALL = "A-06"
-
-
-# --------------------------------------------------------------------------- #
-# 助手
-# --------------------------------------------------------------------------- #
-
-
-def _open_game(page, server) -> None:
-    page.goto(f"{server.base}/game/", wait_until="domcontentloaded")
-    page.wait_for_function("() => window.GameApp && GameApp.state.world", timeout=20000)
-    page.wait_for_function("() => document.getElementById('dataBadge').className.includes('on')",
-                           timeout=20000)
-    page.evaluate("window.scrollTo(0, 0)")
-
-
-def _plot_center(page, stall_no: str, what: str = "pad") -> tuple[float, float]:
-    """把某个摊位的 `pad`（铺位）或 `scale`（智能秤）中心换算成**视口坐标**。
-
-    不写死像素：世界坐标来自页面自己构建的 `state.world`，画布位置与当前整数倍也从 DOM 读 ——
-    这样断点/缩放一变，测试跟着走，不会因为布局调整而假红。
-    """
-    box = page.evaluate(
-        """([stallNo, what]) => {
-            const w = GameApp.state.world;
-            const plot = w.plots.find(p => p.stallNo === stallNo);
-            const part = plot[what];
-            const scale = GameApp.state.scale;
-            const rect = document.getElementById('gameCanvas').getBoundingClientRect();
-            /* `pad` 有 w/h；`scale`/`boss` 只有一个格子（无 w/h）—— 少了这个兜底会算出 NaN，
-               而 Playwright 收到 NaN 会**直接崩掉 driver**（不是普通断言失败）。 */
-            const pw = part.w === undefined ? 1 : part.w;
-            const ph = part.h === undefined ? 1 : part.h;
-            return { x: rect.left + (part.x + pw / 2) * 16 * scale,
-                     y: rect.top + (part.y + ph / 2) * 16 * scale,
-                     scale, canvasLeft: rect.left, canvasTop: rect.top };
-        }""",
-        [stall_no, what],
-    )
-    return box["x"], box["y"]
-
-
-def _hover(page, x: float, y: float) -> None:
-    page.mouse.move(x, y)
-    page.wait_for_timeout(400)
-
-
-def _watch_errors(page) -> list[str]:
-    """收集**真异常**（`pageerror` + `console.error`）；返回列表本身，随时可读。
-
-    注意：被 `page.route(...).abort()` 拦掉的请求会让浏览器自己往控制台写一条
-    `Failed to load resource` —— 那是**我们主动造成的网络失败**，不是前端缺陷。
-    故按前缀剔除，避免把"故意的故障注入"误判成"页面报错"。
-    """
-    problems: list[str] = []
-    page.on("pageerror", lambda e: problems.append(f"pageerror: {e}"))
-    page.on(
-        "console",
-        lambda m: problems.append(f"console.{m.type}: {m.text}")
-        if m.type == "error" and "Failed to load resource" not in m.text
-        else None,
-    )
-    return problems
+STALL = VEG_STALL
 
 
 # --------------------------------------------------------------------------- #
@@ -111,7 +45,7 @@ def test_canvas_is_never_scaled_fractionally(browser, live_server, width, height
     page = new_page(browser)
     try:
         page.set_viewport_size({"width": width, "height": height})
-        _open_game(page, live_server)
+        open_game(page, live_server)
         info = page.evaluate(
             """() => {
                 const c = document.getElementById('gameCanvas');
@@ -145,7 +79,7 @@ def test_narrow_viewport_falls_back_to_one_x_not_fractional(browser, live_server
     page = new_page(browser)
     try:
         page.set_viewport_size({"width": 900, "height": 700})
-        _open_game(page, live_server)
+        open_game(page, live_server)
         scale = page.evaluate("() => GameApp.state.scale")
         assert scale == 1, f"窄视口应退到 1 倍，实际 {scale}"
     finally:
@@ -163,10 +97,10 @@ def test_hover_lists_every_product_without_clipping(browser, live_server, shots)
     expected = len(active_products(live_server, token))
 
     page = new_page(browser)
-    problems = _watch_errors(page)
+    problems = watch_errors(page)
     try:
-        _open_game(page, live_server)
-        _hover(page, *_plot_center(page, STALL, "pad"))
+        open_game(page, live_server)
+        hover(page, *plot_center(page, STALL, "pad"))
         state = page.evaluate(
             """() => {
                 const tip = document.getElementById('tooltip');
@@ -224,10 +158,10 @@ def test_clicking_scale_opens_ops_and_price_change_persists(browser, live_server
     )
 
     page = new_page(browser)
-    problems = _watch_errors(page)
+    problems = watch_errors(page)
     try:
-        _open_game(page, live_server)
-        page.mouse.click(*_plot_center(page, STALL, "scale"))
+        open_game(page, live_server)
+        page.mouse.click(*plot_center(page, STALL, "scale"))
         page.wait_for_selector("#opsBody .op-input", timeout=10000)
 
         first = page.locator("#opsBody .op-row").first
@@ -258,13 +192,12 @@ def test_off_shelf_entry_is_visible_and_clickable(browser, live_server, shots):
     这里断的是**顺序**（结构事实）而不是某个瞬时像素位置：顺序对了，用户第一眼就能看到。
     """
     token = bind_stall(live_server, STALL)
-    product = active_products(live_server, token)[0]
-    product_id = product["id"]
+    product_id = active_products(live_server, token)[0]["id"]
 
     page = new_page(browser)
     try:
-        _open_game(page, live_server)
-        page.mouse.click(*_plot_center(page, STALL, "scale"))
+        open_game(page, live_server)
+        page.mouse.click(*plot_center(page, STALL, "scale"))
         page.wait_for_selector("#opsBody .op-row button.ghost", timeout=10000)
         page.locator("#opsBody .op-row button.ghost").first.click()
         page.wait_for_function(
@@ -310,38 +243,12 @@ def test_off_shelf_entry_is_visible_and_clickable(browser, live_server, shots):
         page.close()
 
 
-# --------------------------------------------------------------------------- #
-# `AC-034`：视角只改"能做什么"，不改写入口
-# --------------------------------------------------------------------------- #
-
-
-@pytest.mark.parametrize("view,label", [("customer", "顾客"), ("admin", "管理员")])
-def test_non_merchant_views_refuse_writes(browser, live_server, view, label):
-    """顾客 / 管理员视角点智能秤 ⇒ 明确拒绝，且面板里**一个写入口都没有**。"""
-    page = new_page(browser)
-    try:
-        _open_game(page, live_server)
-        page.click(f"#tab-{view}")
-        page.wait_for_timeout(300)
-        page.mouse.click(*_plot_center(page, STALL, "scale"))
-        page.wait_for_timeout(600)
-
-        assert page.locator("#opsBody .op-input").count() == 0, f"{label}视角不该有设价输入框"
-        assert page.locator("#opsBody button", has_text="下架").count() == 0, (
-            f"{label}视角不该有下架按钮"
-        )
-        log = page.locator("#logList").inner_text()
-        assert f"当前是{label}视角" in log, f"{label}视角点秤应留下拒绝写操作的记录，实际日志：{log[:200]}"
-    finally:
-        page.close()
-
-
 def test_operations_work_on_a_second_stall_not_just_the_first(browser, live_server):
-    """换个摊位（A-06 肉类摊）同样能操作 —— 防"只对第一个摊位有效"的硬编码。"""
+    """换个摊位（肉类摊）同样能操作 —— 防"只对第一个摊位有效"的硬编码。"""
     page = new_page(browser)
     try:
-        _open_game(page, live_server)
-        page.mouse.click(*_plot_center(page, MEAT_STALL, "scale"))
+        open_game(page, live_server)
+        page.mouse.click(*plot_center(page, MEAT_STALL, "scale"))
         page.wait_for_selector("#opsBody .op-input", timeout=10000)
         title = page.locator("#opsTitle").inner_text()
         assert MEAT_STALL in title, f"面板标题应指向 {MEAT_STALL}，实际 {title!r}"
@@ -352,57 +259,5 @@ def test_operations_work_on_a_second_stall_not_just_the_first(browser, live_serv
         assert names == expected, (
             f"{MEAT_STALL} 面板清单与服务端不一致：{names[:5]}… vs {expected[:5]}…"
         )
-    finally:
-        page.close()
-
-
-# --------------------------------------------------------------------------- #
-# 降级路径：美术资源缺失时"色块 + 名字标签，页面照常可用"
-# --------------------------------------------------------------------------- #
-
-
-def test_missing_art_degrades_to_blocks_and_stays_usable(browser, live_server, shots):
-    """页面自称的降级承诺必须真的成立：拦掉精灵 ⇒ 色块 + 名字标签、功能照常、**零报错**。"""
-    page = new_page(browser)
-    problems = _watch_errors(page)
-    try:
-        page.route("**/static/game/sprites/**", lambda route: route.abort())
-        _open_game(page, live_server)
-
-        badge = page.locator("#artBadge")
-        assert "降级" in badge.inner_text(), f"美术徽章应报降级，实际 {badge.inner_text()!r}"
-        assert "warn" in (badge.get_attribute("class") or ""), "降级时徽章应是 warn 态"
-
-        # 地图仍在画、数据仍可用、悬停仍能弹出清单
-        assert page.evaluate("() => document.getElementById('gameCanvas').width") == 1024
-        assert "数据就绪" in page.locator("#dataBadge").inner_text()
-        _hover(page, *_plot_center(page, STALL, "pad"))
-        title = page.locator("#tooltipTitle").inner_text()
-        assert "在售" in title, f"降级后悬停仍应可用，实际标题 {title!r}"
-
-        snap(page, shots, "game-art-missing-fallback")
-        assert problems == [], f"降级路径出现前端错误：{problems}"
-    finally:
-        page.close()
-
-
-def test_no_console_errors_during_a_full_walkthrough(browser, live_server):
-    """整条走查链路（加载 → 悬停 → 点秤 → 切三视角 → 刷新）**零前端错误**。"""
-    page = new_page(browser)
-    problems = _watch_errors(page)
-    try:
-        _open_game(page, live_server)
-        _hover(page, *_plot_center(page, STALL, "pad"))
-        page.mouse.click(*_plot_center(page, STALL, "scale"))
-        page.wait_for_selector("#opsBody .op-input", timeout=10000)
-        for view in ("customer", "admin", "merchant"):
-            page.click(f"#tab-{view}")
-            page.wait_for_timeout(250)
-        page.evaluate("window.scrollTo(0, 0)")
-        page.click("#refreshBtn")
-        page.wait_for_function(
-            "() => document.getElementById('dataBadge').className.includes('on')", timeout=20000
-        )
-        assert problems == [], f"走查期间出现前端错误：{problems}"
     finally:
         page.close()
