@@ -60,6 +60,11 @@
 | 30 | `/api/admin/metrics/usage` | GET | 导出**三个**使用率指标（摊位使用率 / 现金交易占比 / 价目表维护率） | `REQ-022`、`AC-005` |
 | 31 | `/api/admin/audit-logs` | GET | 查询资金链路留痕（只读，只增不改） | `NFR-009` |
 | 32 | `/api/merchant/products/{product_id}/status` | POST | 上架／下架本摊位商品（改 `product.status`） | `REQ-049`、`AC-039` |
+| 33 | `/api/demo/merchants` | GET | 已注册商家列表（演示控制台，无需认证） | `REQ-053`、`AC-043` |
+| 34 | `/api/demo/merchants` | POST | 商家注册（商家名 + 收款码，**脱敏存储**） | `REQ-053`、`AC-043` |
+| 35 | `/api/demo/transactions/{transaction_no}/cancel` | POST | **取消并撤销**该笔交易（幂等；账上等同未发生，动作**留痕**） | `REQ-055`、`AC-045` |
+| 36 | `/api/demo/hub` | GET | 中台视图：**事件表 + 各商家应缴金额**（演示控制台） | `REQ-056`、`AC-046` |
+| 37 | `/api/demo/sms-reminders` | POST | 触发**催缴短信**（每隔一天，提醒应缴金额） | `REQ-056`、`AC-046` |
 
 ## 3. 端点详情
 
@@ -399,6 +404,68 @@
 
 - 响应(200): 更新后的商品对象（字段同 §2.6：`id` / `stall_id` / `name` / `category_id` / `icon_key` / `hotkey` / `status`）。**幂等**：重复设置同一 `status` 仍回 200，不产生其他副作用。
 - 可能错误: `MT-1005`(401)、`MT-1004`(403 其他摊位的商品)、`MT-1008`(422 `status` 或 `product_id` 不合法)、`MT-1009`(404 商品不存在)。
+
+### 3.33 GET `/api/demo/merchants`
+
+- 说明: **已注册商家列表**，供智能秤页选择商家（`REQ-053`、`REQ-057`）。**演示控制台端点**：无需认证 —— 与 §3.16/§3.17 的 Mock 组同一纪律（"仅本机演示"，不是业务端点）。关联: `REQ-053`、`AC-043`。
+- 响应(200): `{"items": [{"merchant_id": 1, "merchant_name": "...", "stall_no": "D-01", "stall_name": "...", "receiver_token_masked": "12****3456", "registered_at": "..."}]}`。
+- 说明: **只回脱敏值**（`REQ-024`）；列表按 `merchant_id` 升序，保证演示可复现。
+- 可能错误: 无（空列表回 200 + `items: []`）。
+
+### 3.34 POST `/api/demo/merchants`
+
+- 说明: **商家注册** —— 录入商家名与收款码；收款码**脱敏后存储**（`REQ-024`：不得存明文支付标识）。注册成功后该商家可被秤页选择（§3.33）。关联: `REQ-053`、`AC-043`。
+- 请求体:
+
+| 字段 | 类型 | 必填 | 传输层约束 | 语义与校验 |
+| --- | --- | --- | --- | --- |
+| `merchant_name` | string | 是 | 1 ~ 32 字符 | 商家名；空或超长 → `MT-1008` |
+| `receiver_code` | string | 是 | 4 ~ 64 字符 | **收款码原文**（仅用于当场脱敏，**不落库**）；超长 → `MT-1008` |
+
+- 响应(201): `{"merchant_id": 1, "stall_no": "D-01", "merchant_name": "...", "receiver_token_masked": "12****3456"}`。
+- 说明: **脱敏规则**：保留前 2 位与后 4 位，中间以 `****` 代替；结果长度 ≤32 且含 `****`（满足 `stall.payment_receiver_token` 的 CHECK 约束）。**明文收款码只存在于本次请求的内存中**，不写库、不进日志、不回显。
+- 说明: 注册同时建立该商家的**摊位**（`stall`），以便复用既有秤端会话与成交端点。
+- 可能错误: `MT-1008`(422 字段缺失/超长/过短)。
+
+### 3.35 POST `/api/demo/transactions/{transaction_no}/cancel`
+
+- 说明: **取消并撤销**该笔交易：该笔**不计入应缴、不计入看板**（**账上等同于未发生**），但**取消动作本身写入 `audit_log` 留痕**（`NFR-009` 只增不改、`RL-9` 不得静默丢弃）。关联: `REQ-055`、`AC-045`。
+- 路径参数: `transaction_no`（string，交易号）。
+- 请求体:
+
+| 字段 | 类型 | 必填 | 传输层约束 | 语义与校验 |
+| --- | --- | --- | --- | --- |
+| `client_idempotency_key` | string | 是 | 1 ~ 64 字符 | **幂等键**（秤端生成的唯一交易标识）；缺失或超长 → `MT-1008` |
+
+- 响应(200): `{"transaction_no": "...", "status": "cancelled", "cancelled_at": "...", "is_duplicate": false}`。
+- **幂等**：同一 `client_idempotency_key` 重复提交 ⇒ `200` + `is_duplicate: true`，**只生效一次**（不重复留痕、不改变结果）—— 与 §4 末注"幂等命中不是错误"一致。
+- 可能错误: `MT-1008`(422 幂等键缺失/超长)、`MT-1009`(404 交易不存在)、`MT-1001`(409 **已确认支付的交易不得被取消**；或已处于终态)。
+- 边界: 本端点**不是退货**。退货是对**已收款**交易的金额冲正（§3.12），走 `refund` 与日聚合重算；取消只作用于**尚未确认**的交易。
+
+### 3.36 GET `/api/demo/hub`
+
+- 说明: **中台视图** —— 一次性返回「事件表」与「各商家应缴金额」，供中台页实时以表格展示（`REQ-056`、`REQ-057`）。**演示控制台端点**：无需认证。关联: `REQ-056`、`AC-046`。
+- 查询参数: `business_date`（string，可选，`YYYY-MM-DD`；缺省取服务端当日）。
+- 响应(200):
+  - `business_date`: string。
+  - `events`: 数组，每项 `{"event_id", "occurred_at", "event_type", "stall_no", "merchant_name", "transaction_no", "amount_cents", "actor"}`，按 `occurred_at` 升序、`event_id` 升序。`event_type` 取值见 [../data-model.md](../data-model.md) §2.18。
+  - `payables`: 数组，每项 `{"merchant_id", "merchant_name", "stall_no", "paid_txn_count", "received_amount_cents", "commission_cents", "payable_cents"}`。
+- 说明: `payable_cents` = 该商家当日**已确认（已收款）**交易按 `REQ-017` 佣金口径逐笔计算的佣金之和；**已取消交易不计入**（`AC-046`）。
+- 可能错误: `MT-1008`(422 `business_date` 格式非法)。
+
+### 3.37 POST `/api/demo/sms-reminders`
+
+- 说明: 触发**催缴短信** —— 向各商家发送提醒，告知其应缴金额（`REQ-056`）。**每隔一天**一次。关联: `REQ-056`、`AC-046`。
+- 请求体:
+
+| 字段 | 类型 | 必填 | 传输层约束 | 语义与校验 |
+| --- | --- | --- | --- | --- |
+| `business_date` | string | 否 | `YYYY-MM-DD` | 缺省取服务端当日；格式非法 → `MT-1008` |
+
+- 响应(200): `{"business_date": "...", "interval_days": 2, "sent": [{"merchant_id", "merchant_name", "phone_masked", "payable_cents", "sent_at"}], "skipped": [{"merchant_id", "reason"}]}`。
+- 说明: **本期不接真实短信网关**（`spec.md` §5 边界）：发送动作**落表留痕**（含**脱敏**手机号与应缴金额），页面展示"已发送"。
+- 说明: **每隔一天**（`interval_days = 2`）：距上次成功发送不足该间隔的商家进 `skipped`，`reason = "interval_not_elapsed"`；**应缴为 0 的商家不发**，`reason = "nothing_payable"`。
+- 可能错误: `MT-1008`(422 `business_date` 格式非法)。
 
 ## 4. 统一错误码表
 
