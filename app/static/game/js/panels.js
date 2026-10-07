@@ -195,14 +195,16 @@ window.GamePanels = (function () {
 
   /* 把面板带进视野。1280 这类窄屏下布局是「地图在上、面板在下」，而地图本身就占满一屏
      （原生 1024×768）⇒ 不滚动的话，用户点了智能秤**看不到操作面板**，像是没反应。
-     只在面板确实不在视口内时才滚，避免无谓跳动。 */
+     只在面板确实不在视口内时才滚，避免无谓跳动。
+     用**瞬时**滚动（不加 `behavior:"smooth"`）：平滑滚动会让页面在用户光标底下继续滑动几百毫秒，
+     紧接着的操作就会点空 —— 面板是"点完马上要操作"的东西，确定性优先于动效。 */
   function reveal(target) {
     if (!target || !target.getBoundingClientRect || typeof window === "undefined") { return; }
     var vh = window.innerHeight || 0;
     if (!vh) { return; }
     var rect = target.getBoundingClientRect();
     if (rect.bottom <= 0 || rect.top >= vh) {
-      if (target.scrollIntoView) { target.scrollIntoView({ block: "center", behavior: "smooth" }); }
+      if (target.scrollIntoView) { target.scrollIntoView({ block: "center" }); }
     }
   }
 
