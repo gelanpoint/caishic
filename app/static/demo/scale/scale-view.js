@@ -1,9 +1,12 @@
 /* 智能秤页 · 视图层（`REQ-057`）。
  *
- * 这里只做"把服务端数据画出来"，不做任何业务判断：
+ * 这里只做"把数据画出来"，不做任何业务判断：
  * - 预置商品图标复用仓库内像素资源 `/static/game/sprites/`（**本地文件，无外链**）；
  *   manifest 或 PNG 缺失时降级为**纯色块 + 商品名**（不报错、不白屏）；
- * - 单价/金额一律**显示服务端给的数**（未计价就写「待计价」，绝不在前端算一个金额冒充实收）。
+ * - 金额三态（`AC-047` ④）：**未选品类 ⇒ 不显示任何金额**；**已选未确认 ⇒ 本地预览**
+ *   （**该值是在浏览器里按 §3.6 同口径算出来的估算**，不落库、不产生交易；界面上必须标注「本地预览」）；
+ *   **确认后 ⇒ 服务端计价并锁定**（标注「已锁定」）。
+ *   预览值绝不冒充实收 —— 两者不一致时由 `scale.js` 显示服务端值并说明差异。
  */
 window.ScaleView = (function () {
   "use strict";
@@ -131,47 +134,77 @@ window.ScaleView = (function () {
     if (hint) { hint.textContent = art.note + "（8 个预置图标覆盖 蔬菜/水果/肉/水产/杂货）"; }
   }
 
-  function renderLed(entry, weightGrams, priced) {
+  /* LED 三格。**金额的三种状态必须分清**（`AC-047` ④）：
+     - 秤盘空 / 未选品类 ⇒ 不显示任何金额（"请选品类"）；
+     - 选了品类但**未确认** ⇒ 本地预览「重量 × 单价」，单位行明确写「预览」；
+     - 确认之后 ⇒ 服务端锁定金额（取 `txn.total_amount_cents`），单位行写「已锁定」。
+     预览口径与 §3.6 一致（`(单价 × 克 + 500) / 1000` 整数四舍五入），但**它只是预览**。 */
+  function renderLed(view) {
     var priceCell = $("ledPrice");
+    var entry = view.entry;
     if (priceCell) {
       priceCell.textContent = !entry ? "—" :
         (entry.cents === null ? "未设价" : Demo.yuan(entry.cents));
     }
+    var priceUnit = $("ledPriceUnit");
+    if (priceUnit) {
+      priceUnit.textContent = entry ? "元 / kg（" + entry.name + "）" : "元 / kg（选品类后显示）";
+    }
     var weightCell = $("ledWeight");
-    if (weightCell) { weightCell.textContent = String(weightGrams); }
+    if (weightCell) { weightCell.textContent = String(view.weightGrams); }
+
     var amountCell = $("ledAmount");
+    var amountUnit = $("ledAmountUnit");
+    var locked = view.lockedCents !== null && view.lockedCents !== undefined;
+    var preview = view.previewCents;
     if (amountCell) {
-      amountCell.textContent = priced ? Demo.yuan(priced.total_amount_cents) : "待计价";
+      var isNumber = locked || (preview !== null && preview !== undefined);
+      amountCell.className = "v small" + (isNumber ? "" : " txt");
+      if (locked) { amountCell.textContent = Demo.yuan(view.lockedCents); }
+      else if (preview !== null && preview !== undefined) { amountCell.textContent = Demo.yuan(preview); }
+      else { amountCell.textContent = view.placed ? "请选品类" : "—"; }
+    }
+    if (amountUnit) {
+      amountUnit.textContent = locked ? "元（服务端计价 · 已锁定）" :
+        (preview !== null && preview !== undefined ? "元（本地预览，确认后以服务端为准）" :
+          (view.placed ? "元（请用 ▲▼ 选择品类）" : "元（先放一件上秤盘）"));
     }
   }
 
-  function renderBasket(basket, entries, totalCents) {
+  /* 秤盘（**至多一件**）。状态与 LED 一一对应，且不显示任何未确认的价格。 */
+  function renderPan(pan, entry, previewCents, lockedCents) {
     var box = $("basket");
     var count = $("basketCount");
-    if (count) { count.textContent = String(basket.length); }
+    if (count) { count.textContent = pan.placed ? "1" : "0"; }
     if (!box) { return; }
-    if (!basket.length) {
-      box.className = "muted";
-      box.textContent = "篮子为空。右键上面的商品图标，或用 ▲▼ 选品后按「确认」。";
-      return;
-    }
     box.className = "";
     box.innerHTML = "";
-    basket.forEach(function (item, index) {
-      var entry = entries[item.index];
-      var line = node("div", "row");
-      line.appendChild(node("span", null, (index + 1) + ". " + entry.name));
-      line.appendChild(node("span", "muted", item.weightGrams + " g"));
-      line.appendChild(node("span", "muted", entry.productId ? "商品 #" + entry.productId : "未上架"));
-      line.appendChild(node("span", "spacer"));
-      line.appendChild(node("span", "muted", entry.cents === null ? "未设价" :
-        "¥ " + Demo.yuan(entry.cents) + " /kg"));
-      box.appendChild(line);
-    });
-    if (totalCents !== null && totalCents !== undefined) {
-      var total = node("div", "ok-text", "服务端计价合计：¥ " + Demo.yuan(totalCents));
-      box.appendChild(total);
+    if (!pan.placed) {
+      box.className = "muted";
+      box.textContent = "秤盘是空的。右键上面的商品图标，放一件上去（秤只感知重量，品类要你来选）。";
+      return;
     }
+    var line = node("div", "row");
+    line.appendChild(node("span", null, "秤盘上：1 件"));
+    line.appendChild(node("span", "muted", pan.weightGrams + " g"));
+    box.appendChild(line);
+    var detail = node("div", "row");
+    if (!entry) {
+      detail.appendChild(node("span", "warn-text", "品类：待选品类（用 ▲▼ 或左键点图标选择）"));
+      detail.appendChild(node("span", "spacer"));
+      detail.appendChild(node("span", "muted", "金额：—（未选品类，不显示价格）"));
+    } else {
+      detail.appendChild(node("span", null, "品类：" + entry.name + "（" + entry.kind + "）"));
+      detail.appendChild(node("span", "muted", entry.productId ? "服务端商品 #" + entry.productId : "尚未在服务端建立"));
+      detail.appendChild(node("span", "spacer"));
+      if (lockedCents !== null && lockedCents !== undefined) {
+        detail.appendChild(node("span", "ok-text", "金额：¥ " + Demo.yuan(lockedCents) + "（服务端计价，已锁定）"));
+      } else {
+        detail.appendChild(node("span", "muted", "单价 ¥ " + Demo.yuan(entry.cents) + " /kg　金额 ¥ " +
+          (previewCents === null || previewCents === undefined ? "—" : Demo.yuan(previewCents)) + "（本地预览）"));
+      }
+    }
+    box.appendChild(detail);
   }
 
   function renderTxnResult(txn) {
@@ -249,7 +282,7 @@ window.ScaleView = (function () {
     merge: merge,
     renderIcons: renderIcons,
     renderLed: renderLed,
-    renderBasket: renderBasket,
+    renderPan: renderPan,
     renderTxnResult: renderTxnResult,
     showQr: showQr,
     hideQr: hideQr,

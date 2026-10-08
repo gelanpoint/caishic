@@ -19,7 +19,7 @@
 <header class="top">
   <div class="brand">
     <h1>智能秤<span class="badge">演示页 2/3</span></h1>
-    <div class="sub">选商家 → 右键预置图标放商品 → ▲▼ 选品 → 确认 → 出价格与收款码 → 模拟扫码 → 交易成功</div>
+    <div class="sub">选商家 → 右键放一件上秤盘（秤只感知重量）→ ▲▼ 人工选品类 → 调重量看金额实时变 → 确认才锁定价格并出收款码 → 模拟扫码 → 交易成功</div>
   </div>
   <div class="nav" id="nav"></div>
   <div class="meta">
@@ -46,32 +46,35 @@
     <section>
       <div class="scale-body">
         <div class="led">
-          <div class="cell"><div class="k">单价</div><div class="v small" id="ledPrice">—</div><div class="u">元 / kg</div></div>
+          <div class="cell"><div class="k">单价</div><div class="v small" id="ledPrice">—</div><div class="u" id="ledPriceUnit">元 / kg（选品类后显示）</div></div>
           <div class="cell"><div class="k">重量</div><div class="v" id="ledWeight">1000</div><div class="u">g</div></div>
-          <div class="cell"><div class="k">金额</div><div class="v small" id="ledAmount">待计价</div><div class="u">元（服务端计价）</div></div>
+          <div class="cell"><div class="k">金额</div><div class="v small" id="ledAmount">—</div><div class="u" id="ledAmountUnit">元</div></div>
         </div>
 
         <div class="row" style="margin-top:10px">
-          <span class="muted">重量：</span>
+          <span class="muted">重量（可调）：</span>
           <button class="small" data-weight="500">500 g</button>
           <button class="small" data-weight="1000">1000 g</button>
           <button class="small" data-weight="1500">1500 g</button>
           <button class="small" data-weight="2000">2000 g</button>
           <input type="range" id="weightRange" min="100" max="5000" step="50" value="1000" style="flex:1 1 160px">
         </div>
+        <div class="muted" id="weightHint" style="margin-top:4px">
+          确认之前：重量与金额都是<strong>本地预览</strong>，随便调；点「确认」才把这一件提交服务端计价并<strong>锁定</strong>价格。
+        </div>
 
-        <h3 style="margin-top:14px">预置商品（右键＝放上去；左键＝选中）</h3>
+        <h3 style="margin-top:14px">预置商品（右键＝放一件到秤盘；左键＝选中/指定品类）</h3>
         <div class="icons" id="iconGrid"></div>
         <div class="muted" id="iconHint" style="margin-top:6px">图标来自仓库内像素资源；名称与单价可改。</div>
 
-        <h3 style="margin-top:14px">本笔交易（<span id="basketCount">0</span> 项）</h3>
-        <div id="basket" class="muted">篮子为空。右键上面的商品图标，或用 ▲▼ 选品后按「确认」。</div>
+        <h3 style="margin-top:14px">秤盘（<span id="basketCount">0</span> 件）</h3>
+        <div id="basket" class="muted">秤盘是空的。右键上面的商品图标，放<strong>一件</strong>上去（秤只感知重量，品类要你来选）。</div>
 
         <div class="pad">
           <button id="btnUp">▲ 上</button>
           <button id="btnDown">▼ 下</button>
-          <button id="btnClear" class="danger">清空篮子</button>
-          <button id="btnConfirm" class="primary wide">确认（提交计价）</button>
+          <button id="btnClear" class="danger">取下秤盘商品</button>
+          <button id="btnConfirm" class="primary wide">确认（锁定价格并出收款码）</button>
           <button id="btnCancelTxn" class="danger wide" disabled>取消交易（POST /api/demo/transactions/{no}/cancel）</button>
         </div>
       </div>
@@ -121,6 +124,7 @@
 <script src="/static/demo/js/common.js"></script>
 <script src="/static/demo/js/qr.js"></script>
 <script src="/static/demo/scale/scale-view.js"></script>
+<script src="/static/demo/scale/scale-product.js"></script>
 <script src="/static/demo/scale/scale.js"></script>
 </body>
 </html>
